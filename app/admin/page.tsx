@@ -142,6 +142,7 @@ export default function AdminPage() {
                     <UserAvatar name={user.full_name} color={user.color} size={32} />
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm">{user.full_name}</p>
+                      <p className="text-xs text-[#6B7280]">{user.email ?? '이메일 없음'}</p>
                     </div>
                     <Button size="sm" onClick={() => approveUser(user.id)}>
                       <Check className="h-4 w-4 mr-1" />승인
@@ -162,7 +163,10 @@ export default function AdminPage() {
                   <UserAvatar name={user.full_name} color={user.color} size={32} />
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-sm">{user.full_name}</p>
-                    <p className="text-xs text-[#6B7280]">{(user.team as any)?.name ?? '팀 없음'}</p>
+                    <div className="flex flex-col gap-0.5">
+                      <p className="text-[11px] text-[#6B7280]">{user.email ?? '이메일 없음'}</p>
+                      <p className="text-xs text-[#6B7280]">{(user.team as any)?.name ?? '팀 없음'}</p>
+                    </div>
                   </div>
                   <Badge variant={edit.status === 'active' ? 'success' : 'danger'}>{STATUS_LABEL[edit.status as keyof typeof STATUS_LABEL]}</Badge>
                   <Select value={edit.role} onValueChange={v => setEdit(user.id, { role: v })}>

@@ -51,3 +51,15 @@ body {
 .fc .fc-daygrid-day.fc-day-today {
   background-color: var(--primary-soft) !important;
 }
+
+/* 토요일 파란색 */
+.fc-day-sat .fc-col-header-cell-cushion,
+.fc-day-sat .fc-daygrid-day-number {
+  color: #2563EB !important;
+}
+
+/* 일요일 빨간색 */
+.fc-day-sun .fc-col-header-cell-cushion,
+.fc-day-sun .fc-daygrid-day-number {
+  color: #EF4444 !important;
+}

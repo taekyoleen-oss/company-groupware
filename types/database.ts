@@ -10,9 +10,9 @@ export interface Database {
         Relationships: []
       }
       cg_profiles: {
-        Row: {
           id: string
           full_name: string
+          email: string | null
           team_id: string | null
           role: 'admin' | 'manager' | 'member'
           status: 'pending' | 'active' | 'inactive'
@@ -22,6 +22,7 @@ export interface Database {
         Insert: {
           id: string
           full_name: string
+          email?: string | null
           team_id?: string | null
           role?: 'admin' | 'manager' | 'member'
           status?: 'pending' | 'active' | 'inactive'
@@ -31,6 +32,7 @@ export interface Database {
         Update: {
           id?: string
           full_name?: string
+          email?: string | null
           team_id?: string | null
           role?: 'admin' | 'manager' | 'member'
           status?: 'pending' | 'active' | 'inactive'
