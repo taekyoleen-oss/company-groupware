@@ -71,14 +71,15 @@ export async function POST(request: NextRequest) {
 
   // ── 알림 발송 ────────────────────────────────────────────
   if (notify && data) {
+    const event      = data as any
     const senderName = (profile as any)?.full_name ?? '알 수 없음'
-    const startStr   = new Date(data.start_at).toLocaleString('ko-KR', {
+    const startStr   = new Date(event.start_at).toLocaleString('ko-KR', {
       month: 'numeric', day: 'numeric',
       hour: '2-digit', minute: '2-digit', hour12: false,
     })
-    const content = `[일정 알림] ${data.title}\n📅 ${startStr}\n작성자: ${senderName}`
+    const content = `[일정 알림] ${event.title}\n📅 ${startStr}\n작성자: ${senderName}`
 
-    if (data.visibility === 'team' && (profile as any)?.team_id) {
+    if (event.visibility === 'team' && (profile as any)?.team_id) {
       // 팀 전체에게 메시지 1건
       await (supabase as any).from('cg_messages').insert({
         sender_id:   user.id,
@@ -86,7 +87,7 @@ export async function POST(request: NextRequest) {
         team_id:     (profile as any).team_id,
         content,
       })
-    } else if (data.visibility === 'company') {
+    } else if (event.visibility === 'company') {
       // 전사 활성 사용자 전원에게 개별 메시지
       const { data: allProfiles } = await supabase
         .from('cg_profiles')
