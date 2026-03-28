@@ -12,7 +12,7 @@ export async function PATCH(
   const { id } = await params
   const body = await request.json()
 
-  const { data, error } = await supabase
+  const { data, error } = await (supabase as any)
     .from('cg_messages')
     .update({ is_read: body.is_read })
     .eq('id', id)

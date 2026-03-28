@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
   const type = searchParams.get('type') // 'sent' | 'received' (default)
 
   if (type === 'sent') {
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('cg_messages')
       .select('*')
       .eq('sender_id', user.id)
@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
     ? `recipient_id.eq.${user.id},team_id.eq.${profile.team_id}`
     : `recipient_id.eq.${user.id}`
 
-  const { data, error } = await supabase
+  const { data, error } = await (supabase as any)
     .from('cg_messages')
     .select('*')
     .or(orFilter)
@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
     teamName = (team as any)?.name ?? null
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await (supabase as any)
     .from('cg_messages')
     .insert({
       sender_id:      user.id,
