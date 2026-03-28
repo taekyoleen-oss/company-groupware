@@ -29,7 +29,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </main>
       </div>
       <BottomTabBar />
-      <MessageNotification userId={profile.id} teamId={profile.team_id ?? null} />
+      <MessageNotification userId={(profile as ProfileWithTeam).id} teamId={(profile as ProfileWithTeam).team_id ?? null} />
     </div>
   )
 }

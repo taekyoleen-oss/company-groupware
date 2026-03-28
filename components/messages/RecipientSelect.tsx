@@ -13,9 +13,10 @@ interface Props {
   value: RecipientOption | null
   onChange: (v: RecipientOption | null) => void
   placeholder?: string
+  placement?: 'top' | 'bottom'
 }
 
-export function RecipientSelect({ value, onChange, placeholder = '보낼 대상 선택...' }: Props) {
+export function RecipientSelect({ value, onChange, placeholder = '보낼 대상 선택...', placement = 'bottom' }: Props) {
   const [open,   setOpen]   = useState(false)
   const [search, setSearch] = useState('')
   const [users,  setUsers]  = useState<RecipientOption[]>([])
@@ -79,7 +80,7 @@ export function RecipientSelect({ value, onChange, placeholder = '보낼 대상 
 
       {/* Dropdown */}
       {open && (
-        <div className="absolute z-[60] top-full left-0 right-0 mt-1 bg-white border border-[#E5E7EB] rounded-xl shadow-lg flex flex-col" style={{ maxHeight: '220px' }}>
+        <div className={`absolute z-[60] left-0 right-0 bg-white border border-[#E5E7EB] rounded-xl shadow-lg flex flex-col ${placement === 'top' ? 'bottom-full mb-1' : 'top-full mt-1'}`} style={{ maxHeight: '220px' }}>
           {/* Search */}
           <div className="p-2 border-b border-[#F3F4F6] shrink-0">
             <div className="flex items-center gap-1.5 rounded-lg bg-[#F9FAFB] px-2 py-1.5 border border-[#E5E7EB]">

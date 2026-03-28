@@ -244,6 +244,7 @@ export function Sidebar() {
           value={companyRecipient}
           onChange={setCompanyRecipient}
           placeholder="받을 사람 또는 팀 선택..."
+          placement="top"
         />
         <button
           onClick={sendCompanyMessage}
