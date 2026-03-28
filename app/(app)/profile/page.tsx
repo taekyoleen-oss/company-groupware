@@ -53,9 +53,8 @@ export default function ProfilePage() {
       }),
     })
     if (res.ok) {
-      const data = await res.json()
-      setProfile(p => p ? { ...p, ...data } : p)
       showToast('프로필이 저장되었습니다.', 'success')
+      setTimeout(() => router.back(), 600)
     } else {
       showToast('저장에 실패했습니다.', 'error')
     }

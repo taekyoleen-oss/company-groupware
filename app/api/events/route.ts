@@ -7,15 +7,40 @@ export async function GET(request: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { searchParams } = new URL(request.url)
-  const start = searchParams.get('start') ?? undefined
-  const end = searchParams.get('end') ?? undefined
+  const start           = searchParams.get('start')           ?? undefined
+  const end             = searchParams.get('end')             ?? undefined
+  const created_by      = searchParams.get('created_by')      ?? undefined
+  const team_only       = searchParams.get('team_only')       === 'true'
+  const include_company = searchParams.get('include_company') !== 'false' // default true
 
   let query = supabase
     .from('cg_events')
     .select(`*, category:cg_event_categories(id,name,color), author:cg_profiles!created_by(id,full_name,color)`)
     .order('start_at')
+
   if (start) query = query.gte('start_at', start)
-  if (end) query = query.lte('start_at', end)
+  if (end)   query = query.lte('start_at', end)
+
+  if (created_by) {
+    // 특정 멤버 일정
+    if (include_company) {
+      // 해당 멤버 일정 + 전사 공개 일정
+      query = query.or(`created_by.eq.${created_by},visibility.eq.company`)
+    } else {
+      query = query.eq('created_by', created_by)
+    }
+  } else if (team_only) {
+    // 팀 일정
+    if (include_company) {
+      // 팀 일정 + 전사 공개 일정
+      query = query.in('visibility', ['team', 'company'])
+    } else {
+      query = query.eq('visibility', 'team')
+    }
+  } else if (!include_company) {
+    // 전체 보기지만 전사 일정 제외
+    query = query.neq('visibility', 'company')
+  }
 
   const { data, error } = await query
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })

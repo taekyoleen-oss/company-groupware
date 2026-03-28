@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { AppHeader } from '@/components/layout/AppHeader'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { BottomTabBar } from '@/components/layout/BottomTabBar'
+import { MessageNotification } from '@/components/messages/MessageNotification'
 import type { ProfileWithTeam } from '@/types/app'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -28,6 +29,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </main>
       </div>
       <BottomTabBar />
+      <MessageNotification userId={profile.id} teamId={profile.team_id ?? null} />
     </div>
   )
 }
