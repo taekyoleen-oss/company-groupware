@@ -1,7 +1,7 @@
 'use client'
 import { format, startOfDay, endOfDay, parseISO } from 'date-fns'
 import { ko } from 'date-fns/locale'
-import { Plus, Clock, MapPin } from 'lucide-react'
+import { Plus, Clock, MapPin, User } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { resolveEventColor } from '@/lib/utils/eventColor'
@@ -69,6 +69,12 @@ export function DayEventsPopup({
                     <p className="mt-0.5 flex items-center gap-1 text-xs text-[#6B7280]">
                       <MapPin className="h-3 w-3 shrink-0" />
                       <span className="truncate">{event.location}</span>
+                    </p>
+                  )}
+                  {event.author && (
+                    <p className="mt-0.5 flex items-center gap-1 text-xs text-[#9CA3AF]">
+                      <User className="h-3 w-3 shrink-0" />
+                      <span className="truncate">{(event.author as any).full_name}</span>
                     </p>
                   )}
                 </div>

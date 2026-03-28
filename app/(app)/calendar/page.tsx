@@ -6,22 +6,23 @@ import dayGridPlugin from '@fullcalendar/daygrid'
 import timeGridPlugin from '@fullcalendar/timegrid'
 import interactionPlugin from '@fullcalendar/interaction'
 import type { DateClickArg } from '@fullcalendar/interaction'
-import type { EventClickArg, EventInput } from '@fullcalendar/core'
+import type { EventClickArg, EventInput, EventDropArg } from '@fullcalendar/core'
 import { startOfDay, endOfDay, parseISO } from 'date-fns'
 import { Plus, X, Users, User } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { EventModal } from '@/components/calendar/EventModal'
 import { DayEventsPopup } from '@/components/calendar/DayEventsPopup'
 import { resolveEventColor } from '@/lib/utils/eventColor'
+import { KOREAN_HOLIDAYS, HOLIDAY_DATE_SET } from '@/lib/utils/koreanHolidays'
 import type { EventWithDetails } from '@/types/app'
 
 function CalendarContent() {
   const router        = useRouter()
   const searchParams  = useSearchParams()
-  const filterType     = searchParams.get('filter')   // 'team' | 'member' | null
+  const filterType     = searchParams.get('filter')
   const filterUserId   = searchParams.get('userId')
   const filterUserName = searchParams.get('userName')
-  const includeCompany = searchParams.get('includeCompany') !== 'false' // default true
+  const includeCompany = searchParams.get('includeCompany') !== 'false'
 
   const calendarRef = useRef<FullCalendar>(null)
   const [events, setEvents]           = useState<EventWithDetails[]>([])
@@ -32,6 +33,22 @@ function CalendarContent() {
   const [isDayPopupOpen, setIsDayPopupOpen] = useState(false)
   const [dayPopupDate,   setDayPopupDate]   = useState<Date>(new Date())
   const [dayPopupEvents, setDayPopupEvents] = useState<EventWithDetails[]>([])
+
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [isAdminUser,   setIsAdminUser]   = useState(false)
+
+  const clickTimerRef    = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastClickDateRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    fetch('/api/profiles')
+      .then(r => r.json())
+      .then((p: any) => {
+        setCurrentUserId(p?.id ?? null)
+        setIsAdminUser(p?.role === 'admin')
+      })
+      .catch(() => {})
+  }, [])
 
   const fetchEvents = useCallback(async () => {
     const params = new URLSearchParams()
@@ -51,19 +68,26 @@ function CalendarContent() {
 
   useEffect(() => { fetchEvents() }, [fetchEvents])
 
-  const fcEvents: EventInput[] = events.map(e => {
-    const prefix = e.visibility === 'company' ? '[전사] ' : e.visibility === 'team' ? '[팀] ' : ''
-    return {
-      id:              e.id,
-      title:           prefix + e.title,
-      start:           e.start_at,
-      end:             e.end_at,
-      allDay:          e.is_all_day,
-      backgroundColor: resolveEventColor({ color: e.color, category: e.category as any, author: e.author as any }),
-      borderColor:     resolveEventColor({ color: e.color, category: e.category as any, author: e.author as any }),
-      textColor:       '#ffffff',
-    }
-  })
+  const canEditEvent = (e: EventWithDetails) =>
+    isAdminUser || e.created_by === currentUserId
+
+  const fcEvents: EventInput[] = [
+    ...KOREAN_HOLIDAYS,
+    ...events.map(e => {
+      const prefix = e.visibility === 'company' ? '[전사] ' : e.visibility === 'team' ? '[팀] ' : ''
+      return {
+        id:              e.id,
+        title:           prefix + e.title,
+        start:           e.start_at,
+        end:             e.end_at,
+        allDay:          e.is_all_day,
+        backgroundColor: resolveEventColor({ color: e.color, category: e.category as any, author: e.author as any }),
+        borderColor:     resolveEventColor({ color: e.color, category: e.category as any, author: e.author as any }),
+        textColor:       '#ffffff',
+        editable:        canEditEvent(e),
+      }
+    }),
+  ]
 
   const getEventsOnDate = (date: Date): EventWithDetails[] => {
     const dayStart = startOfDay(date)
@@ -76,20 +100,35 @@ function CalendarContent() {
   }
 
   const handleDateClick = (info: DateClickArg) => {
-    const clickedDate  = info.date
-    const eventsOnDay  = getEventsOnDate(clickedDate)
-    if (eventsOnDay.length > 0) {
-      setDayPopupDate(clickedDate)
-      setDayPopupEvents(eventsOnDay)
-      setIsDayPopupOpen(true)
-    } else {
+    const clickedDate    = info.date
+    const clickedDateStr = info.dateStr
+
+    if (clickTimerRef.current && lastClickDateRef.current === clickedDateStr) {
+      clearTimeout(clickTimerRef.current)
+      clickTimerRef.current    = null
+      lastClickDateRef.current = null
+      setIsDayPopupOpen(false)
       setModalDate(clickedDate)
       setEditEventId(null)
       setIsModalOpen(true)
+    } else {
+      lastClickDateRef.current = clickedDateStr
+      clickTimerRef.current = setTimeout(() => {
+        clickTimerRef.current    = null
+        lastClickDateRef.current = null
+        const eventsOnDay = getEventsOnDate(clickedDate)
+        if (eventsOnDay.length > 0) {
+          setDayPopupDate(clickedDate)
+          setDayPopupEvents(eventsOnDay)
+          setIsDayPopupOpen(true)
+        }
+      }, 250)
     }
   }
 
   const handleEventClick = (info: EventClickArg) => {
+    // 공휴일은 클릭 무시
+    if (info.event.id.startsWith('holiday-')) return
     setEditEventId(info.event.id)
     setModalDate(null)
     setIsModalOpen(true)
@@ -109,6 +148,28 @@ function CalendarContent() {
     setIsModalOpen(true)
   }
 
+  const handleEventDrop = async (info: EventDropArg) => {
+    const { event, revert } = info
+    // 드래그는 editable:false 이벤트에서 이미 막히지만, 안전망으로도 검사
+    if (event.id.startsWith('holiday-')) { revert(); return }
+    const start = event.start
+    const end   = event.end ?? (start ? new Date(start.getTime() + 3600000) : null)
+    if (!start) { revert(); return }
+    const res = await fetch(`/api/events/${event.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        start_at: start.toISOString(),
+        end_at:   end!.toISOString(),
+      }),
+    })
+    if (!res.ok) {
+      revert()
+    } else {
+      fetchEvents()
+    }
+  }
+
   const clearFilter = () => router.push('/calendar')
 
   return (
@@ -121,7 +182,6 @@ function CalendarContent() {
         </Button>
       </div>
 
-      {/* Active filter badge */}
       {filterType && (
         <div className="mb-3 flex items-center gap-2">
           <span className="inline-flex items-center gap-1.5 text-xs bg-[#EFF6FF] text-[#2563EB] border border-[#BFDBFE] rounded-full px-3 py-1 font-medium">
@@ -148,7 +208,25 @@ function CalendarContent() {
           headerToolbar={{
             left:   'prev,next today',
             center: 'title',
-            right:  'dayGridMonth,timeGridWeek,timeGridDay',
+            right:  'dayGridMonth,timeGridWeek,timeGridDay,next7',
+          }}
+          customButtons={{
+            next7: {
+              text: '+7',
+              click: () => {
+                const api = calendarRef.current?.getApi()
+                if (api) {
+                  api.today()
+                  api.changeView('timeGridNext7')
+                }
+              },
+            },
+          }}
+          views={{
+            timeGridNext7: {
+              type: 'timeGrid',
+              duration: { days: 7 },
+            },
           }}
           locale="ko"
           timeZone="local"
@@ -156,11 +234,22 @@ function CalendarContent() {
           events={fcEvents}
           dateClick={handleDateClick}
           eventClick={handleEventClick}
-          selectable={true}
-          select={(info) => handleDateClick({ date: info.start } as DateClickArg)}
+          editable={true}
+          eventDrop={handleEventDrop}
+          selectable={false}
           height="auto"
           dayMaxEvents={3}
           buttonText={{ today: '오늘', month: '월', week: '주', day: '일' }}
+          eventTimeFormat={{ hour: '2-digit', minute: '2-digit', hour12: false }}
+          dayCellDidMount={(arg) => {
+            const dateStr = arg.date.toLocaleDateString('sv-SE') // YYYY-MM-DD
+            const isSunday  = arg.date.getDay() === 0
+            const isHoliday = HOLIDAY_DATE_SET.has(dateStr)
+            if (isSunday || isHoliday) {
+              const dayNum = arg.el.querySelector('.fc-daygrid-day-number, .fc-col-header-cell-cushion')
+              if (dayNum) (dayNum as HTMLElement).style.color = '#DC2626'
+            }
+          }}
         />
       </div>
 

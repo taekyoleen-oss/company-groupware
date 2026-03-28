@@ -53,14 +53,60 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await request.json()
-  const { data: profile } = await supabase.from('cg_profiles').select('team_id').eq('id', user.id).single()
+  const { notify, ...eventBody } = body
+
+  const { data: profile } = await supabase
+    .from('cg_profiles')
+    .select('team_id, full_name')
+    .eq('id', user.id)
+    .single()
 
   const { data, error } = await supabase.from('cg_events').insert({
-    ...body,
+    ...eventBody,
     created_by: user.id,
-    team_id: body.visibility === 'team' ? profile?.team_id : null,
+    team_id: eventBody.visibility === 'team' ? (profile as any)?.team_id : null,
   }).select().single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  // ── 알림 발송 ────────────────────────────────────────────
+  if (notify && data) {
+    const senderName = (profile as any)?.full_name ?? '알 수 없음'
+    const startStr   = new Date(data.start_at).toLocaleString('ko-KR', {
+      month: 'numeric', day: 'numeric',
+      hour: '2-digit', minute: '2-digit', hour12: false,
+    })
+    const content = `[일정 알림] ${data.title}\n📅 ${startStr}\n작성자: ${senderName}`
+
+    if (data.visibility === 'team' && (profile as any)?.team_id) {
+      // 팀 전체에게 메시지 1건
+      await (supabase as any).from('cg_messages').insert({
+        sender_id:   user.id,
+        sender_name: senderName,
+        team_id:     (profile as any).team_id,
+        content,
+      })
+    } else if (data.visibility === 'company') {
+      // 전사 활성 사용자 전원에게 개별 메시지
+      const { data: allProfiles } = await supabase
+        .from('cg_profiles')
+        .select('id, full_name')
+        .eq('status', 'active')
+        .neq('id', user.id)
+
+      if (allProfiles && allProfiles.length > 0) {
+        await (supabase as any).from('cg_messages').insert(
+          allProfiles.map((p: any) => ({
+            sender_id:      user.id,
+            sender_name:    senderName,
+            recipient_id:   p.id,
+            recipient_name: p.full_name,
+            content,
+          }))
+        )
+      }
+    }
+  }
+
   return NextResponse.json(data, { status: 201 })
 }

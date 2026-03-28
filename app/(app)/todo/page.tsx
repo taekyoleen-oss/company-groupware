@@ -82,7 +82,7 @@ export default function TodoPage() {
       <h1 className="text-xl font-bold text-[#111827] mb-4">나의 TO-DO</h1>
       <form onSubmit={handleAdd} className="flex gap-2 mb-6">
         <Input value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="할 일 추가..." />
-        <Button type="submit" size="sm"><Plus className="h-4 w-4 mr-1" />추가</Button>
+        <Button type="submit" className="whitespace-nowrap px-4"><Plus className="h-4 w-4 mr-1" />추가</Button>
       </form>
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={pending.map(t => t.id)} strategy={verticalListSortingStrategy}>
