@@ -51,16 +51,19 @@ function CalendarContent() {
 
   useEffect(() => { fetchEvents() }, [fetchEvents])
 
-  const fcEvents: EventInput[] = events.map(e => ({
-    id:              e.id,
-    title:           e.title,
-    start:           e.start_at,
-    end:             e.end_at,
-    allDay:          e.is_all_day,
-    backgroundColor: resolveEventColor({ color: e.color, category: e.category as any, author: e.author as any }),
-    borderColor:     resolveEventColor({ color: e.color, category: e.category as any, author: e.author as any }),
-    textColor:       '#ffffff',
-  }))
+  const fcEvents: EventInput[] = events.map(e => {
+    const prefix = e.visibility === 'company' ? '[전사] ' : e.visibility === 'team' ? '[팀] ' : ''
+    return {
+      id:              e.id,
+      title:           prefix + e.title,
+      start:           e.start_at,
+      end:             e.end_at,
+      allDay:          e.is_all_day,
+      backgroundColor: resolveEventColor({ color: e.color, category: e.category as any, author: e.author as any }),
+      borderColor:     resolveEventColor({ color: e.color, category: e.category as any, author: e.author as any }),
+      textColor:       '#ffffff',
+    }
+  })
 
   const getEventsOnDate = (date: Date): EventWithDetails[] => {
     const dayStart = startOfDay(date)

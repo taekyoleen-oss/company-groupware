@@ -125,14 +125,30 @@ export function EventModal({ isOpen, onClose, initialDate, eventId, onSuccess }:
               <label className="block text-sm font-medium mb-1">제목 *</label>
               <Input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="일정 제목" required />
             </div>
+            <div className="flex items-center gap-2 -mt-1">
+              <input
+                id="is_all_day"
+                type="checkbox"
+                checked={form.is_all_day}
+                onChange={e => setForm(f => ({ ...f, is_all_day: e.target.checked }))}
+                className="w-4 h-4 rounded accent-[#2563EB] cursor-pointer"
+              />
+              <label htmlFor="is_all_day" className="text-sm text-[#374151] cursor-pointer select-none">종일</label>
+            </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="block text-sm font-medium mb-1">시작</label>
-                <Input type="datetime-local" value={form.start_at} onChange={e => setForm(f => ({ ...f, start_at: e.target.value }))} required />
+                {form.is_all_day
+                  ? <Input type="date" value={form.start_at.slice(0, 10)} onChange={e => setForm(f => ({ ...f, start_at: e.target.value + 'T00:00' }))} required />
+                  : <Input type="datetime-local" value={form.start_at} onChange={e => setForm(f => ({ ...f, start_at: e.target.value }))} required />
+                }
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">종료</label>
-                <Input type="datetime-local" value={form.end_at} onChange={e => setForm(f => ({ ...f, end_at: e.target.value }))} required />
+                {form.is_all_day
+                  ? <Input type="date" value={form.end_at.slice(0, 10)} onChange={e => setForm(f => ({ ...f, end_at: e.target.value + 'T23:59' }))} required />
+                  : <Input type="datetime-local" value={form.end_at} onChange={e => setForm(f => ({ ...f, end_at: e.target.value }))} required />
+                }
               </div>
             </div>
             <div>
