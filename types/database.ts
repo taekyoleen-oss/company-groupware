@@ -10,6 +10,7 @@ export interface Database {
         Relationships: []
       }
       cg_profiles: {
+        Row: {
           id: string
           full_name: string
           email: string | null

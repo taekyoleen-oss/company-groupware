@@ -3,7 +3,7 @@ import type { Database } from './database'
 export type Team = Database['public']['Tables']['cg_teams']['Row']
 export type Profile = Database['public']['Tables']['cg_profiles']['Row']
 export type EventCategory = Database['public']['Tables']['cg_event_categories']['Row']
-export type Event = Database['public']['Tables']['cg_events']['Row']
+export type AppEvent = Database['public']['Tables']['cg_events']['Row']
 export type Notice = Database['public']['Tables']['cg_notices']['Row']
 export type NoticeAttachment = Database['public']['Tables']['cg_notice_attachments']['Row']
 export type Todo = Database['public']['Tables']['cg_todos']['Row']
@@ -18,7 +18,7 @@ export interface ProfileWithTeam extends Profile {
   team: Team | null
 }
 
-export interface EventWithDetails extends Event {
+export interface EventWithDetails extends AppEvent {
   category: EventCategory | null
   author: Profile
 }
