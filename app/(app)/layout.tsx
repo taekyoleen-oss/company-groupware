@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { AppHeader } from '@/components/layout/AppHeader'
 import { Sidebar } from '@/components/layout/Sidebar'
+import { AdminSidebar } from '@/components/layout/AdminSidebar'
 import { BottomTabBar } from '@/components/layout/BottomTabBar'
 import { MessageNotification } from '@/components/messages/MessageNotification'
 import type { ProfileWithTeam } from '@/types/app'
@@ -27,6 +28,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <main className="flex-1 overflow-y-auto pb-16 md:pb-0">
           {children}
         </main>
+        {(profile as ProfileWithTeam).role === 'admin' && <AdminSidebar />}
       </div>
       <BottomTabBar />
       <MessageNotification userId={(profile as ProfileWithTeam).id} teamId={(profile as ProfileWithTeam).team_id ?? null} />

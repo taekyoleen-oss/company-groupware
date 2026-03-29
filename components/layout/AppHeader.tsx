@@ -68,8 +68,8 @@ export function AppHeader({ profile }: AppHeaderProps) {
           teamId={profile.team_id ?? null}
         />
 
-        {/* 프로필 */}
-        <Link href="/profile" className="flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-[#F9FAFB] transition-colors">
+        {/* 프로필 — 모바일에서는 하단탭에 프로필이 있으므로 숨김 */}
+        <Link href="/profile" className="hidden md:flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-[#F9FAFB] transition-colors">
           <UserAvatar name={profile.full_name} color={profile.color} size={28} />
           <span className="hidden md:block text-sm text-[#111827]">{profile.full_name}</span>
         </Link>
