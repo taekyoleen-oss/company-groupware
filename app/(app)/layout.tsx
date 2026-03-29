@@ -30,7 +30,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </main>
         {(profile as ProfileWithTeam).role === 'admin' && <AdminSidebar />}
       </div>
-      <BottomTabBar />
+      <BottomTabBar role={(profile as ProfileWithTeam).role} />
       <MessageNotification userId={(profile as ProfileWithTeam).id} teamId={(profile as ProfileWithTeam).team_id ?? null} />
     </div>
   )
