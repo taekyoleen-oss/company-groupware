@@ -237,6 +237,8 @@ function CalendarContent() {
           editable={true}
           eventDrop={handleEventDrop}
           selectable={false}
+          slotMinTime="09:00:00"
+          scrollTime="09:00:00"
           height="auto"
           dayMaxEvents={3}
           buttonText={{ today: '오늘', month: '월', week: '주', day: '일' }}
