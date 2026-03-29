@@ -37,6 +37,8 @@ function CalendarContent() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [isAdminUser,   setIsAdminUser]   = useState(false)
 
+  const [currentView, setCurrentView] = useState('dayGridMonth')
+
   const clickTimerRef    = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastClickDateRef = useRef<string | null>(null)
 
@@ -228,6 +230,7 @@ function CalendarContent() {
               duration: { days: 7 },
             },
           }}
+          datesSet={(arg) => setCurrentView(arg.view.type)}
           locale="ko"
           timeZone="local"
           firstDay={0}
@@ -237,9 +240,9 @@ function CalendarContent() {
           editable={true}
           eventDrop={handleEventDrop}
           selectable={false}
-          slotMinTime="09:00:00"
           scrollTime="09:00:00"
-          height="auto"
+          scrollTimeReset={true}
+          height={currentView.startsWith('timeGrid') ? 700 : 'auto'}
           dayMaxEvents={3}
           buttonText={{ today: '오늘', month: '월', week: '주', day: '일' }}
           eventTimeFormat={{ hour: '2-digit', minute: '2-digit', hour12: false }}
