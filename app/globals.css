@@ -18,16 +18,16 @@
 }
 
 .dark {
-  --primary: #3B82F6;
+  --primary: #60A5FA;
   --primary-soft: #1E3A5F;
   --accent: #34D399;
   --warning: #FCD34D;
   --danger: #F87171;
-  --text-primary: #F9FAFB;
-  --text-muted: #9CA3AF;
-  --border: #374151;
-  --background: #111827;
-  --surface: #1F2937;
+  --text-primary: #F1F5F9;
+  --text-muted: #94A3B8;
+  --border: #4B5563;
+  --background: #2D3440;
+  --surface: #374151;
   --radius: 0.5rem;
 }
 
@@ -49,10 +49,10 @@ body {
   font-size: 0.875rem !important;
 }
 .fc .fc-button:hover {
-  background-color: #1d4ed8 !important;
+  opacity: 0.85 !important;
 }
 .fc .fc-button-active {
-  background-color: #1e40af !important;
+  opacity: 0.7 !important;
 }
 .fc .fc-toolbar-title {
   font-size: 1.125rem !important;
@@ -68,19 +68,46 @@ body {
 .fc .fc-daygrid-day.fc-day-today {
   background-color: var(--primary-soft) !important;
 }
-.fc .fc-col-header-cell-cushion,
-.fc .fc-daygrid-day-number {
-  color: var(--text-primary) !important;
+
+/* FullCalendar 다크 모드 */
+.dark .fc {
+  color: var(--text-primary);
 }
-.fc .fc-daygrid-day-frame,
-.fc .fc-daygrid-day {
+.dark .fc .fc-col-header-cell,
+.dark .fc .fc-timegrid-slot-label,
+.dark .fc .fc-timegrid-axis {
+  background-color: var(--surface) !important;
+  border-color: var(--border) !important;
+}
+.dark .fc-theme-standard .fc-scrollgrid,
+.dark .fc-theme-standard td,
+.dark .fc-theme-standard th {
+  border-color: var(--border) !important;
+}
+.dark .fc .fc-daygrid-day {
   background-color: var(--surface) !important;
 }
-.fc .fc-scrollgrid {
+.dark .fc .fc-daygrid-day.fc-day-other {
+  background-color: var(--background) !important;
+}
+.dark .fc .fc-timegrid-col {
+  background-color: var(--surface) !important;
+}
+.dark .fc .fc-timegrid-slot {
   border-color: var(--border) !important;
 }
-.fc td, .fc th {
-  border-color: var(--border) !important;
+.dark .fc .fc-non-business {
+  background: rgba(0, 0, 0, 0.15) !important;
+}
+.dark .fc .fc-daygrid-day-number,
+.dark .fc .fc-col-header-cell-cushion {
+  color: var(--text-primary) !important;
+}
+.dark .fc .fc-list-day-cushion {
+  background-color: var(--surface) !important;
+}
+.dark .fc .fc-list-event:hover td {
+  background-color: var(--border) !important;
 }
 
 /* 토요일 파란색 */
@@ -88,9 +115,17 @@ body {
 .fc-day-sat .fc-daygrid-day-number {
   color: #2563EB !important;
 }
+.dark .fc-day-sat .fc-col-header-cell-cushion,
+.dark .fc-day-sat .fc-daygrid-day-number {
+  color: #60A5FA !important;
+}
 
 /* 일요일 빨간색 */
 .fc-day-sun .fc-col-header-cell-cushion,
 .fc-day-sun .fc-daygrid-day-number {
   color: #EF4444 !important;
+}
+.dark .fc-day-sun .fc-col-header-cell-cushion,
+.dark .fc-day-sun .fc-daygrid-day-number {
+  color: #F87171 !important;
 }

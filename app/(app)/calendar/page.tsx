@@ -177,7 +177,7 @@ function CalendarContent() {
   return (
     <div className="p-4">
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-xl font-bold text-[#111827]">캘린더</h1>
+        <h1 className="text-xl font-bold text-[#111827] dark:text-[#F1F5F9]">캘린더</h1>
         <Button size="sm" onClick={() => { setModalDate(new Date()); setEditEventId(null); setIsModalOpen(true) }}>
           <Plus className="h-4 w-4 mr-1" />
           새 일정
@@ -186,7 +186,7 @@ function CalendarContent() {
 
       {filterType && (
         <div className="mb-3 flex items-center gap-2">
-          <span className="inline-flex items-center gap-1.5 text-xs bg-[#EFF6FF] text-[#2563EB] border border-[#BFDBFE] rounded-full px-3 py-1 font-medium">
+          <span className="inline-flex items-center gap-1.5 text-xs bg-[#EFF6FF] text-[#2563EB] border border-[#BFDBFE] rounded-full px-3 py-1 font-medium dark:bg-[#1E3A5F] dark:text-[#93C5FD] dark:border-[#2563EB]">
             {filterType === 'team' ? (
               <><Users className="h-3 w-3" /> 팀 일정만 보기</>
             ) : (
@@ -195,14 +195,14 @@ function CalendarContent() {
           </span>
           <button
             onClick={clearFilter}
-            className="inline-flex items-center gap-1 text-xs text-[#6B7280] hover:text-[#111827] transition-colors"
+            className="inline-flex items-center gap-1 text-xs text-[#6B7280] hover:text-[#111827] transition-colors dark:text-[#94A3B8] dark:hover:text-[#F1F5F9]"
           >
             <X className="h-3 w-3" /> 필터 해제
           </button>
         </div>
       )}
 
-      <div className="bg-white rounded-xl border border-[#E5E7EB] p-3">
+      <div className="bg-white rounded-xl border border-[#E5E7EB] p-3 dark:bg-[#374151] dark:border-[#4B5563]">
         <FullCalendar
           ref={calendarRef}
           plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}

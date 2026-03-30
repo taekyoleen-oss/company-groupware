@@ -15,7 +15,7 @@ export const SelectTrigger = React.forwardRef<
     ref={ref}
     className={cn(
       'flex h-10 w-full items-center justify-between rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm text-[#111827] placeholder:text-[#6B7280] focus:outline-none focus:ring-2 focus:ring-[#2563EB] disabled:cursor-not-allowed disabled:opacity-50',
-      'dark:border-[#374151] dark:bg-[#1F2937] dark:text-[#F9FAFB] dark:placeholder:text-[#6B7280] dark:focus:ring-[#3B82F6]',
+      'dark:border-[#4B5563] dark:bg-[#374151] dark:text-[#F1F5F9] dark:placeholder:text-[#94A3B8] dark:focus:ring-[#60A5FA]',
       className
     )}
     {...props}
@@ -35,7 +35,7 @@ export const SelectContent = React.forwardRef<
       ref={ref}
       className={cn(
         'relative z-50 min-w-[8rem] overflow-hidden rounded-lg border border-[#E5E7EB] bg-white text-[#111827] shadow-lg',
-        'dark:border-[#374151] dark:bg-[#1F2937] dark:text-[#F9FAFB]',
+        'dark:border-[#4B5563] dark:bg-[#374151] dark:text-[#F1F5F9]',
         className
       )}
       {...props}
@@ -54,7 +54,7 @@ export const SelectItem = React.forwardRef<
     ref={ref}
     className={cn(
       'relative flex w-full cursor-pointer select-none items-center rounded-md py-1.5 pl-8 pr-2 text-sm outline-none focus:bg-[#EFF6FF] data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
-      'dark:focus:bg-[#1E3A5F]',
+      'dark:focus:bg-[#4B5563]',
       className
     )}
     {...props}

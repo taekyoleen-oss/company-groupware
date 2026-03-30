@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { Settings, Users, Building2, Tag, UserCheck, AlertCircle } from 'lucide-react'
+import { Settings, Users, Building2, Tag, UserCheck } from 'lucide-react'
 import { UserAvatar } from '@/components/ui/avatar'
 import type { ProfileWithTeam, Team, EventCategory } from '@/types/app'
 
@@ -26,9 +26,7 @@ export function AdminSidebar() {
     ])
     if (usersRes.ok) {
       const data: ProfileWithTeam[] = await usersRes.json()
-      if (Array.isArray(data)) {
-        setPendingUsers(data.filter(u => u.status === 'pending').slice(0, 5))
-      }
+      if (Array.isArray(data)) setPendingUsers(data.filter(u => u.status === 'pending').slice(0, 5))
     }
     if (teamsRes.ok) {
       const data: Team[] = await teamsRes.json()
@@ -54,15 +52,13 @@ export function AdminSidebar() {
   }
 
   return (
-    <aside className="hidden md:flex flex-col w-52 shrink-0 bg-[#F8FAFC] border-l border-[#E5E7EB] p-4 gap-4 overflow-y-auto dark:bg-[#111827] dark:border-[#374151]">
+    <aside className="hidden md:flex flex-col w-52 shrink-0 bg-[#F8FAFC] border-l border-[#E5E7EB] p-4 gap-4 overflow-y-auto dark:bg-[#2D3440] dark:border-[#4B5563]">
 
-      {/* 헤더 */}
       <div className="flex items-center gap-2">
-        <Settings className="h-4 w-4 text-[#6B7280] dark:text-[#9CA3AF]" />
-        <h2 className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider dark:text-[#9CA3AF]">관리자 패널</h2>
+        <Settings className="h-4 w-4 text-[#6B7280] dark:text-[#94A3B8]" />
+        <h2 className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider dark:text-[#94A3B8]">관리자 패널</h2>
       </div>
 
-      {/* 대기 중 승인 */}
       <div>
         <div className="flex items-center justify-between mb-2">
           <h3 className="text-xs font-semibold text-[#374151] flex items-center gap-1 dark:text-[#D1D5DB]">
@@ -82,9 +78,9 @@ export function AdminSidebar() {
           <ul className="space-y-1.5">
             {pendingUsers.map(user => (
               <li key={user.id}
-                className="flex items-center gap-2 bg-white rounded-lg px-2 py-1.5 border border-[#E5E7EB] dark:bg-[#1F2937] dark:border-[#374151]">
+                className="flex items-center gap-2 bg-white rounded-lg px-2 py-1.5 border border-[#E5E7EB] dark:bg-[#374151] dark:border-[#4B5563]">
                 <UserAvatar name={user.full_name} color={user.color} size={24} />
-                <span className="flex-1 text-xs text-[#111827] truncate dark:text-[#F9FAFB]">{user.full_name}</span>
+                <span className="flex-1 text-xs text-[#111827] truncate dark:text-[#F1F5F9]">{user.full_name}</span>
                 <button
                   onClick={() => handleApprove(user.id)}
                   disabled={approving === user.id}
@@ -98,32 +94,30 @@ export function AdminSidebar() {
         )}
       </div>
 
-      {/* 구분선 */}
-      <div className="border-t border-[#E5E7EB] dark:border-[#374151]" />
+      <div className="border-t border-[#E5E7EB] dark:border-[#4B5563]" />
 
-      {/* 관리 메뉴 링크 */}
       <div>
         <h3 className="text-xs font-semibold text-[#374151] mb-2 dark:text-[#D1D5DB]">빠른 메뉴</h3>
         <nav className="flex flex-col gap-1">
           <Link href="/admin"
-            className="flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-white hover:text-[#2563EB] text-[#374151] transition-colors group border border-transparent hover:border-[#E5E7EB] dark:text-[#D1D5DB] dark:hover:bg-[#1F2937] dark:hover:text-[#60A5FA] dark:hover:border-[#374151]">
-            <Users className="h-4 w-4 text-[#6B7280] group-hover:text-[#2563EB] shrink-0 dark:text-[#9CA3AF] dark:group-hover:text-[#60A5FA]" />
+            className="flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-white hover:text-[#2563EB] text-[#374151] transition-colors group border border-transparent hover:border-[#E5E7EB] dark:text-[#D1D5DB] dark:hover:bg-[#374151] dark:hover:text-[#60A5FA] dark:hover:border-[#4B5563]">
+            <Users className="h-4 w-4 text-[#6B7280] group-hover:text-[#2563EB] shrink-0 dark:text-[#94A3B8] dark:group-hover:text-[#60A5FA]" />
             <div className="flex-1 min-w-0">
               <p className="text-xs font-medium">회원 관리</p>
               <p className="text-[10px] text-[#9CA3AF] dark:text-[#6B7280]">권한·팀 설정</p>
             </div>
           </Link>
           <Link href="/admin"
-            className="flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-white hover:text-[#2563EB] text-[#374151] transition-colors group border border-transparent hover:border-[#E5E7EB] dark:text-[#D1D5DB] dark:hover:bg-[#1F2937] dark:hover:text-[#60A5FA] dark:hover:border-[#374151]">
-            <Building2 className="h-4 w-4 text-[#6B7280] group-hover:text-[#2563EB] shrink-0 dark:text-[#9CA3AF] dark:group-hover:text-[#60A5FA]" />
+            className="flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-white hover:text-[#2563EB] text-[#374151] transition-colors group border border-transparent hover:border-[#E5E7EB] dark:text-[#D1D5DB] dark:hover:bg-[#374151] dark:hover:text-[#60A5FA] dark:hover:border-[#4B5563]">
+            <Building2 className="h-4 w-4 text-[#6B7280] group-hover:text-[#2563EB] shrink-0 dark:text-[#94A3B8] dark:group-hover:text-[#60A5FA]" />
             <div className="flex-1 min-w-0">
               <p className="text-xs font-medium">팀 관리</p>
               <p className="text-[10px] text-[#9CA3AF] dark:text-[#6B7280]">팀 {teamCount}개</p>
             </div>
           </Link>
           <Link href="/admin"
-            className="flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-white hover:text-[#2563EB] text-[#374151] transition-colors group border border-transparent hover:border-[#E5E7EB] dark:text-[#D1D5DB] dark:hover:bg-[#1F2937] dark:hover:text-[#60A5FA] dark:hover:border-[#374151]">
-            <Tag className="h-4 w-4 text-[#6B7280] group-hover:text-[#2563EB] shrink-0 dark:text-[#9CA3AF] dark:group-hover:text-[#60A5FA]" />
+            className="flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-white hover:text-[#2563EB] text-[#374151] transition-colors group border border-transparent hover:border-[#E5E7EB] dark:text-[#D1D5DB] dark:hover:bg-[#374151] dark:hover:text-[#60A5FA] dark:hover:border-[#4B5563]">
+            <Tag className="h-4 w-4 text-[#6B7280] group-hover:text-[#2563EB] shrink-0 dark:text-[#94A3B8] dark:group-hover:text-[#60A5FA]" />
             <div className="flex-1 min-w-0">
               <p className="text-xs font-medium">카테고리</p>
               <p className="text-[10px] text-[#9CA3AF] dark:text-[#6B7280]">카테고리 {categoryCount}개</p>
@@ -132,7 +126,6 @@ export function AdminSidebar() {
         </nav>
       </div>
 
-      {/* 전체 관리자 페이지 */}
       <Link href="/admin"
         className="mt-auto flex items-center justify-center gap-1.5 rounded-lg border border-[#2563EB] text-[#2563EB] text-xs font-medium py-2 px-3 hover:bg-[#EFF6FF] transition-colors dark:border-[#3B82F6] dark:text-[#60A5FA] dark:hover:bg-[#1E3A5F]">
         <Settings className="h-3.5 w-3.5" />

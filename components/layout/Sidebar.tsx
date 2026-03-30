@@ -35,34 +35,26 @@ export function Sidebar() {
   const [team,    setTeam]    = useState<TeamInfo | null>(null)
   const [members, setMembers] = useState<TeamMember[]>([])
 
-  // 전사 일정 포함 체크박스 (기본: 포함)
   const [includeCompany, setIncludeCompany] = useState(true)
-
-  // 사내 메시지 수신자 선택
   const [companyRecipient, setCompanyRecipient] = useState<RecipientOption | null>(null)
-
-  // 메시지 모달
   const [msgModal, setMsgModal] = useState<{
     open: boolean
     recipientId?: string; recipientName?: string
     teamId?: string;      teamName?: string
   }>({ open: false })
 
-  // Live clock
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 1000)
     return () => clearInterval(id)
   }, [])
 
-  // Data fetch
   useEffect(() => {
     const now = new Date()
     const in24h = new Date(now.getTime() + 24 * 60 * 60 * 1000)
     fetch(`/api/events?start=${now.toISOString()}&end=${in24h.toISOString()}`)
       .then(r => r.json())
-      .then((data: EventWithDetails[]) => {
-        setUpcomingEvents(data.slice(0, 5))
-      }).catch(() => {})
+      .then((data: EventWithDetails[]) => setUpcomingEvents(data.slice(0, 5)))
+      .catch(() => {})
 
     fetch('/api/notices')
       .then(r => r.json())
@@ -75,7 +67,6 @@ export function Sidebar() {
       .catch(() => {})
   }, [])
 
-  // 전사 일정 체크박스 변경 → 캘린더 URL 업데이트
   const handleIncludeChange = (checked: boolean) => {
     setIncludeCompany(checked)
     if (typeof window === 'undefined') return
@@ -86,7 +77,6 @@ export function Sidebar() {
     router.push(`/calendar${qs ? '?' + qs : ''}`)
   }
 
-  // 팀/멤버 필터 네비게이션
   const navigateFilter = (extra: string) => {
     const params = new URLSearchParams(extra)
     if (!includeCompany) params.set('includeCompany', 'false')
@@ -95,7 +85,6 @@ export function Sidebar() {
 
   const onCalendar = pathname.startsWith('/calendar')
 
-  // 사내 메시지 보내기
   const sendCompanyMessage = () => {
     if (!companyRecipient) return
     setMsgModal(
@@ -107,10 +96,10 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="hidden md:flex flex-col w-60 shrink-0 bg-white border-r border-[#E5E7EB] p-4 gap-5 overflow-y-auto dark:bg-[#1F2937] dark:border-[#374151]">
+    <aside className="hidden md:flex flex-col w-60 shrink-0 bg-white border-r border-[#E5E7EB] p-4 gap-5 overflow-y-auto dark:bg-[#374151] dark:border-[#4B5563]">
 
       {/* ── 날짜 / 시간 ── */}
-      <div className="rounded-xl bg-[#EFF6FF] border border-[#BFDBFE] px-4 py-3 text-center dark:bg-[#1E3A5F] dark:border-[#1E40AF]">
+      <div className="rounded-xl bg-[#EFF6FF] border border-[#BFDBFE] px-4 py-3 text-center dark:bg-[#1E3A5F] dark:border-[#2563EB]">
         <p className="text-[11px] font-medium text-[#2563EB] tracking-wide dark:text-[#93C5FD]">
           {format(now, 'yyyy년 M월 d일', { locale: ko })}
         </p>
@@ -126,19 +115,19 @@ export function Sidebar() {
       {/* ── 최근 공지 ── */}
       <div>
         <div className="flex items-center justify-between mb-2">
-          <h3 className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider dark:text-[#9CA3AF]">최근 공지</h3>
+          <h3 className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider dark:text-[#94A3B8]">최근 공지</h3>
           <Link href="/notices" className="text-[10px] text-[#2563EB] hover:underline dark:text-[#60A5FA]">더보기</Link>
         </div>
         {recentNotices.length === 0 ? (
-          <p className="text-xs text-[#6B7280] dark:text-[#9CA3AF]">공지사항이 없습니다.</p>
+          <p className="text-xs text-[#6B7280] dark:text-[#94A3B8]">공지사항이 없습니다.</p>
         ) : (
           <ul className="space-y-1.5">
             {recentNotices.map(notice => (
               <li key={notice.id}>
                 <Link href={`/notices/${notice.id}`}
-                  className="flex items-start gap-1.5 hover:bg-[#F9FAFB] rounded-lg p-1.5 -mx-1.5 transition-colors group dark:hover:bg-[#374151]">
+                  className="flex items-start gap-1.5 hover:bg-[#F9FAFB] rounded-lg p-1.5 -mx-1.5 transition-colors group dark:hover:bg-[#4B5563]">
                   {notice.is_pinned && <Pin className="h-3 w-3 text-[#2563EB] mt-0.5 shrink-0 dark:text-[#60A5FA]" />}
-                  <p className="text-xs text-[#111827] truncate group-hover:text-[#2563EB] transition-colors dark:text-[#F9FAFB] dark:group-hover:text-[#60A5FA]">{notice.title}</p>
+                  <p className="text-xs text-[#111827] truncate group-hover:text-[#2563EB] transition-colors dark:text-[#F1F5F9] dark:group-hover:text-[#60A5FA]">{notice.title}</p>
                 </Link>
               </li>
             ))}
@@ -148,20 +137,20 @@ export function Sidebar() {
 
       {/* ── 다가오는 일정 ── */}
       <div>
-        <h3 className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider mb-2 dark:text-[#9CA3AF]">24시간 이내 일정</h3>
+        <h3 className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider mb-2 dark:text-[#94A3B8]">24시간 이내 일정</h3>
         {upcomingEvents.length === 0 ? (
-          <p className="text-xs text-[#6B7280] dark:text-[#9CA3AF]">예정된 일정이 없습니다.</p>
+          <p className="text-xs text-[#6B7280] dark:text-[#94A3B8]">예정된 일정이 없습니다.</p>
         ) : (
           <ul className="space-y-2">
             {upcomingEvents.map(event => (
               <li key={event.id}>
                 <Link href={`/calendar/${event.id}`}
-                  className="flex items-start gap-2 hover:bg-[#F9FAFB] rounded-lg p-1.5 -mx-1.5 transition-colors dark:hover:bg-[#374151]">
+                  className="flex items-start gap-2 hover:bg-[#F9FAFB] rounded-lg p-1.5 -mx-1.5 transition-colors dark:hover:bg-[#4B5563]">
                   <div className="w-2 h-2 rounded-full mt-1.5 shrink-0"
                     style={{ backgroundColor: resolveEventColor({ color: event.color, category: event.category as any, author: event.author as any }) }} />
                   <div className="min-w-0">
-                    <p className="text-xs font-medium text-[#111827] truncate dark:text-[#F9FAFB]">{event.title}</p>
-                    <p className="text-[10px] text-[#6B7280] dark:text-[#9CA3AF]">{formatDateRange(event.start_at, event.end_at, event.is_all_day)}</p>
+                    <p className="text-xs font-medium text-[#111827] truncate dark:text-[#F1F5F9]">{event.title}</p>
+                    <p className="text-[10px] text-[#6B7280] dark:text-[#94A3B8]">{formatDateRange(event.start_at, event.end_at, event.is_all_day)}</p>
                   </div>
                 </Link>
               </li>
@@ -173,12 +162,10 @@ export function Sidebar() {
       {/* ── 우리 팀 + 사내 메시지 (하단 고정) ── */}
       <div className="mt-auto flex flex-col gap-0">
 
-      {/* 우리 팀 */}
       {team && (
-        <div className="border-t border-[#E5E7EB] pt-4 dark:border-[#374151]">
-          {/* 헤더: 우리 팀 + 전사 일정 체크박스 */}
+        <div className="border-t border-[#E5E7EB] pt-4 dark:border-[#4B5563]">
           <div className="flex items-center justify-between mb-2">
-            <h3 className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider flex items-center gap-1 dark:text-[#9CA3AF]">
+            <h3 className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider flex items-center gap-1 dark:text-[#94A3B8]">
               <Users className="h-3 w-3" />
               우리 팀
             </h3>
@@ -189,33 +176,31 @@ export function Sidebar() {
                 onChange={e => handleIncludeChange(e.target.checked)}
                 className="w-3 h-3 rounded accent-[#2563EB] cursor-pointer"
               />
-              <span className="text-[10px] text-[#6B7280] dark:text-[#9CA3AF]">전사 일정</span>
+              <span className="text-[10px] text-[#6B7280] dark:text-[#94A3B8]">전사 일정</span>
             </label>
           </div>
 
-          {/* 팀 행 */}
-          <div className="flex items-center gap-1 mb-2 -mx-1 px-1 rounded-lg hover:bg-[#F9FAFB] py-1 transition-colors dark:hover:bg-[#374151]">
-            <span className="flex-1 text-xs font-semibold text-[#111827] truncate dark:text-[#F9FAFB]">{team.name}</span>
+          <div className="flex items-center gap-1 mb-2 -mx-1 px-1 rounded-lg hover:bg-[#F9FAFB] py-1 transition-colors dark:hover:bg-[#4B5563]">
+            <span className="flex-1 text-xs font-semibold text-[#111827] truncate dark:text-[#F1F5F9]">{team.name}</span>
             <button title="팀 일정 보기"
               onClick={() => navigateFilter('filter=team')}
-              className={`p-1 rounded hover:bg-[#DBEAFE] transition-colors dark:hover:bg-[#1E3A5F] ${onCalendar ? 'text-[#2563EB] dark:text-[#60A5FA]' : 'text-[#6B7280] hover:text-[#2563EB] dark:text-[#9CA3AF] dark:hover:text-[#60A5FA]'}`}>
+              className={`p-1 rounded hover:bg-[#DBEAFE] transition-colors dark:hover:bg-[#1E3A5F] ${onCalendar ? 'text-[#2563EB] dark:text-[#60A5FA]' : 'text-[#6B7280] hover:text-[#2563EB] dark:text-[#94A3B8] dark:hover:text-[#60A5FA]'}`}>
               <Calendar className="h-3.5 w-3.5" />
             </button>
             <button title="팀 전체에게 메시지"
               onClick={() => setMsgModal({ open: true, teamId: team.id, teamName: team.name })}
-              className="p-1 rounded text-[#6B7280] hover:text-[#2563EB] hover:bg-[#DBEAFE] transition-colors dark:text-[#9CA3AF] dark:hover:text-[#60A5FA] dark:hover:bg-[#1E3A5F]">
+              className="p-1 rounded text-[#6B7280] hover:text-[#2563EB] hover:bg-[#DBEAFE] transition-colors dark:text-[#94A3B8] dark:hover:text-[#60A5FA] dark:hover:bg-[#1E3A5F]">
               <Send className="h-3.5 w-3.5" />
             </button>
           </div>
 
-          {/* 팀원 목록 */}
           {members.length === 0 ? (
             <p className="text-[10px] text-[#9CA3AF] pl-1 dark:text-[#6B7280]">팀원이 없습니다.</p>
           ) : (
             <ul className="space-y-0.5">
               {members.map(member => (
                 <li key={member.id}
-                  className="flex items-center gap-1.5 -mx-1 px-1 rounded-lg hover:bg-[#F9FAFB] py-1 transition-colors dark:hover:bg-[#374151]">
+                  className="flex items-center gap-1.5 -mx-1 px-1 rounded-lg hover:bg-[#F9FAFB] py-1 transition-colors dark:hover:bg-[#4B5563]">
                   <InitialAvatar name={member.full_name} color={member.color} />
                   <span className="flex-1 text-xs text-[#374151] truncate dark:text-[#D1D5DB]">{member.full_name}</span>
                   <button title={`${member.full_name} 일정 보기`}
@@ -235,9 +220,8 @@ export function Sidebar() {
         </div>
       )}
 
-      {/* 사내 메시지 */}
-      <div className="border-t border-[#E5E7EB] pt-4 dark:border-[#374151]">
-        <h3 className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider mb-2 flex items-center gap-1 dark:text-[#9CA3AF]">
+      <div className="border-t border-[#E5E7EB] pt-4 dark:border-[#4B5563]">
+        <h3 className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider mb-2 flex items-center gap-1 dark:text-[#94A3B8]">
           <MessageSquare className="h-3 w-3" />
           사내 메시지
         </h3>
@@ -258,9 +242,8 @@ export function Sidebar() {
         </button>
       </div>
 
-      </div>{/* end 하단 고정 wrapper */}
+      </div>
 
-      {/* 메시지 모달 */}
       <MessageModal
         isOpen={msgModal.open}
         onClose={() => setMsgModal({ open: false })}
