@@ -4,6 +4,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { Calendar, FileText, CheckSquare, LogOut, Settings } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { UserAvatar } from '@/components/ui/avatar'
+import { ThemeToggle } from '@/components/ui/theme-toggle'
 import { NotificationPanel } from '@/components/messages/NotificationPanel'
 import { createClient } from '@/lib/supabase/client'
 import type { ProfileWithTeam } from '@/types/app'
@@ -27,9 +28,9 @@ export function AppHeader({ profile }: AppHeaderProps) {
   }
 
   return (
-    <header className="sticky top-0 z-40 bg-white border-b border-[#E5E7EB] px-4 h-14 flex items-center justify-between">
+    <header className="sticky top-0 z-40 bg-white border-b border-[#E5E7EB] px-4 h-14 flex items-center justify-between dark:bg-[#1F2937] dark:border-[#374151]">
       <div className="flex items-center gap-6">
-        <Link href="/calendar" className="font-bold text-[#2563EB] text-base">
+        <Link href="/calendar" className="font-bold text-[#2563EB] text-base dark:text-[#60A5FA]">
           그룹웨어
         </Link>
         <nav className="hidden md:flex items-center gap-1">
@@ -39,8 +40,8 @@ export function AppHeader({ profile }: AppHeaderProps) {
               href={href}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                 pathname.startsWith(href)
-                  ? 'bg-[#EFF6FF] text-[#2563EB]'
-                  : 'text-[#6B7280] hover:text-[#111827] hover:bg-[#F9FAFB]'
+                  ? 'bg-[#EFF6FF] text-[#2563EB] dark:bg-[#1E3A5F] dark:text-[#60A5FA]'
+                  : 'text-[#6B7280] hover:text-[#111827] hover:bg-[#F9FAFB] dark:text-[#9CA3AF] dark:hover:text-[#F9FAFB] dark:hover:bg-[#374151]'
               }`}
             >
               <Icon className="h-4 w-4" />
@@ -51,7 +52,9 @@ export function AppHeader({ profile }: AppHeaderProps) {
             <Link
               href="/admin"
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                pathname.startsWith('/admin') ? 'bg-[#EFF6FF] text-[#2563EB]' : 'text-[#6B7280] hover:text-[#111827] hover:bg-[#F9FAFB]'
+                pathname.startsWith('/admin')
+                  ? 'bg-[#EFF6FF] text-[#2563EB] dark:bg-[#1E3A5F] dark:text-[#60A5FA]'
+                  : 'text-[#6B7280] hover:text-[#111827] hover:bg-[#F9FAFB] dark:text-[#9CA3AF] dark:hover:text-[#F9FAFB] dark:hover:bg-[#374151]'
               }`}
             >
               <Settings className="h-4 w-4" />
@@ -62,6 +65,9 @@ export function AppHeader({ profile }: AppHeaderProps) {
       </div>
 
       <div className="flex items-center gap-1">
+        {/* 테마 토글 */}
+        <ThemeToggle />
+
         {/* 알림 벨 */}
         <NotificationPanel
           userId={profile.id}
@@ -69,14 +75,14 @@ export function AppHeader({ profile }: AppHeaderProps) {
         />
 
         {/* 프로필 — 모바일에서는 하단탭에 프로필이 있으므로 숨김 */}
-        <Link href="/profile" className="hidden md:flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-[#F9FAFB] transition-colors">
+        <Link href="/profile" className="hidden md:flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-[#F9FAFB] transition-colors dark:hover:bg-[#374151]">
           <UserAvatar name={profile.full_name} color={profile.color} size={28} />
-          <span className="hidden md:block text-sm text-[#111827]">{profile.full_name}</span>
+          <span className="hidden md:block text-sm text-[#111827] dark:text-[#F9FAFB]">{profile.full_name}</span>
         </Link>
 
         {/* 로그아웃 */}
         <Button variant="ghost" size="icon" onClick={handleSignOut} title="로그아웃">
-          <LogOut className="h-4 w-4 text-[#6B7280]" />
+          <LogOut className="h-4 w-4 text-[#6B7280] dark:text-[#9CA3AF]" />
         </Button>
       </div>
     </header>

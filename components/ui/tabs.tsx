@@ -11,7 +11,7 @@ export const TabsList = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <TabsPrimitive.List
     ref={ref}
-    className={cn('inline-flex items-center rounded-lg bg-[#F9FAFB] p-1 gap-1', className)}
+    className={cn('inline-flex items-center rounded-lg bg-[#F9FAFB] p-1 gap-1 dark:bg-[#374151]', className)}
     {...props}
   />
 ))
@@ -25,6 +25,7 @@ export const TabsTrigger = React.forwardRef<
     ref={ref}
     className={cn(
       'inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium text-[#6B7280] transition-all focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-white data-[state=active]:text-[#2563EB] data-[state=active]:shadow-sm',
+      'dark:text-[#9CA3AF] dark:data-[state=active]:bg-[#1F2937] dark:data-[state=active]:text-[#60A5FA]',
       className
     )}
     {...props}

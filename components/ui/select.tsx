@@ -13,7 +13,11 @@ export const SelectTrigger = React.forwardRef<
 >(({ className, children, ...props }, ref) => (
   <SelectPrimitive.Trigger
     ref={ref}
-    className={cn('flex h-10 w-full items-center justify-between rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm text-[#111827] placeholder:text-[#6B7280] focus:outline-none focus:ring-2 focus:ring-[#2563EB] disabled:cursor-not-allowed disabled:opacity-50', className)}
+    className={cn(
+      'flex h-10 w-full items-center justify-between rounded-lg border border-[#E5E7EB] bg-white px-3 py-2 text-sm text-[#111827] placeholder:text-[#6B7280] focus:outline-none focus:ring-2 focus:ring-[#2563EB] disabled:cursor-not-allowed disabled:opacity-50',
+      'dark:border-[#374151] dark:bg-[#1F2937] dark:text-[#F9FAFB] dark:placeholder:text-[#6B7280] dark:focus:ring-[#3B82F6]',
+      className
+    )}
     {...props}
   >
     {children}
@@ -29,7 +33,11 @@ export const SelectContent = React.forwardRef<
   <SelectPrimitive.Portal>
     <SelectPrimitive.Content
       ref={ref}
-      className={cn('relative z-50 min-w-[8rem] overflow-hidden rounded-lg border border-[#E5E7EB] bg-white text-[#111827] shadow-lg', className)}
+      className={cn(
+        'relative z-50 min-w-[8rem] overflow-hidden rounded-lg border border-[#E5E7EB] bg-white text-[#111827] shadow-lg',
+        'dark:border-[#374151] dark:bg-[#1F2937] dark:text-[#F9FAFB]',
+        className
+      )}
       {...props}
     >
       <SelectPrimitive.Viewport className="p-1">{children}</SelectPrimitive.Viewport>
@@ -44,7 +52,11 @@ export const SelectItem = React.forwardRef<
 >(({ className, children, ...props }, ref) => (
   <SelectPrimitive.Item
     ref={ref}
-    className={cn('relative flex w-full cursor-pointer select-none items-center rounded-md py-1.5 pl-8 pr-2 text-sm outline-none focus:bg-[#EFF6FF] data-[disabled]:pointer-events-none data-[disabled]:opacity-50', className)}
+    className={cn(
+      'relative flex w-full cursor-pointer select-none items-center rounded-md py-1.5 pl-8 pr-2 text-sm outline-none focus:bg-[#EFF6FF] data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
+      'dark:focus:bg-[#1E3A5F]',
+      className
+    )}
     {...props}
   >
     <span className="absolute left-2 flex h-3.5 w-3.5 items-center justify-center">

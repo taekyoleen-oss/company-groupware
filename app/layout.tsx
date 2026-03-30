@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import './globals.css'
+import { ThemeProvider } from '@/components/providers/ThemeProvider'
 
 export const metadata: Metadata = {
   title: '사내 그룹웨어',
@@ -8,8 +9,12 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="ko">
-      <body>{children}</body>
+    <html lang="ko" suppressHydrationWarning>
+      <body>
+        <ThemeProvider>
+          {children}
+        </ThemeProvider>
+      </body>
     </html>
   )
 }

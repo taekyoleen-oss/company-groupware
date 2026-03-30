@@ -29,7 +29,7 @@ export const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        'fixed z-50 bg-white shadow-xl transition-all',
+        'fixed z-50 bg-white shadow-xl transition-all dark:bg-[#1F2937]',
         'left-[50%] top-[50%] translate-x-[-50%] translate-y-[-50%] w-full max-w-lg rounded-xl p-6',
         'max-sm:top-auto max-sm:bottom-0 max-sm:left-0 max-sm:translate-x-0 max-sm:translate-y-0 max-sm:rounded-b-none max-sm:rounded-t-xl max-sm:max-w-full',
         'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
@@ -38,7 +38,7 @@ export const DialogContent = React.forwardRef<
       {...props}
     >
       {children}
-      <DialogPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 hover:opacity-100 focus:outline-none">
+      <DialogPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 hover:opacity-100 focus:outline-none dark:text-[#9CA3AF]">
         <X className="h-4 w-4" />
       </DialogPrimitive.Close>
     </DialogPrimitive.Content>
@@ -54,7 +54,7 @@ export const DialogTitle = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Title>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Title>
 >(({ className, ...props }, ref) => (
-  <DialogPrimitive.Title ref={ref} className={cn('text-lg font-semibold text-[#111827]', className)} {...props} />
+  <DialogPrimitive.Title ref={ref} className={cn('text-lg font-semibold text-[#111827] dark:text-[#F9FAFB]', className)} {...props} />
 ))
 DialogTitle.displayName = DialogPrimitive.Title.displayName
 

@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   --primary: #2563EB;
   --primary-soft: #EFF6FF;
@@ -13,6 +15,20 @@
   --surface: #FFFFFF;
   --radius: 0.5rem;
   --font-sans: "Pretendard", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.dark {
+  --primary: #3B82F6;
+  --primary-soft: #1E3A5F;
+  --accent: #34D399;
+  --warning: #FCD34D;
+  --danger: #F87171;
+  --text-primary: #F9FAFB;
+  --text-muted: #9CA3AF;
+  --border: #374151;
+  --background: #111827;
+  --surface: #1F2937;
+  --radius: 0.5rem;
 }
 
 * {
@@ -41,6 +57,7 @@ body {
 .fc .fc-toolbar-title {
   font-size: 1.125rem !important;
   font-weight: 600 !important;
+  color: var(--text-primary) !important;
 }
 .fc-event {
   border-radius: 4px !important;
@@ -50,6 +67,20 @@ body {
 }
 .fc .fc-daygrid-day.fc-day-today {
   background-color: var(--primary-soft) !important;
+}
+.fc .fc-col-header-cell-cushion,
+.fc .fc-daygrid-day-number {
+  color: var(--text-primary) !important;
+}
+.fc .fc-daygrid-day-frame,
+.fc .fc-daygrid-day {
+  background-color: var(--surface) !important;
+}
+.fc .fc-scrollgrid {
+  border-color: var(--border) !important;
+}
+.fc td, .fc th {
+  border-color: var(--border) !important;
 }
 
 /* 토요일 파란색 */

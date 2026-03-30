@@ -37,7 +37,7 @@ export function BottomTabBar({ role }: BottomTabBarProps) {
     : BASE_TABS
 
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-[#E5E7EB] flex">
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-[#E5E7EB] flex dark:bg-[#1F2937] dark:border-[#374151]">
       {tabs.map(({ href, label, icon: Icon }) => {
         const active = pathname.startsWith(href)
         const isAdmin = href === '/admin'
@@ -47,11 +47,13 @@ export function BottomTabBar({ role }: BottomTabBarProps) {
             href={href}
             className={cn(
               'flex-1 flex flex-col items-center justify-center py-2 gap-0.5 text-xs transition-colors',
-              active ? 'text-[#2563EB]' : 'text-[#6B7280]'
+              active
+                ? 'text-[#2563EB] dark:text-[#60A5FA]'
+                : 'text-[#6B7280] dark:text-[#9CA3AF]'
             )}
           >
             <span className="relative">
-              <Icon className={cn('h-5 w-5', active && 'text-[#2563EB]')} />
+              <Icon className={cn('h-5 w-5', active && 'text-[#2563EB] dark:text-[#60A5FA]')} />
               {isAdmin && pendingCount > 0 && (
                 <span className="absolute -top-1 -right-1.5 flex items-center justify-center w-4 h-4 rounded-full bg-[#EF4444] text-white text-[9px] font-bold leading-none">
                   {pendingCount > 9 ? '9+' : pendingCount}
