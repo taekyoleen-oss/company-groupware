@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { X } from 'lucide-react'
+import { X, Eye, EyeOff, KeyRound } from 'lucide-react'
 import { UserAvatar } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -20,6 +20,9 @@ export default function ProfilePage() {
   const [teams, setTeams] = useState<Team[]>([])
   const [form, setForm] = useState({ full_name: '', color: '', team_id: 'none' })
   const [loading, setLoading] = useState(false)
+  const [pwForm, setPwForm] = useState({ current: '', next: '', confirm: '' })
+  const [pwLoading, setPwLoading] = useState(false)
+  const [showPw, setShowPw] = useState({ current: false, next: false, confirm: false })
   const { showToast, ToastComponent } = useToast()
 
   useEffect(() => {
@@ -59,6 +62,30 @@ export default function ProfilePage() {
       showToast('저장에 실패했습니다.', 'error')
     }
     setLoading(false)
+  }
+
+  const handlePasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (pwForm.next !== pwForm.confirm) {
+      showToast('새 비밀번호가 일치하지 않습니다.', 'error'); return
+    }
+    if (pwForm.next.length < 6) {
+      showToast('새 비밀번호는 6자 이상이어야 합니다.', 'error'); return
+    }
+    setPwLoading(true)
+    const res = await fetch('/api/auth/change-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currentPassword: pwForm.current, newPassword: pwForm.next }),
+    })
+    const data = await res.json()
+    if (res.ok) {
+      showToast('비밀번호가 변경되었습니다.', 'success')
+      setPwForm({ current: '', next: '', confirm: '' })
+    } else {
+      showToast(data.error ?? '변경에 실패했습니다.', 'error')
+    }
+    setPwLoading(false)
   }
 
   const handleCancel = () => {
@@ -127,13 +154,51 @@ export default function ProfilePage() {
             <label className="block text-sm font-medium mb-1 text-[#6B7280]">이메일</label>
             <p className="text-sm text-[#111827]">{email || '불러오는 중...'}</p>
           </div>
-          <p className="text-xs text-[#6B7280]">비밀번호 변경이 필요하면 관리자에게 문의하세요.</p>
           <div className="flex gap-2 pt-2">
             <Button type="button" variant="outline" className="flex-1" onClick={handleCancel}>취소</Button>
             <Button type="submit" className="flex-1" disabled={loading}>{loading ? '저장 중...' : '저장'}</Button>
           </div>
         </form>
       </div>
+      {/* 비밀번호 변경 */}
+      <div className="bg-white rounded-xl border border-[#E5E7EB] p-6 mt-4">
+        <div className="flex items-center gap-2 mb-4">
+          <KeyRound className="h-4 w-4 text-[#6B7280]" />
+          <h2 className="text-sm font-semibold text-[#111827]">비밀번호 변경</h2>
+        </div>
+        <form onSubmit={handlePasswordChange} className="space-y-3">
+          {([
+            { key: 'current', label: '현재 비밀번호' },
+            { key: 'next',    label: '새 비밀번호' },
+            { key: 'confirm', label: '새 비밀번호 확인' },
+          ] as const).map(({ key, label }) => (
+            <div key={key}>
+              <label className="block text-sm font-medium mb-1">{label}</label>
+              <div className="relative">
+                <Input
+                  type={showPw[key] ? 'text' : 'password'}
+                  value={pwForm[key]}
+                  onChange={e => setPwForm(f => ({ ...f, [key]: e.target.value }))}
+                  placeholder={label}
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPw(s => ({ ...s, [key]: !s[key] }))}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#9CA3AF] hover:text-[#6B7280]"
+                  tabIndex={-1}
+                >
+                  {showPw[key] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+          ))}
+          <Button type="submit" className="w-full" disabled={pwLoading}>
+            {pwLoading ? '변경 중...' : '비밀번호 변경'}
+          </Button>
+        </form>
+      </div>
+
       {ToastComponent}
     </div>
   )
