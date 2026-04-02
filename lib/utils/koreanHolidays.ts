@@ -3,6 +3,8 @@ import type { EventInput } from '@fullcalendar/core'
 export const HOLIDAY_DATE_SET = new Set<string>()
 
 let _seq = 0
+
+// 공휴일 (빨간색, HOLIDAY_DATE_SET에 추가 → 날짜 숫자도 빨간색)
 const h = (title: string, date: string): EventInput => {
   HOLIDAY_DATE_SET.add(date)
   return {
@@ -19,6 +21,18 @@ const h = (title: string, date: string): EventInput => {
 
 // 대체공휴일은 제목 없이 "대체공휴일"로만 표시
 const d = (date: string): EventInput => h('대체공휴일', date)
+
+// 기념일 (회색, 공휴일 아님 → 날짜 숫자 색상 변경 없음)
+const m = (title: string, date: string): EventInput => ({
+  id: `anniversary-${date}-${_seq++}`,
+  title,
+  start: date,
+  allDay: true,
+  editable: false,
+  backgroundColor: '#F3F4F6',
+  borderColor: '#D1D5DB',
+  textColor: '#6B7280',
+})
 
 export const KOREAN_HOLIDAYS: EventInput[] = [
   // ── 고정 공휴일 (2024-2027) ──────────────────────────────
@@ -85,4 +99,50 @@ export const KOREAN_HOLIDAYS: EventInput[] = [
   h('추석 다음날', '2027-10-16'), // 토요일
   d(              '2027-10-18'), // 추석 대체
   d(              '2027-12-27'), // 성탄절 대체 (12/25 토요일)
+]
+
+// 성년의 날: 매년 5월 셋째 월요일
+const COMING_OF_AGE: Record<string, string> = {
+  '2024': '2024-05-20',
+  '2025': '2025-05-19',
+  '2026': '2026-05-18',
+  '2027': '2027-05-17',
+}
+
+export const KOREAN_ANNIVERSARIES: EventInput[] = [
+  ...(['2024', '2025', '2026', '2027'] as const).flatMap(y => [
+    // ── 1월 ──
+    m('소방의 날',    `${y}-01-19`),
+    // ── 2월 ──
+    m('납세자의 날',  `${y}-03-03`),
+    // ── 3월 ──
+    m('세계 물의 날', `${y}-03-22`),
+    // ── 4월 ──
+    m('식목일 🌱',    `${y}-04-05`),
+    m('장애인의 날 ♿', `${y}-04-20`),
+    m('과학의 날 🔬', `${y}-04-21`),
+    m('지구의 날 🌍', `${y}-04-22`),
+    // ── 5월 ──
+    m('근로자의 날 🏭', `${y}-05-01`),
+    m('어버이날 💝',  `${y}-05-08`),
+    m('입양의 날 👨‍👩‍👧', `${y}-05-11`),
+    m('스승의 날 🎓', `${y}-05-15`),
+    m('성년의 날 🎊', COMING_OF_AGE[y]),
+    m('발명의 날 💡', `${y}-05-19`),
+    m('부부의 날 💑', `${y}-05-21`),
+    // ── 6월 ──
+    m('의병의 날',    `${y}-06-01`),
+    m('바다의 날 ⚓', `${y}-05-31`),
+    // ── 7월 ──
+    m('제헌절 📜',    `${y}-07-17`),
+    // ── 8월 ──
+    m('국가보훈의 날', `${y}-06-25`),
+    // ── 10월 ──
+    m('독도의 날 🏝️', `${y}-10-25`),
+    // ── 11월 ──
+    m('학생독립운동기념일', `${y}-11-03`),
+    m('순국선열의 날', `${y}-11-17`),
+    // ── 12월 ──
+    m('소비자의 날',  `${y}-12-03`),
+  ]),
 ]

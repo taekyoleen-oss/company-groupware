@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button'
 import { EventModal } from '@/components/calendar/EventModal'
 import { DayEventsPopup } from '@/components/calendar/DayEventsPopup'
 import { resolveEventColor } from '@/lib/utils/eventColor'
-import { KOREAN_HOLIDAYS, HOLIDAY_DATE_SET } from '@/lib/utils/koreanHolidays'
+import { KOREAN_HOLIDAYS, KOREAN_ANNIVERSARIES, HOLIDAY_DATE_SET } from '@/lib/utils/koreanHolidays'
 import type { EventWithDetails } from '@/types/app'
 
 function CalendarContent() {
@@ -38,6 +38,7 @@ function CalendarContent() {
   const [isAdminUser,   setIsAdminUser]   = useState(false)
 
   const [currentView, setCurrentView] = useState('dayGridMonth')
+  const [showAnniversaries, setShowAnniversaries] = useState(true)
 
   const clickTimerRef    = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastClickDateRef = useRef<string | null>(null)
@@ -75,6 +76,7 @@ function CalendarContent() {
 
   const fcEvents: EventInput[] = [
     ...KOREAN_HOLIDAYS,
+    ...(showAnniversaries ? KOREAN_ANNIVERSARIES : []),
     ...events.map(e => {
       const prefix = e.visibility === 'company' ? '[전사] ' : e.visibility === 'team' ? '[팀] ' : ''
       return {
@@ -129,8 +131,8 @@ function CalendarContent() {
   }
 
   const handleEventClick = (info: EventClickArg) => {
-    // 공휴일은 클릭 무시
-    if (info.event.id.startsWith('holiday-')) return
+    // 공휴일·기념일은 클릭 무시
+    if (info.event.id.startsWith('holiday-') || info.event.id.startsWith('anniversary-')) return
     setEditEventId(info.event.id)
     setModalDate(null)
     setIsModalOpen(true)
@@ -153,7 +155,7 @@ function CalendarContent() {
   const handleEventDrop = async (info: EventDropArg) => {
     const { event, revert } = info
     // 드래그는 editable:false 이벤트에서 이미 막히지만, 안전망으로도 검사
-    if (event.id.startsWith('holiday-')) { revert(); return }
+    if (event.id.startsWith('holiday-') || event.id.startsWith('anniversary-')) { revert(); return }
     const start = event.start
     const end   = event.end ?? (start ? new Date(start.getTime() + 3600000) : null)
     if (!start) { revert(); return }
@@ -178,10 +180,25 @@ function CalendarContent() {
     <div className="p-4">
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-xl font-bold text-[#111827] dark:text-[#F1F5F9]">캘린더</h1>
-        <Button size="sm" onClick={() => { setModalDate(new Date()); setEditEventId(null); setIsModalOpen(true) }}>
-          <Plus className="h-4 w-4 mr-1" />
-          새 일정
-        </Button>
+        <div className="flex items-center gap-2 sm:gap-3">
+          {/* 기념일 표시 토글 */}
+          <button
+            type="button"
+            onClick={() => setShowAnniversaries(v => !v)}
+            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors select-none ${
+              showAnniversaries
+                ? 'border-[#D1D5DB] bg-[#F3F4F6] text-[#6B7280] dark:border-[#4B5563] dark:bg-[#374151] dark:text-[#9CA3AF]'
+                : 'border-[#E5E7EB] bg-white text-[#9CA3AF] dark:border-[#374151] dark:bg-[#1F2937] dark:text-[#6B7280]'
+            }`}
+          >
+            <span className={`inline-block h-2 w-2 rounded-full ${showAnniversaries ? 'bg-[#9CA3AF]' : 'bg-[#D1D5DB]'}`} />
+            기념일
+          </button>
+          <Button size="sm" onClick={() => { setModalDate(new Date()); setEditEventId(null); setIsModalOpen(true) }}>
+            <Plus className="h-4 w-4 mr-1" />
+            새 일정
+          </Button>
+        </div>
       </div>
 
       {filterType && (
