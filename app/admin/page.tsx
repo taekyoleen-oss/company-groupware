@@ -28,6 +28,7 @@ export default function AdminPage() {
   const [teams, setTeams] = useState<Team[]>([])
   const [categories, setCategories] = useState<EventCategory[]>([])
   const [newTeamName, setNewTeamName] = useState('')
+  const [teamAbbrEdits, setTeamAbbrEdits] = useState<Record<string, string>>({})
   const [newCat, setNewCat] = useState({ name: '', color: '#3B82F6' })
   const [saving, setSaving] = useState<string | null>(null)
 
@@ -44,7 +45,13 @@ export default function AdminPage() {
       })
       setEdits(initial)
     }
-    if (teamsRes.ok) setTeams(await teamsRes.json())
+    if (teamsRes.ok) {
+      const teamsData: Team[] = await teamsRes.json()
+      setTeams(teamsData)
+      const initAbbrs: Record<string, string> = {}
+      teamsData.forEach(t => { initAbbrs[t.id] = t.abbreviation ?? t.name.slice(0, 2) })
+      setTeamAbbrEdits(initAbbrs)
+    }
     if (catsRes.ok) setCategories(await catsRes.json())
   }, [])
 
@@ -90,6 +97,17 @@ export default function AdminPage() {
     if (!newTeamName) return
     const res = await fetch('/api/admin/teams', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newTeamName }) })
     if (res.ok) { setNewTeamName(''); showToast('팀이 생성되었습니다.', 'success'); fetchAll() }
+  }
+
+  const saveTeamAbbr = async (teamId: string) => {
+    const abbr = teamAbbrEdits[teamId]?.trim()
+    const res = await fetch(`/api/admin/teams/${teamId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ abbreviation: abbr || null }),
+    })
+    if (res.ok) { showToast('약어가 저장되었습니다.', 'success'); fetchAll() }
+    else showToast('저장에 실패했습니다.', 'error')
   }
 
   const deleteTeam = async (id: string) => {
@@ -212,9 +230,27 @@ export default function AdminPage() {
           </form>
           <div className="space-y-2">
             {teams.map(team => (
-              <div key={team.id} className="bg-white border border-[#E5E7EB] rounded-lg p-3 flex items-center gap-3">
-                <span className="flex-1 font-medium text-sm">{team.name}</span>
+              <div key={team.id} className="bg-white border border-[#E5E7EB] rounded-lg p-3 flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <span className="font-medium text-sm">{team.name}</span>
+                  <span className="text-xs text-[#374151] bg-[#F3F4F6] border border-[#E5E7EB] rounded px-1.5 py-0.5">
+                    [{team.abbreviation ?? team.name.slice(0, 2)}]
+                  </span>
+                </div>
                 <span className="text-xs text-[#6B7280]">{users.filter(u => u.team_id === team.id).length}명</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs text-[#6B7280]">약어</span>
+                  <Input
+                    value={teamAbbrEdits[team.id] ?? ''}
+                    onChange={e => setTeamAbbrEdits(prev => ({ ...prev, [team.id]: e.target.value }))}
+                    className="w-16 h-7 text-xs text-center"
+                    maxLength={4}
+                    placeholder={team.name.slice(0, 2)}
+                  />
+                  <Button size="sm" className="h-7 px-2" onClick={() => saveTeamAbbr(team.id)}>
+                    <Save className="h-3 w-3" />
+                  </Button>
+                </div>
                 <Button size="sm" variant="danger" onClick={() => deleteTeam(team.id)}>
                   <Trash2 className="h-4 w-4" />
                 </Button>

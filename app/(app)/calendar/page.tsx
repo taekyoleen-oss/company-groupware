@@ -39,9 +39,12 @@ function CalendarContent() {
 
   const [currentView, setCurrentView] = useState('dayGridMonth')
   const [showAnniversaries, setShowAnniversaries] = useState(true)
+  const [teamsMap, setTeamsMap] = useState<Record<string, { name: string; abbreviation: string | null }>>({})
 
   const clickTimerRef    = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastClickDateRef = useRef<string | null>(null)
+  const touchStartX      = useRef<number>(0)
+  const touchStartY      = useRef<number>(0)
 
   useEffect(() => {
     fetch('/api/profiles')
@@ -49,6 +52,18 @@ function CalendarContent() {
       .then((p: any) => {
         setCurrentUserId(p?.id ?? null)
         setIsAdminUser(p?.role === 'admin')
+      })
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    fetch('/api/admin/teams')
+      .then(r => r.json())
+      .then((ts: Array<{ id: string; name: string; abbreviation: string | null }>) => {
+        if (!Array.isArray(ts)) return
+        const map: Record<string, { name: string; abbreviation: string | null }> = {}
+        ts.forEach(t => { map[t.id] = { name: t.name, abbreviation: t.abbreviation } })
+        setTeamsMap(map)
       })
       .catch(() => {})
   }, [])
@@ -74,11 +89,33 @@ function CalendarContent() {
   const canEditEvent = (e: EventWithDetails) =>
     isAdminUser || e.created_by === currentUserId
 
+  const getTeamAbbr = (teamId: string | null): string => {
+    if (!teamId) return '팀'
+    const t = teamsMap[teamId]
+    if (!t) return '팀'
+    return t.abbreviation?.trim() || t.name.slice(0, 2)
+  }
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX
+    touchStartY.current = e.touches[0].clientY
+  }
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    const dx = e.changedTouches[0].clientX - touchStartX.current
+    const dy = e.changedTouches[0].clientY - touchStartY.current
+    if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy)) return
+    const api = calendarRef.current?.getApi()
+    if (!api) return
+    if (dx < 0) api.next()
+    else api.prev()
+  }
+
   const fcEvents: EventInput[] = [
     ...KOREAN_HOLIDAYS,
     ...(showAnniversaries ? KOREAN_ANNIVERSARIES : []),
     ...events.map(e => {
-      const prefix = e.visibility === 'company' ? '[전사] ' : e.visibility === 'team' ? '[팀] ' : ''
+      const prefix = e.visibility === 'company' ? '[전사] ' : e.visibility === 'team' ? `[${getTeamAbbr(e.team_id)}] ` : ''
       return {
         id:              e.id,
         title:           prefix + e.title,
@@ -219,7 +256,11 @@ function CalendarContent() {
         </div>
       )}
 
-      <div className="bg-white rounded-xl border border-[#E5E7EB] p-3 dark:bg-[#374151] dark:border-[#4B5563]">
+      <div
+        className="bg-white rounded-xl border border-[#E5E7EB] p-3 dark:bg-[#374151] dark:border-[#4B5563]"
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+      >
         <FullCalendar
           ref={calendarRef}
           plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
