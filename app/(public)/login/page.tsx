@@ -53,7 +53,7 @@ export default function LoginPage() {
           </form>
           <p className="text-sm text-center mt-4 text-[#6B7280]">
             계정이 없으신가요?{' '}
-            <Link href="/signup" className="text-[#2563EB] hover:underline">회원가입</Link>
+            <Link href="/signup" prefetch={false} className="text-[#2563EB] hover:underline">회원가입</Link>
           </p>
           <p className="text-xs text-center mt-2 text-[#6B7280]">
             비밀번호를 잊으셨나요? 관리자에게 문의하세요.

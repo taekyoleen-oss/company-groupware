@@ -101,7 +101,7 @@ export default function SignupPage() {
           </form>
           <p className="text-sm text-center mt-4 text-[#6B7280]">
             이미 계정이 있으신가요?{' '}
-            <Link href="/login" className="text-[#2563EB] hover:underline">로그인</Link>
+            <Link href="/login" prefetch={false} className="text-[#2563EB] hover:underline">로그인</Link>
           </p>
           <p className="text-xs text-center mt-2 text-[#94A3B8]">
             ※ 처음 가입하는 계정은 자동으로 관리자가 됩니다.

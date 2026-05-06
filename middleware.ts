@@ -54,5 +54,12 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|api/auth|api/dev|api/events|api/notices|api/todos|api/admin|api/share|api/profiles).*)'],
+  matcher: [
+    /*
+      페이지 네비게이션만 검사합니다.
+      - /api/* : 여기서 로그인으로 리다이렉트하면 응답이 HTML이 되어 fetch/RSC 파싱 오류(TypeError … is not a function) 유발
+      - /_next/* : 번들·Flight 등 내부 요청은 통과 (일부만 제외하면 나머지 요청이 미들웨어에 걸림)
+    */
+    '/((?!api/|_next/|favicon.ico).*)',
+  ],
 }
