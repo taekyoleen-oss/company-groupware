@@ -34,14 +34,14 @@ export default async function NoticeDetailPage({ params }: { params: Promise<{ i
 
   return (
     <div className="p-4 max-w-3xl mx-auto">
-      <Link href="/notices" className="flex items-center gap-1 text-sm text-[#6B7280] hover:text-[#111827] mb-4">
+      <Link href="/notices" className="flex items-center gap-1 text-sm text-[#6B7280] hover:text-[#111827] dark:text-[#94A3B8] dark:hover:text-[#F1F5F9] mb-4">
         <ArrowLeft className="h-4 w-4" /> 목록으로
       </Link>
-      <div className="bg-white rounded-xl border border-[#E5E7EB] p-6">
+      <div className="bg-white dark:bg-[#1E293B] rounded-xl border border-[#E5E7EB] dark:border-[#334155] p-6">
         <div className="flex items-start justify-between gap-4 mb-4">
           <div className="flex items-center gap-2">
             {notice.is_pinned && <Pin className="h-5 w-5 text-[#F59E0B]" />}
-            <h1 className="text-xl font-bold text-[#111827]">{notice.title}</h1>
+            <h1 className="text-xl font-bold text-[#111827] dark:text-[#F1F5F9]">{notice.title}</h1>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <Badge variant="outline">{notice.visibility === 'company' ? '전사' : '팀'}</Badge>
@@ -51,7 +51,7 @@ export default async function NoticeDetailPage({ params }: { params: Promise<{ i
           </div>
         </div>
 
-        <div className="flex items-center gap-2 text-sm text-[#6B7280] mb-6 pb-4 border-b border-[#E5E7EB]">
+        <div className="flex items-center gap-2 text-sm text-[#6B7280] dark:text-[#94A3B8] mb-6 pb-4 border-b border-[#E5E7EB] dark:border-[#334155]">
           <UserAvatar name={notice.author?.full_name ?? ''} color={notice.author?.color ?? '#6B7280'} size={20} />
           <span>{notice.author?.full_name}</span>
           <span>·</span>
@@ -59,17 +59,17 @@ export default async function NoticeDetailPage({ params }: { params: Promise<{ i
         </div>
 
         <div
-          className="prose prose-sm max-w-none text-[#111827]"
+          className="prose prose-sm dark:prose-invert max-w-none text-[#111827] dark:text-[#E2E8F0]"
           dangerouslySetInnerHTML={{ __html: notice.content }}
         />
 
         {notice.attachments && notice.attachments.length > 0 && (
-          <div className="mt-6 pt-4 border-t border-[#E5E7EB]">
-            <h3 className="text-sm font-semibold mb-2">첨부파일</h3>
+          <div className="mt-6 pt-4 border-t border-[#E5E7EB] dark:border-[#334155]">
+            <h3 className="text-sm font-semibold mb-2 dark:text-[#F1F5F9]">첨부파일</h3>
             <ul className="space-y-1">
               {(notice.attachments as any[]).map((att: any) => (
                 <li key={att.id}>
-                  <a href={att.file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-sm text-[#2563EB] hover:underline">
+                  <a href={att.file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-sm text-[#2563EB] hover:underline dark:text-[#60A5FA]">
                     <Download className="h-4 w-4" />
                     {att.file_name}
                   </a>

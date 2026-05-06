@@ -26,6 +26,7 @@ export function EventModal({ isOpen, onClose, initialDate, eventId, onSuccess }:
   const [categories, setCategories] = useState<EventCategory[]>([])
   const [loading, setLoading] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [createdBy, setCreatedBy] = useState<string | null>(null)
   const [authorName, setAuthorName] = useState<string | null>(null)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
@@ -96,6 +97,10 @@ export function EventModal({ isOpen, onClose, initialDate, eventId, onSuccess }:
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!form.title.trim()) { showToast('제목을 입력해주세요.', 'error'); return }
+    if (!form.is_all_day && new Date(form.end_at) <= new Date(form.start_at)) {
+      showToast('종료 시간은 시작 시간보다 뒤여야 합니다.', 'error'); return
+    }
     setLoading(true)
     const payload = {
       ...form,
@@ -120,10 +125,11 @@ export function EventModal({ isOpen, onClose, initialDate, eventId, onSuccess }:
   }
 
   const handleDelete = async () => {
-    if (!eventId || !confirm('일정을 삭제하시겠습니까?')) return
+    if (!eventId) return
     setDeleting(true)
     const res = await fetch(`/api/events/${eventId}`, { method: 'DELETE' })
     setDeleting(false)
+    setDeleteConfirmOpen(false)
     if (res.ok) {
       showToast('일정이 삭제되었습니다.', 'success')
       setTimeout(() => { onSuccess(); onClose() }, 500)
@@ -183,6 +189,26 @@ export function EventModal({ isOpen, onClose, initialDate, eventId, onSuccess }:
 
   return (
     <>
+      {/* 삭제 확인 다이얼로그 */}
+      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <DialogContent className="max-w-xs">
+          <DialogHeader>
+            <DialogTitle>일정 삭제</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-[#6B7280]">이 일정을 삭제하시겠습니까? 삭제 후 복구할 수 없습니다.</p>
+          <div className="flex gap-2 pt-2">
+            <Button variant="outline" className="flex-1" onClick={() => setDeleteConfirmOpen(false)}>취소</Button>
+            <Button
+              className="flex-1 bg-[#EF4444] hover:bg-[#DC2626] text-white"
+              onClick={handleDelete}
+              disabled={deleting}
+            >
+              {deleting ? '삭제 중...' : '삭제'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={isOpen} onOpenChange={onClose}>
         <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -312,8 +338,8 @@ export function EventModal({ isOpen, onClose, initialDate, eventId, onSuccess }:
               {/* 버튼 */}
               <div className="flex gap-2 pt-1">
                 {canDelete && (
-                  <Button type="button" variant="outline" className="text-[#EF4444] border-[#EF4444] hover:bg-[#FEF2F2]" onClick={handleDelete} disabled={deleting}>
-                    {deleting ? '삭제 중...' : '삭제'}
+                  <Button type="button" variant="outline" className="text-[#EF4444] border-[#EF4444] hover:bg-[#FEF2F2]" onClick={() => setDeleteConfirmOpen(true)} disabled={deleting}>
+                    삭제
                   </Button>
                 )}
                 <Button type="button" variant="outline" className="flex-1" onClick={onClose}>취소</Button>

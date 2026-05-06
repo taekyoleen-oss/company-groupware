@@ -8,13 +8,18 @@ import { Input } from '@/components/ui/input'
 
 export default function SignupPage() {
   const router = useRouter()
-  const [form, setForm] = useState({ email: '', password: '', fullName: '' })
+  const [form, setForm] = useState({ email: '', password: '', confirmPassword: '', fullName: '' })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+
+    if (!form.fullName.trim()) { setError('이름을 입력해주세요.'); return }
+    if (form.password.length < 6) { setError('비밀번호는 6자 이상이어야 합니다.'); return }
+    if (form.password !== form.confirmPassword) { setError('비밀번호가 일치하지 않습니다.'); return }
+
     setLoading(true)
     const supabase = createClient()
 
@@ -30,16 +35,13 @@ export default function SignupPage() {
       return
     }
 
-    // 이메일 확인이 필요한 경우 (세션 없음)
     if (!data.session) {
-      setError('')
       setLoading(false)
       alert('가입 신청이 완료되었습니다. 이메일 확인 후 로그인해 주세요.')
       router.push('/login')
       return
     }
 
-    // 이메일 확인 불필요 설정인 경우 — 프로필 조회해서 역할 확인
     const { data: profile } = await supabase
       .from('cg_profiles')
       .select('role, status')
@@ -91,6 +93,16 @@ export default function SignupPage() {
                 onChange={e => setForm(p => ({ ...p, password: e.target.value }))}
                 placeholder="6자 이상"
                 minLength={6}
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">비밀번호 확인</label>
+              <Input
+                type="password"
+                value={form.confirmPassword}
+                onChange={e => setForm(p => ({ ...p, confirmPassword: e.target.value }))}
+                placeholder="비밀번호 재입력"
                 required
               />
             </div>

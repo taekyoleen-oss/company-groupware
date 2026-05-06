@@ -50,10 +50,15 @@ export function Sidebar() {
 
   useEffect(() => {
     const now = new Date()
-    const in24h = new Date(now.getTime() + 24 * 60 * 60 * 1000)
-    fetch(`/api/events?start=${now.toISOString()}&end=${in24h.toISOString()}`)
+    // 설계서: 다가오는 3개 공개 일정 (company+team, private 제외)
+    fetch(`/api/events?start=${now.toISOString()}`)
       .then(r => r.json())
-      .then((data: EventWithDetails[]) => setUpcomingEvents(data.slice(0, 5)))
+      .then((data: EventWithDetails[]) => {
+        const publicEvents = (data as EventWithDetails[]).filter(
+          e => e.visibility === 'company' || e.visibility === 'team'
+        )
+        setUpcomingEvents(publicEvents.slice(0, 3))
+      })
       .catch(() => {})
 
     fetch('/api/notices')
@@ -137,7 +142,7 @@ export function Sidebar() {
 
       {/* ── 다가오는 일정 ── */}
       <div>
-        <h3 className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider mb-2 dark:text-[#94A3B8]">24시간 이내 일정</h3>
+        <h3 className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider mb-2 dark:text-[#94A3B8]">다가오는 공개 일정</h3>
         {upcomingEvents.length === 0 ? (
           <p className="text-xs text-[#6B7280] dark:text-[#94A3B8]">예정된 일정이 없습니다.</p>
         ) : (

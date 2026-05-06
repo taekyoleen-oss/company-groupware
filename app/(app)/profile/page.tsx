@@ -104,15 +104,15 @@ export default function ProfilePage() {
   return (
     <div className="p-4 max-w-md mx-auto">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-bold text-[#111827]">프로필 설정</h1>
+        <h1 className="text-xl font-bold text-[#111827] dark:text-[#F1F5F9]">프로필 설정</h1>
         <Button variant="outline" size="sm" onClick={handleCancel}>
           <X className="h-4 w-4 mr-1" />닫기
         </Button>
       </div>
-      <div className="bg-white rounded-xl border border-[#E5E7EB] p-6">
+      <div className="bg-white dark:bg-[#1E293B] rounded-xl border border-[#E5E7EB] dark:border-[#334155] p-6">
         <div className="flex flex-col items-center mb-6">
           <UserAvatar name={form.full_name || profile.full_name} color={form.color} size={64} className="mb-2" />
-          <p className="text-sm text-[#6B7280]">
+          <p className="text-sm text-[#6B7280] dark:text-[#94A3B8]">
             {ROLE_LABEL[profile.role]}
             {profile.team ? ` · ${(profile.team as any).name}` : ''}
           </p>
@@ -151,8 +151,8 @@ export default function ProfilePage() {
             </Select>
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1 text-[#6B7280]">이메일</label>
-            <p className="text-sm text-[#111827]">{email || '불러오는 중...'}</p>
+            <label className="block text-sm font-medium mb-1 text-[#6B7280] dark:text-[#94A3B8]">이메일</label>
+            <p className="text-sm text-[#111827] dark:text-[#E2E8F0]">{email || '불러오는 중...'}</p>
           </div>
           <div className="flex gap-2 pt-2">
             <Button type="button" variant="outline" className="flex-1" onClick={handleCancel}>취소</Button>
@@ -161,10 +161,10 @@ export default function ProfilePage() {
         </form>
       </div>
       {/* 비밀번호 변경 */}
-      <div className="bg-white rounded-xl border border-[#E5E7EB] p-6 mt-4">
+      <div className="bg-white dark:bg-[#1E293B] rounded-xl border border-[#E5E7EB] dark:border-[#334155] p-6 mt-4">
         <div className="flex items-center gap-2 mb-4">
-          <KeyRound className="h-4 w-4 text-[#6B7280]" />
-          <h2 className="text-sm font-semibold text-[#111827]">비밀번호 변경</h2>
+          <KeyRound className="h-4 w-4 text-[#6B7280] dark:text-[#94A3B8]" />
+          <h2 className="text-sm font-semibold text-[#111827] dark:text-[#F1F5F9]">비밀번호 변경</h2>
         </div>
         <form onSubmit={handlePasswordChange} className="space-y-3">
           {([

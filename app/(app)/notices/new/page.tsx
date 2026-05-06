@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, X } from 'lucide-react'
 import Link from 'next/link'
@@ -10,6 +10,7 @@ import { NoticeEditor } from '@/components/notices/NoticeEditor'
 import { useToast } from '@/components/ui/toast'
 import { createClient } from '@/lib/supabase/client'
 
+
 export default function NewNoticePage() {
   const router = useRouter()
   const { showToast, ToastComponent } = useToast()
@@ -18,12 +19,11 @@ export default function NewNoticePage() {
   const [canPin, setCanPin] = useState(false)
   const [loading, setLoading] = useState(false)
 
-  useState(() => {
-    createClient().from('cg_profiles').select('role').then(({ data }) => {
-      const d = data as any
-      if (d?.[0]?.role === 'manager' || d?.[0]?.role === 'admin') setCanPin(true)
-    })
-  })
+  useEffect(() => {
+    fetch('/api/profiles').then(r => r.json()).then((p: any) => {
+      if (p?.role === 'manager' || p?.role === 'admin') setCanPin(true)
+    }).catch(() => {})
+  }, [])
 
   const handleFileAdd = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newFiles = Array.from(e.target.files ?? [])

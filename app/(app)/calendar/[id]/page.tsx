@@ -28,31 +28,31 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
 
   return (
     <div className="p-4 max-w-2xl mx-auto">
-      <Link href="/calendar" className="flex items-center gap-1 text-sm text-[#6B7280] hover:text-[#111827] mb-4">
+      <Link href="/calendar" className="flex items-center gap-1 text-sm text-[#6B7280] hover:text-[#111827] dark:text-[#94A3B8] dark:hover:text-[#F1F5F9] mb-4">
         <ArrowLeft className="h-4 w-4" /> 캘린더로
       </Link>
-      <div className="bg-white rounded-xl border border-[#E5E7EB] p-6">
+      <div className="bg-white dark:bg-[#1E293B] rounded-xl border border-[#E5E7EB] dark:border-[#334155] p-6">
         <div className="flex items-start justify-between gap-4 mb-4">
           <div className="flex items-start gap-3">
             <div className="w-4 h-4 rounded-full mt-1 shrink-0" style={{ backgroundColor: color }} />
-            <h1 className="text-xl font-bold text-[#111827]">{e.title}</h1>
+            <h1 className="text-xl font-bold text-[#111827] dark:text-[#F1F5F9]">{e.title}</h1>
           </div>
           <Badge variant="outline">{VISIBILITY_LABEL[e.visibility]}</Badge>
         </div>
 
         <div className="space-y-3 text-sm">
-          <div className="flex items-center gap-2 text-[#6B7280]">
+          <div className="flex items-center gap-2 text-[#6B7280] dark:text-[#94A3B8]">
             <Clock className="h-4 w-4 shrink-0" />
             <span>{formatDateRange(e.start_at, e.end_at, e.is_all_day)}</span>
           </div>
           {e.location && (
-            <div className="flex items-center gap-2 text-[#6B7280]">
+            <div className="flex items-center gap-2 text-[#6B7280] dark:text-[#94A3B8]">
               <MapPin className="h-4 w-4 shrink-0" />
               <span>{e.location}</span>
             </div>
           )}
           {e.category && (
-            <div className="flex items-center gap-2 text-[#6B7280]">
+            <div className="flex items-center gap-2 text-[#6B7280] dark:text-[#94A3B8]">
               <Tag className="h-4 w-4 shrink-0" />
               <span className="flex items-center gap-1">
                 <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: (e.category as any).color }} />
@@ -60,7 +60,7 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
               </span>
             </div>
           )}
-          <div className="flex items-center gap-2 text-[#6B7280]">
+          <div className="flex items-center gap-2 text-[#6B7280] dark:text-[#94A3B8]">
             <Eye className="h-4 w-4 shrink-0" />
             <div className="flex items-center gap-1.5">
               <UserAvatar name={(e.author as any).full_name} color={(e.author as any).color} size={20} />
@@ -70,8 +70,8 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
         </div>
 
         {e.description && (
-          <div className="mt-4 pt-4 border-t border-[#E5E7EB]">
-            <p className="text-sm text-[#111827] whitespace-pre-wrap">{e.description}</p>
+          <div className="mt-4 pt-4 border-t border-[#E5E7EB] dark:border-[#334155]">
+            <p className="text-sm text-[#111827] dark:text-[#E2E8F0] whitespace-pre-wrap">{e.description}</p>
           </div>
         )}
 

@@ -9,16 +9,21 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@
 import { Badge } from '@/components/ui/badge'
 import { UserAvatar } from '@/components/ui/avatar'
 import { useToast } from '@/components/ui/toast'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import type { ProfileWithTeam, Team, EventCategory } from '@/types/app'
 
 const STATUS_LABEL = { pending: '대기', active: '활성', inactive: '비활성' }
 
 interface UserEdit {
   role: string
-  team_id: string  // 'none' = null
+  team_id: string
   status: string
   dirty: boolean
 }
+
+type ConfirmAction =
+  | { type: 'team'; id: string; name: string }
+  | { type: 'category'; id: string; name: string }
 
 export default function AdminPage() {
   const router = useRouter()
@@ -31,6 +36,8 @@ export default function AdminPage() {
   const [teamAbbrEdits, setTeamAbbrEdits] = useState<Record<string, string>>({})
   const [newCat, setNewCat] = useState({ name: '', color: '#3B82F6' })
   const [saving, setSaving] = useState<string | null>(null)
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null)
+  const [confirming, setConfirming] = useState(false)
 
   const fetchAll = useCallback(async () => {
     const [usersRes, teamsRes, catsRes] = await Promise.all([
@@ -75,12 +82,8 @@ export default function AdminPage() {
       }),
     })
     setSaving(null)
-    if (res.ok) {
-      showToast('저장되었습니다.', 'success')
-      fetchAll()
-    } else {
-      showToast('저장에 실패했습니다.', 'error')
-    }
+    if (res.ok) { showToast('저장되었습니다.', 'success'); fetchAll() }
+    else showToast('저장에 실패했습니다.', 'error')
   }
 
   const approveUser = async (id: string) => {
@@ -95,7 +98,11 @@ export default function AdminPage() {
   const addTeam = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newTeamName) return
-    const res = await fetch('/api/admin/teams', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newTeamName }) })
+    const res = await fetch('/api/admin/teams', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newTeamName }),
+    })
     if (res.ok) { setNewTeamName(''); showToast('팀이 생성되었습니다.', 'success'); fetchAll() }
   }
 
@@ -110,23 +117,28 @@ export default function AdminPage() {
     else showToast('저장에 실패했습니다.', 'error')
   }
 
-  const deleteTeam = async (id: string) => {
-    if (!confirm('팀을 삭제하시겠습니까?')) return
-    await fetch(`/api/admin/teams/${id}`, { method: 'DELETE' })
+  const handleConfirm = async () => {
+    if (!confirmAction) return
+    setConfirming(true)
+    if (confirmAction.type === 'team') {
+      await fetch(`/api/admin/teams/${confirmAction.id}`, { method: 'DELETE' })
+    } else {
+      await fetch(`/api/admin/categories/${confirmAction.id}`, { method: 'DELETE' })
+    }
+    setConfirming(false)
+    setConfirmAction(null)
     fetchAll()
   }
 
   const addCategory = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newCat.name) return
-    const res = await fetch('/api/admin/categories', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newCat) })
+    const res = await fetch('/api/admin/categories', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newCat),
+    })
     if (res.ok) { setNewCat({ name: '', color: '#3B82F6' }); showToast('카테고리가 추가되었습니다.', 'success'); fetchAll() }
-  }
-
-  const deleteCategory = async (id: string) => {
-    if (!confirm('카테고리를 삭제하시겠습니까?')) return
-    await fetch(`/api/admin/categories/${id}`, { method: 'DELETE' })
-    fetchAll()
   }
 
   const pending = users.filter(u => u.status === 'pending')
@@ -135,7 +147,7 @@ export default function AdminPage() {
   return (
     <div className="p-4 max-w-4xl mx-auto">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-bold text-[#111827]">관리자 패널</h1>
+        <h1 className="text-xl font-bold text-[#111827] dark:text-[#F1F5F9]">관리자 패널</h1>
         <Button variant="outline" onClick={() => router.push('/calendar')}>
           <X className="h-4 w-4 mr-1" />닫기
         </Button>
@@ -150,17 +162,18 @@ export default function AdminPage() {
           <TabsTrigger value="categories">카테고리</TabsTrigger>
         </TabsList>
 
+        {/* ── 회원 관리 ─────────────────────────────────────── */}
         <TabsContent value="users">
           {pending.length > 0 && (
             <div className="mb-6">
               <h2 className="text-sm font-semibold text-[#F59E0B] mb-2">승인 대기 ({pending.length}명)</h2>
               <div className="space-y-2">
                 {pending.map(user => (
-                  <div key={user.id} className="bg-white border border-[#E5E7EB] rounded-lg p-3 flex items-center gap-3">
+                  <div key={user.id} className="bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded-lg p-3 flex items-center gap-3">
                     <UserAvatar name={user.full_name} color={user.color} size={32} />
                     <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm">{user.full_name}</p>
-                      <p className="text-xs text-[#6B7280]">{user.email ?? '이메일 없음'}</p>
+                      <p className="font-medium text-sm dark:text-[#F1F5F9]">{user.full_name}</p>
+                      <p className="text-xs text-[#6B7280] dark:text-[#94A3B8]">{user.email ?? '이메일 없음'}</p>
                     </div>
                     <Button size="sm" onClick={() => approveUser(user.id)}>
                       <Check className="h-4 w-4 mr-1" />승인
@@ -171,19 +184,19 @@ export default function AdminPage() {
             </div>
           )}
 
-          <h2 className="text-sm font-semibold text-[#6B7280] mb-2">전체 회원</h2>
+          <h2 className="text-sm font-semibold text-[#6B7280] dark:text-[#94A3B8] mb-2">전체 회원</h2>
           <div className="space-y-2">
             {active.map(user => {
               const edit = edits[user.id]
               if (!edit) return null
               return (
-                <div key={user.id} className="bg-white border border-[#E5E7EB] rounded-lg p-3 flex items-center gap-3">
+                <div key={user.id} className="bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded-lg p-3 flex flex-wrap items-center gap-3">
                   <UserAvatar name={user.full_name} color={user.color} size={32} />
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm">{user.full_name}</p>
+                    <p className="font-medium text-sm dark:text-[#F1F5F9]">{user.full_name}</p>
                     <div className="flex flex-col gap-0.5">
-                      <p className="text-[11px] text-[#6B7280]">{user.email ?? '이메일 없음'}</p>
-                      <p className="text-xs text-[#6B7280]">{(user.team as any)?.name ?? '팀 없음'}</p>
+                      <p className="text-[11px] text-[#6B7280] dark:text-[#94A3B8]">{user.email ?? '이메일 없음'}</p>
+                      <p className="text-xs text-[#6B7280] dark:text-[#94A3B8]">{(user.team as any)?.name ?? '팀 없음'}</p>
                     </div>
                   </div>
                   <Badge variant={edit.status === 'active' ? 'success' : 'danger'}>{STATUS_LABEL[edit.status as keyof typeof STATUS_LABEL]}</Badge>
@@ -223,6 +236,7 @@ export default function AdminPage() {
           </div>
         </TabsContent>
 
+        {/* ── 팀 관리 ───────────────────────────────────────── */}
         <TabsContent value="teams">
           <form onSubmit={addTeam} className="flex gap-2 mb-4">
             <Input value={newTeamName} onChange={e => setNewTeamName(e.target.value)} placeholder="새 팀명" />
@@ -230,16 +244,16 @@ export default function AdminPage() {
           </form>
           <div className="space-y-2">
             {teams.map(team => (
-              <div key={team.id} className="bg-white border border-[#E5E7EB] rounded-lg p-3 flex flex-wrap items-center gap-3">
+              <div key={team.id} className="bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded-lg p-3 flex flex-wrap items-center gap-3">
                 <div className="flex items-center gap-2 flex-1 min-w-0">
-                  <span className="font-medium text-sm">{team.name}</span>
-                  <span className="text-xs text-[#374151] bg-[#F3F4F6] border border-[#E5E7EB] rounded px-1.5 py-0.5">
+                  <span className="font-medium text-sm dark:text-[#F1F5F9]">{team.name}</span>
+                  <span className="text-xs text-[#374151] dark:text-[#D1D5DB] bg-[#F3F4F6] dark:bg-[#374151] border border-[#E5E7EB] dark:border-[#4B5563] rounded px-1.5 py-0.5">
                     [{team.abbreviation ?? team.name.slice(0, 2)}]
                   </span>
                 </div>
-                <span className="text-xs text-[#6B7280]">{users.filter(u => u.team_id === team.id).length}명</span>
+                <span className="text-xs text-[#6B7280] dark:text-[#94A3B8]">{users.filter(u => u.team_id === team.id).length}명</span>
                 <div className="flex items-center gap-1.5">
-                  <span className="text-xs text-[#6B7280]">약어</span>
+                  <span className="text-xs text-[#6B7280] dark:text-[#94A3B8]">약어</span>
                   <Input
                     value={teamAbbrEdits[team.id] ?? ''}
                     onChange={e => setTeamAbbrEdits(prev => ({ ...prev, [team.id]: e.target.value }))}
@@ -251,7 +265,7 @@ export default function AdminPage() {
                     <Save className="h-3 w-3" />
                   </Button>
                 </div>
-                <Button size="sm" variant="danger" onClick={() => deleteTeam(team.id)}>
+                <Button size="sm" variant="danger" onClick={() => setConfirmAction({ type: 'team', id: team.id, name: team.name })}>
                   <Trash2 className="h-4 w-4" />
                 </Button>
               </div>
@@ -259,6 +273,7 @@ export default function AdminPage() {
           </div>
         </TabsContent>
 
+        {/* ── 카테고리 ──────────────────────────────────────── */}
         <TabsContent value="categories">
           <form onSubmit={addCategory} className="flex gap-2 mb-4">
             <Input value={newCat.name} onChange={e => setNewCat(c => ({ ...c, name: e.target.value }))} placeholder="카테고리명" />
@@ -267,12 +282,12 @@ export default function AdminPage() {
           </form>
           <div className="space-y-2">
             {categories.map(cat => (
-              <div key={cat.id} className="bg-white border border-[#E5E7EB] rounded-lg p-3 flex items-center gap-3">
+              <div key={cat.id} className="bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded-lg p-3 flex items-center gap-3">
                 <div className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
-                <span className="flex-1 text-sm font-medium">{cat.name}</span>
+                <span className="flex-1 text-sm font-medium dark:text-[#F1F5F9]">{cat.name}</span>
                 {cat.is_default && <Badge variant="outline" className="text-xs">기본</Badge>}
                 {!cat.is_default && (
-                  <Button size="sm" variant="danger" onClick={() => deleteCategory(cat.id)}>
+                  <Button size="sm" variant="danger" onClick={() => setConfirmAction({ type: 'category', id: cat.id, name: cat.name })}>
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 )}
@@ -281,6 +296,32 @@ export default function AdminPage() {
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* 삭제 확인 다이얼로그 */}
+      <Dialog open={!!confirmAction} onOpenChange={open => { if (!open) setConfirmAction(null) }}>
+        <DialogContent className="max-w-xs">
+          <DialogHeader>
+            <DialogTitle>{confirmAction?.type === 'team' ? '팀 삭제' : '카테고리 삭제'}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-[#6B7280] dark:text-[#94A3B8]">
+            <span className="font-semibold text-[#111827] dark:text-[#F1F5F9]">{confirmAction?.name}</span>
+            {confirmAction?.type === 'team'
+              ? '을(를) 삭제하시겠습니까? 팀 삭제 후 소속 인원은 팀 없음 상태가 됩니다.'
+              : '을(를) 삭제하시겠습니까?'}
+          </p>
+          <div className="flex gap-2 pt-2">
+            <Button variant="outline" className="flex-1" onClick={() => setConfirmAction(null)}>취소</Button>
+            <Button
+              className="flex-1 bg-[#EF4444] hover:bg-[#DC2626] text-white"
+              onClick={handleConfirm}
+              disabled={confirming}
+            >
+              {confirming ? '삭제 중...' : '삭제'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {ToastComponent}
     </div>
   )

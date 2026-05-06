@@ -61,11 +61,11 @@ export default function EditNoticePage() {
 
   return (
     <div className="p-4 max-w-3xl mx-auto">
-      <Link href={`/notices/${id}`} className="flex items-center gap-1 text-sm text-[#6B7280] hover:text-[#111827] mb-4">
+      <Link href={`/notices/${id}`} className="flex items-center gap-1 text-sm text-[#6B7280] hover:text-[#111827] dark:text-[#94A3B8] dark:hover:text-[#F1F5F9] mb-4">
         <ArrowLeft className="h-4 w-4" /> 돌아가기
       </Link>
-      <div className="bg-white rounded-xl border border-[#E5E7EB] p-6">
-        <h1 className="text-xl font-bold mb-6">공지 수정</h1>
+      <div className="bg-white dark:bg-[#1E293B] rounded-xl border border-[#E5E7EB] dark:border-[#334155] p-6">
+        <h1 className="text-xl font-bold mb-6 dark:text-[#F1F5F9]">공지 수정</h1>
         <form onSubmit={handleSubmit} className="space-y-5">
           <div>
             <label className="block text-sm font-medium mb-1">제목 *</label>
