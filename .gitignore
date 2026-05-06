@@ -34,6 +34,9 @@ yarn-error.log*
 .env*
 !.env.example
 
+# 로컬 전용 로그인 계정 요약 (커밋·게시 금지)
+login-credentials.local.md
+
 # vercel
 .vercel
 
