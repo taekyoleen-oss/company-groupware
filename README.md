@@ -29,8 +29,12 @@ To learn more about Next.js, take a look at the following resources:
 
 You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
-## Deploy on Vercel
+## Vercel 배포
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+1. GitHub 저장소([taekyoleen-oss/company-groupware](https://github.com/taekyoleen-oss/company-groupware))를 [Vercel](https://vercel.com/new)에 연결합니다.
+2. **Environment Variables**에 `.env.example`에 나온 변수를 입력합니다. 프로덕션 도메인이 정해지면 `NEXT_PUBLIC_APP_URL`을 `https://<프로젝트>.vercel.app` 또는 커스텀 도메인으로 맞춥니다.
+3. Supabase 대시보드 **Authentication → URL Configuration**에서 Site URL과 Redirect URLs에 동일한 프로덕션 주소를 추가하고, OAuth 제공자 리다이렉트 URI에 `https://<배포주소>/api/auth/callback` 형태가 포함되는지 확인합니다.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+로컬에서는 `pnpm install` 후 `pnpm run build`로 프로덕션 빌드를 미리 검증할 수 있습니다.
+
+자세한 내용은 [Next.js 배포 문서](https://nextjs.org/docs/app/building-your-application/deploying)를 참고하세요.

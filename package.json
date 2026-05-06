@@ -2,11 +2,20 @@
   "name": "company-groupware",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@10.20.0",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "history:append": "node scripts/history-append.mjs"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "sharp",
+      "unrs-resolver",
+      "puppeteer"
+    ]
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
