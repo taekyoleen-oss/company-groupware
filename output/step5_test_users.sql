@@ -1,4 +1,4 @@
--- 10명의 테스트 유저(영업부 5명, 관리부 5명)를 생성하는 SQL 스크립트입니다.
+-- 11명의 테스트 유저(영업부 5명, 관리부 6명 — 슈퍼관리자 test@example.com 포함)를 생성하는 SQL 스크립트입니다.
 -- Supabase 대시보드의 SQL Editor에 복사하여 붙여넣고 실행(Run)하세요.
 -- 모든 유저의 기본 비밀번호는 'password' 입니다.
 
@@ -24,6 +24,9 @@ DECLARE
   uid_mng_2 uuid := gen_random_uuid();
   uid_mng_3 uuid := gen_random_uuid();
 
+  -- 슈퍼관리자 (관리부 / admin)
+  uid_super uuid := gen_random_uuid();
+
 BEGIN
   -- 1. 팀 생성
   INSERT INTO public.cg_teams (id, name) VALUES 
@@ -45,6 +48,9 @@ BEGIN
     (uid_mng_2, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'mng2@test.com', crypt('password', gen_salt('bf')), now(), '{"provider":"email","providers":["email"]}', '{"full_name":"관리직원2"}', now(), now()),
     (uid_mng_3, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'mng3@test.com', crypt('password', gen_salt('bf')), now(), '{"provider":"email","providers":["email"]}', '{"full_name":"관리직원3"}', now(), now());
 
+  INSERT INTO auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
+  VALUES (uid_super, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'test@example.com', crypt('password', gen_salt('bf')), now(), '{"provider":"email","providers":["email"]}', '{"full_name":"슈퍼관리자"}', now(), now());
+
   -- [영업부]
   INSERT INTO auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
   VALUES 
@@ -60,6 +66,11 @@ BEGIN
   UPDATE public.cg_profiles 
   SET team_id = team_mng, role = 'admin', status = 'active'
   WHERE id = uid_ceo;
+
+  -- 슈퍼관리자 (관리부, admin)
+  UPDATE public.cg_profiles
+  SET team_id = team_mng, role = 'admin', status = 'active'
+  WHERE id = uid_super;
 
   -- 관리부
   UPDATE public.cg_profiles SET team_id = team_mng, role = 'manager', status = 'active' WHERE id = uid_mng_leader;
