@@ -116,11 +116,20 @@ function CalendarContent() {
     ...(showAnniversaries ? KOREAN_ANNIVERSARIES : []),
     ...events.map(e => {
       const prefix = e.visibility === 'company' ? '[전사] ' : e.visibility === 'team' ? `[${getTeamAbbr(e.team_id)}] ` : ''
+
+      // FullCalendar all-day 이벤트의 end는 배타적(exclusive).
+      // 저장된 end_at(당일 23:59)을 로컬 기준 +1일로 조정해야 기간이 올바르게 표시됨.
+      let endDate = e.end_at
+      if (e.is_all_day) {
+        const d = new Date(e.end_at)
+        endDate = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).toISOString()
+      }
+
       return {
         id:              e.id,
         title:           prefix + e.title,
         start:           e.start_at,
-        end:             e.end_at,
+        end:             endDate,
         allDay:          e.is_all_day,
         backgroundColor: resolveEventColor({ color: e.color, category: e.category as any, author: e.author as any }),
         borderColor:     resolveEventColor({ color: e.color, category: e.category as any, author: e.author as any }),

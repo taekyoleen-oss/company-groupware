@@ -82,6 +82,7 @@ export interface Database {
           start_at: string
           end_at: string
           is_all_day: boolean
+          is_vacation: boolean
           location: string | null
           visibility: 'company' | 'team' | 'private'
           category_id: string | null
@@ -98,6 +99,7 @@ export interface Database {
           start_at: string
           end_at: string
           is_all_day?: boolean
+          is_vacation?: boolean
           location?: string | null
           visibility?: 'company' | 'team' | 'private'
           category_id?: string | null
@@ -114,6 +116,7 @@ export interface Database {
           start_at?: string
           end_at?: string
           is_all_day?: boolean
+          is_vacation?: boolean
           location?: string | null
           visibility?: 'company' | 'team' | 'private'
           category_id?: string | null
@@ -270,6 +273,97 @@ export interface Database {
         Relationships: [
           {
             foreignKeyName: 'cg_todos_user_id_fkey'
+            columns: ['user_id']
+            isOneToOne: false
+            referencedRelation: 'cg_profiles'
+            referencedColumns: ['id']
+          }
+        ]
+      }
+      cg_vacation_allocations: {
+        Row: {
+          id: string
+          user_id: string
+          year: number
+          total_days: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          year: number
+          total_days?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          year?: number
+          total_days?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'cg_vacation_allocations_user_id_fkey'
+            columns: ['user_id']
+            isOneToOne: false
+            referencedRelation: 'cg_profiles'
+            referencedColumns: ['id']
+          }
+        ]
+      }
+      cg_company_settings: {
+        Row: {
+          id: string
+          address: string
+          latitude: number | null
+          longitude: number | null
+          radius_meters: number
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          address?: string
+          latitude?: number | null
+          longitude?: number | null
+          radius_meters?: number
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          address?: string
+          latitude?: number | null
+          longitude?: number | null
+          radius_meters?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      cg_attendance: {
+        Row: {
+          id: string
+          user_id: string
+          date: string
+          checked_in_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          date: string
+          checked_in_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          date?: string
+          checked_in_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'cg_attendance_user_id_fkey'
             columns: ['user_id']
             isOneToOne: false
             referencedRelation: 'cg_profiles'

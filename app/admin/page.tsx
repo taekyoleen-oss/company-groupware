@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Check, Plus, Trash2, X, Save } from 'lucide-react'
+import { Check, Plus, Trash2, X, Save, Palmtree, MapPin, Navigation, ChevronLeft, ChevronRight, ClipboardList, Settings } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
@@ -10,7 +10,37 @@ import { Badge } from '@/components/ui/badge'
 import { UserAvatar } from '@/components/ui/avatar'
 import { useToast } from '@/components/ui/toast'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { format, parseISO } from 'date-fns'
+import { ko } from 'date-fns/locale'
 import type { ProfileWithTeam, Team, EventCategory } from '@/types/app'
+
+interface VacationUser {
+  id: string
+  full_name: string
+  color: string
+  team_id: string | null
+  role: string
+  status: string
+  total_days: number
+  used_days: number
+  remaining_days: number
+}
+
+interface AttendanceRecord {
+  id: string
+  full_name: string
+  color: string
+  team_id: string | null
+  role: string
+  checked_in_at: string | null
+}
+
+interface CompanySettings {
+  address: string
+  latitude: number | null
+  longitude: number | null
+  radius_meters: number
+}
 
 const STATUS_LABEL = { pending: '대기', active: '활성', inactive: '비활성' }
 
@@ -25,6 +55,10 @@ type ConfirmAction =
   | { type: 'team'; id: string; name: string }
   | { type: 'category'; id: string; name: string }
 
+function toLocalDateStr(d: Date = new Date()) {
+  return d.toLocaleDateString('sv-SE') // YYYY-MM-DD
+}
+
 export default function AdminPage() {
   const router = useRouter()
   const { showToast, ToastComponent } = useToast()
@@ -38,10 +72,25 @@ export default function AdminPage() {
   const [saving, setSaving] = useState<string | null>(null)
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null)
   const [confirming, setConfirming] = useState(false)
+  const [vacationUsers, setVacationUsers] = useState<VacationUser[]>([])
+  const [vacEdits, setVacEdits] = useState<Record<string, number>>({})
+  const [vacSaving, setVacSaving] = useState<string | null>(null)
+
+  // 출석 관리
+  const [attendanceDate, setAttendanceDate] = useState<string>(toLocalDateStr())
+  const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([])
+  const [attendanceLoading, setAttendanceLoading] = useState(false)
+
+  // 회사 설정
+  const [settings, setSettings] = useState<CompanySettings>({ address: '', latitude: null, longitude: null, radius_meters: 200 })
+  const [settingsDirty, setSettingsDirty] = useState(false)
+  const [settingsSaving, setSettingsSaving] = useState(false)
+  const [gpsLoading, setGpsLoading] = useState(false)
 
   const fetchAll = useCallback(async () => {
-    const [usersRes, teamsRes, catsRes] = await Promise.all([
+    const [usersRes, teamsRes, catsRes, vacRes] = await Promise.all([
       fetch('/api/admin/users'), fetch('/api/admin/teams'), fetch('/api/admin/categories'),
+      fetch('/api/admin/vacation'),
     ])
     if (usersRes.ok) {
       const data: ProfileWithTeam[] = await usersRes.json()
@@ -60,9 +109,42 @@ export default function AdminPage() {
       setTeamAbbrEdits(initAbbrs)
     }
     if (catsRes.ok) setCategories(await catsRes.json())
+    if (vacRes.ok) {
+      const vacData: VacationUser[] = await vacRes.json()
+      setVacationUsers(vacData)
+      const initVac: Record<string, number> = {}
+      vacData.forEach(u => { initVac[u.id] = u.total_days })
+      setVacEdits(initVac)
+    }
+  }, [])
+
+  const fetchAttendance = useCallback(async (date: string) => {
+    setAttendanceLoading(true)
+    const res = await fetch(`/api/admin/attendance?date=${date}`)
+    if (res.ok) {
+      const data = await res.json()
+      setAttendanceRecords(data.records ?? [])
+    }
+    setAttendanceLoading(false)
+  }, [])
+
+  const fetchSettings = useCallback(async () => {
+    const res = await fetch('/api/admin/settings')
+    if (res.ok) {
+      const data = await res.json()
+      setSettings(data)
+    }
   }, [])
 
   useEffect(() => { fetchAll() }, [fetchAll])
+  useEffect(() => { fetchAttendance(attendanceDate) }, [fetchAttendance, attendanceDate])
+  useEffect(() => { fetchSettings() }, [fetchSettings])
+
+  const shiftDate = (days: number) => {
+    const d = new Date(attendanceDate + 'T12:00:00')
+    d.setDate(d.getDate() + days)
+    setAttendanceDate(toLocalDateStr(d))
+  }
 
   const setEdit = (id: string, field: Partial<UserEdit>) => {
     setEdits(prev => ({ ...prev, [id]: { ...prev[id], ...field, dirty: true } }))
@@ -130,6 +212,20 @@ export default function AdminPage() {
     fetchAll()
   }
 
+  const saveVacation = async (userId: string) => {
+    const total = vacEdits[userId]
+    if (total === undefined) return
+    setVacSaving(userId)
+    const res = await fetch(`/api/admin/vacation/${userId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ total_days: total }),
+    })
+    setVacSaving(null)
+    if (res.ok) { showToast('저장되었습니다.', 'success'); fetchAll() }
+    else showToast('저장에 실패했습니다.', 'error')
+  }
+
   const addCategory = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newCat.name) return
@@ -141,8 +237,39 @@ export default function AdminPage() {
     if (res.ok) { setNewCat({ name: '', color: '#3B82F6' }); showToast('카테고리가 추가되었습니다.', 'success'); fetchAll() }
   }
 
+  const saveSettings = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSettingsSaving(true)
+    const res = await fetch('/api/admin/settings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings),
+    })
+    setSettingsSaving(false)
+    if (res.ok) { showToast('설정이 저장되었습니다.', 'success'); setSettingsDirty(false) }
+    else showToast('저장에 실패했습니다.', 'error')
+  }
+
+  const useCurrentGPS = () => {
+    if (!navigator.geolocation) { showToast('이 브라우저는 GPS를 지원하지 않습니다.', 'error'); return }
+    setGpsLoading(true)
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setSettings(s => ({ ...s, latitude: pos.coords.latitude, longitude: pos.coords.longitude }))
+        setSettingsDirty(true)
+        setGpsLoading(false)
+        showToast('현재 위치가 입력되었습니다.', 'success')
+      },
+      () => { showToast('위치 정보를 가져올 수 없습니다.', 'error'); setGpsLoading(false) },
+      { enableHighAccuracy: true, timeout: 10000 }
+    )
+  }
+
   const pending = users.filter(u => u.status === 'pending')
   const active = users.filter(u => u.status !== 'pending')
+
+  const attendedCount = attendanceRecords.filter(r => r.checked_in_at).length
+  const isToday = attendanceDate === toLocalDateStr()
 
   return (
     <div className="p-4 max-w-4xl mx-auto">
@@ -154,12 +281,19 @@ export default function AdminPage() {
       </div>
 
       <Tabs defaultValue="users">
-        <TabsList className="mb-4">
+        <TabsList className="mb-4 flex-wrap">
           <TabsTrigger value="users">
             회원 관리 {pending.length > 0 && <span className="ml-1 text-xs bg-red-500 text-white rounded-full px-1.5">{pending.length}</span>}
           </TabsTrigger>
+          <TabsTrigger value="attendance">
+            <ClipboardList className="h-3.5 w-3.5 mr-1" />출석 관리
+          </TabsTrigger>
+          <TabsTrigger value="vacation">휴가 관리</TabsTrigger>
           <TabsTrigger value="teams">팀 관리</TabsTrigger>
           <TabsTrigger value="categories">카테고리</TabsTrigger>
+          <TabsTrigger value="settings">
+            <Settings className="h-3.5 w-3.5 mr-1" />설정
+          </TabsTrigger>
         </TabsList>
 
         {/* ── 회원 관리 ─────────────────────────────────────── */}
@@ -183,7 +317,6 @@ export default function AdminPage() {
               </div>
             </div>
           )}
-
           <h2 className="text-sm font-semibold text-[#6B7280] dark:text-[#94A3B8] mb-2">전체 회원</h2>
           <div className="space-y-2">
             {active.map(user => {
@@ -222,17 +355,135 @@ export default function AdminPage() {
                   >
                     {edit.status === 'active' ? '비활성화' : '활성화'}
                   </Button>
-                  <Button
-                    size="sm"
-                    disabled={!edit.dirty || saving === user.id}
-                    onClick={() => saveUser(user.id)}
-                  >
+                  <Button size="sm" disabled={!edit.dirty || saving === user.id} onClick={() => saveUser(user.id)}>
                     <Save className="h-4 w-4 mr-1" />
                     {saving === user.id ? '저장 중...' : '저장'}
                   </Button>
                 </div>
               )
             })}
+          </div>
+        </TabsContent>
+
+        {/* ── 출석 관리 ─────────────────────────────────────── */}
+        <TabsContent value="attendance">
+          {/* 날짜 네비게이터 */}
+          <div className="flex items-center gap-2 mb-4">
+            <button
+              onClick={() => shiftDate(-1)}
+              className="p-1.5 rounded-lg hover:bg-[#F3F4F6] dark:hover:bg-[#374151] transition-colors"
+            >
+              <ChevronLeft className="h-4 w-4 text-[#6B7280]" />
+            </button>
+            <Input
+              type="date"
+              value={attendanceDate}
+              onChange={e => setAttendanceDate(e.target.value)}
+              className="w-40 text-sm text-center"
+            />
+            <button
+              onClick={() => shiftDate(1)}
+              disabled={isToday}
+              className="p-1.5 rounded-lg hover:bg-[#F3F4F6] dark:hover:bg-[#374151] transition-colors disabled:opacity-30"
+            >
+              <ChevronRight className="h-4 w-4 text-[#6B7280]" />
+            </button>
+            {!isToday && (
+              <Button size="sm" variant="outline" onClick={() => setAttendanceDate(toLocalDateStr())}>
+                오늘
+              </Button>
+            )}
+            <span className="ml-auto text-sm text-[#6B7280] dark:text-[#94A3B8]">
+              출석 <span className="font-semibold text-green-600">{attendedCount}</span>명
+              {' / '}전체 <span className="font-semibold">{attendanceRecords.length}</span>명
+            </span>
+          </div>
+
+          {attendanceLoading ? (
+            <p className="text-sm text-[#6B7280] text-center py-8">불러오는 중...</p>
+          ) : (
+            <div className="space-y-2">
+              {attendanceRecords.map(r => (
+                <div key={r.id} className="bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded-lg px-4 py-3 flex items-center gap-3">
+                  <UserAvatar name={r.full_name} color={r.color} size={32} />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm dark:text-[#F1F5F9]">{r.full_name}</p>
+                  </div>
+                  {r.checked_in_at ? (
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
+                      <span className="text-sm font-semibold text-green-600 dark:text-green-400">
+                        출석
+                      </span>
+                      <span className="text-xs text-[#6B7280] dark:text-[#94A3B8]">
+                        {format(parseISO(r.checked_in_at), 'HH:mm', { locale: ko })}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-[#D1D5DB] dark:bg-[#4B5563] shrink-0" />
+                      <span className="text-sm text-[#9CA3AF] dark:text-[#6B7280]">미출석</span>
+                    </div>
+                  )}
+                </div>
+              ))}
+              {attendanceRecords.length === 0 && (
+                <p className="text-sm text-[#6B7280] text-center py-8">활성 회원이 없습니다.</p>
+              )}
+            </div>
+          )}
+        </TabsContent>
+
+        {/* ── 휴가 관리 ─────────────────────────────────────── */}
+        <TabsContent value="vacation">
+          <div className="mb-3 flex items-center gap-2 text-sm text-[#6B7280] dark:text-[#94A3B8]">
+            <Palmtree className="h-4 w-4 text-orange-500" />
+            <span>{new Date().getFullYear()}년 휴가 할당량 관리</span>
+          </div>
+          <div className="space-y-2">
+            {vacationUsers.map(u => {
+              const currentTotal = vacEdits[u.id] ?? u.total_days
+              const isDirty = currentTotal !== u.total_days
+              const pct = u.total_days > 0 ? Math.min((u.used_days / u.total_days) * 100, 100) : 0
+              return (
+                <div key={u.id} className="bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded-lg p-3">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <UserAvatar name={u.full_name} color={u.color} size={32} />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm dark:text-[#F1F5F9]">{u.full_name}</p>
+                      <p className="text-xs text-[#6B7280] dark:text-[#94A3B8]">
+                        사용 {u.used_days}일 · 잔여{' '}
+                        <span className={u.remaining_days <= 0 ? 'text-red-500 font-semibold' : 'text-green-600 font-semibold'}>
+                          {u.remaining_days}일
+                        </span>
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs text-[#6B7280] dark:text-[#94A3B8]">총 휴가</span>
+                      <Input
+                        type="number" min={0} max={365} value={currentTotal}
+                        onChange={e => setVacEdits(prev => ({ ...prev, [u.id]: Number(e.target.value) }))}
+                        className="w-16 h-8 text-sm text-center"
+                      />
+                      <span className="text-xs text-[#6B7280]">일</span>
+                    </div>
+                    <Button size="sm" disabled={!isDirty || vacSaving === u.id} onClick={() => saveVacation(u.id)}>
+                      <Save className="h-4 w-4 mr-1" />
+                      {vacSaving === u.id ? '저장 중...' : '저장'}
+                    </Button>
+                  </div>
+                  <div className="mt-2 h-1.5 bg-[#E5E7EB] dark:bg-[#334155] rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${pct >= 100 ? 'bg-red-500' : pct >= 70 ? 'bg-orange-400' : 'bg-green-500'}`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </div>
+              )
+            })}
+            {vacationUsers.length === 0 && (
+              <p className="text-sm text-[#6B7280] dark:text-[#94A3B8] text-center py-6">회원이 없습니다.</p>
+            )}
           </div>
         </TabsContent>
 
@@ -294,6 +545,90 @@ export default function AdminPage() {
               </div>
             ))}
           </div>
+        </TabsContent>
+
+        {/* ── 회사 설정 ─────────────────────────────────────── */}
+        <TabsContent value="settings">
+          <form onSubmit={saveSettings} className="space-y-4 max-w-md">
+            <div className="bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded-xl p-5 space-y-4">
+              <div className="flex items-center gap-2 mb-1">
+                <MapPin className="h-4 w-4 text-[#2563EB]" />
+                <h2 className="text-sm font-semibold text-[#111827] dark:text-[#F1F5F9]">회사 위치 설정</h2>
+              </div>
+              <p className="text-xs text-[#6B7280] dark:text-[#94A3B8]">
+                GPS 출석 체크 기준 위치입니다. 주소와 좌표를 입력하거나 현재 위치를 사용하세요.
+              </p>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">회사 주소</label>
+                <Input
+                  value={settings.address}
+                  onChange={e => { setSettings(s => ({ ...s, address: e.target.value })); setSettingsDirty(true) }}
+                  placeholder="예: 서울시 강남구 테헤란로 123"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium mb-1">위도 (Latitude)</label>
+                  <Input
+                    type="number"
+                    step="any"
+                    value={settings.latitude ?? ''}
+                    onChange={e => { setSettings(s => ({ ...s, latitude: e.target.value ? Number(e.target.value) : null })); setSettingsDirty(true) }}
+                    placeholder="37.123456"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">경도 (Longitude)</label>
+                  <Input
+                    type="number"
+                    step="any"
+                    value={settings.longitude ?? ''}
+                    onChange={e => { setSettings(s => ({ ...s, longitude: e.target.value ? Number(e.target.value) : null })); setSettingsDirty(true) }}
+                    placeholder="127.123456"
+                  />
+                </div>
+              </div>
+
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={useCurrentGPS}
+                disabled={gpsLoading}
+              >
+                <Navigation className="h-4 w-4 mr-2" />
+                {gpsLoading ? 'GPS 확인 중...' : '현재 위치로 자동 입력'}
+              </Button>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">출석 인정 반경 (미터)</label>
+                <Input
+                  type="number"
+                  min={50}
+                  max={5000}
+                  value={settings.radius_meters}
+                  onChange={e => { setSettings(s => ({ ...s, radius_meters: Number(e.target.value) })); setSettingsDirty(true) }}
+                />
+                <p className="text-xs text-[#6B7280] dark:text-[#94A3B8] mt-1">
+                  회사 위치로부터 이 반경 내에서 출석 체크가 가능합니다. (기본: 200m)
+                </p>
+              </div>
+
+              {settings.latitude && settings.longitude && (
+                <div className="rounded-lg bg-[#EFF6FF] dark:bg-[#1E3A5F] border border-[#BFDBFE] dark:border-[#2563EB] px-3 py-2 text-xs text-[#2563EB] dark:text-[#93C5FD]">
+                  위치 설정됨: {settings.latitude.toFixed(6)}, {settings.longitude.toFixed(6)}
+                  {' · '}반경 {settings.radius_meters}m
+                </div>
+              )}
+            </div>
+
+            <Button type="submit" className="w-full max-w-md" disabled={!settingsDirty || settingsSaving}>
+              <Save className="h-4 w-4 mr-2" />
+              {settingsSaving ? '저장 중...' : '설정 저장'}
+            </Button>
+          </form>
         </TabsContent>
       </Tabs>
 
