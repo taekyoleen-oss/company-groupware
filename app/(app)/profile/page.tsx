@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   X, Eye, EyeOff, KeyRound, Palmtree, CalendarDays,
-  ChevronDown, ChevronUp, MapPin, CheckCircle2, Navigation, Clock,
+  ChevronDown, ChevronUp, MapPin, CheckCircle2, Navigation, Clock, Wifi,
 } from 'lucide-react'
 import { UserAvatar } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
@@ -39,9 +39,11 @@ interface CompanySettings {
   latitude: number | null
   longitude: number | null
   radius_meters: number
+  attendance_method: 'gps' | 'ip'
 }
 
 type GpsStatus = 'idle' | 'checking' | 'near' | 'far' | 'error' | 'no_setting'
+type IpStatus = 'idle' | 'checking' | 'allowed' | 'denied'
 
 function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371000
@@ -73,8 +75,9 @@ export default function ProfilePage() {
   const [pwOpen, setPwOpen] = useState(false)
   const [vacSummary, setVacSummary] = useState<VacSummary | null>(null)
   const [gpsStatus, setGpsStatus] = useState<GpsStatus>('idle')
+  const [ipStatus, setIpStatus] = useState<IpStatus>('idle')
   const [distanceMeters, setDistanceMeters] = useState<number | null>(null)
-  const [todayAttendance, setTodayAttendance] = useState<{ checked_in_at: string } | null>(null)
+  const [todayAttendance, setTodayAttendance] = useState<{ checked_in_at: string; method?: string } | null>(null)
   const [companySettings, setCompanySettings] = useState<CompanySettings | null>(null)
   const [checkingIn, setCheckingIn] = useState(false)
   const { showToast, ToastComponent } = useToast()
@@ -105,6 +108,17 @@ export default function ProfilePage() {
     )
   }
 
+  const checkIp = async () => {
+    setIpStatus('checking')
+    try {
+      const res = await fetch('/api/attendance/ip-check')
+      const data = await res.json()
+      setIpStatus(data.allowed ? 'allowed' : 'denied')
+    } catch {
+      setIpStatus('denied')
+    }
+  }
+
   useEffect(() => {
     import('@/lib/supabase/client').then(({ createClient }) => {
       createClient().auth.getUser().then(({ data }) => setEmail(data.user?.email ?? ''))
@@ -117,7 +131,7 @@ export default function ProfilePage() {
       fetch('/api/admin/settings').then(r => r.json()),
       fetch(`/api/attendance?date=${todayStr}`).then(r => r.json()),
     ]).then(([profileData, teamsData, vacData, settingsData, attendanceData]: [
-      ProfileWithTeam, Team[], VacSummary, CompanySettings, { checked_in_at: string } | null
+      ProfileWithTeam, Team[], VacSummary, CompanySettings, { checked_in_at: string; method?: string } | null
     ]) => {
       setProfile(profileData)
       setForm({
@@ -130,12 +144,16 @@ export default function ProfilePage() {
       setCompanySettings(settingsData)
       setTodayAttendance(attendanceData)
       if (settingsData) {
-        if (!settingsData.latitude || !settingsData.longitude) {
-          setGpsStatus('no_setting')
-        } else if (attendanceData) {
-          setGpsStatus('idle')
+        if (settingsData.attendance_method === 'ip') {
+          if (!attendanceData) checkIp()
         } else {
-          checkGps(settingsData)
+          if (!settingsData.latitude || !settingsData.longitude) {
+            setGpsStatus('no_setting')
+          } else if (attendanceData) {
+            setGpsStatus('idle')
+          } else {
+            checkGps(settingsData)
+          }
         }
       }
     })
@@ -151,10 +169,10 @@ export default function ProfilePage() {
     })
     const data = await res.json()
     if (res.ok) {
-      setTodayAttendance({ checked_in_at: data.checked_in_at })
+      setTodayAttendance({ checked_in_at: data.checked_in_at, method: data.method })
       showToast('출석이 확인되었습니다.', 'success')
     } else if (res.status === 409) {
-      setTodayAttendance({ checked_in_at: data.checked_in_at })
+      setTodayAttendance({ checked_in_at: data.checked_in_at, method: data.method })
       showToast('이미 출석 처리되었습니다.', 'success')
     } else {
       showToast(data.error ?? '출석 확인에 실패했습니다.', 'error')
@@ -298,7 +316,10 @@ export default function ProfilePage() {
       {companySettings !== null && (
         <div className="bg-white dark:bg-[#1E293B] rounded-xl border border-[#E5E7EB] dark:border-[#334155] p-6 mt-4">
           <div className="flex items-center gap-2 mb-4">
-            <MapPin className="h-4 w-4 text-blue-500" />
+            {companySettings.attendance_method === 'ip'
+              ? <Wifi className="h-4 w-4 text-blue-500" />
+              : <MapPin className="h-4 w-4 text-blue-500" />
+            }
             <h2 className="text-sm font-semibold text-[#111827] dark:text-[#F1F5F9]">오늘 출석 확인</h2>
             <span className="ml-auto text-xs text-[#9CA3AF] dark:text-[#64748B]">
               {getLocalDateStr().replace(/-/g, '.')}
@@ -311,8 +332,59 @@ export default function ProfilePage() {
               <div>
                 <p className="text-sm font-medium text-green-700 dark:text-green-300">출석 완료</p>
                 <p className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1 mt-0.5">
-                  <Clock className="h-3 w-3" />{checkedInTime} 출근
+                  <Clock className="h-3 w-3" />
+                  {todayAttendance?.method === 'office_login'
+                    ? `🖥️ 사무실 PC 로그인 출근 ${checkedInTime}`
+                    : `📍 GPS 출근 ${checkedInTime}`
+                  }
                 </p>
+              </div>
+            </div>
+          ) : companySettings.attendance_method === 'ip' ? (
+            <div className="space-y-3">
+              {ipStatus === 'checking' && (
+                <p className="text-sm text-[#6B7280] dark:text-[#94A3B8] text-center py-2 animate-pulse">
+                  네트워크 확인 중...
+                </p>
+              )}
+              {ipStatus === 'allowed' && (
+                <div className="rounded-lg bg-green-50 dark:bg-green-950/30 px-4 py-2.5 text-sm flex items-center gap-2 text-green-700 dark:text-green-300">
+                  <Wifi className="h-4 w-4 shrink-0" />
+                  사무실 네트워크에 연결되어 있습니다.
+                </div>
+              )}
+              {ipStatus === 'denied' && (
+                <div className="rounded-lg bg-[#F9FAFB] dark:bg-[#0F172A] px-4 py-2.5 text-sm flex items-center gap-2 text-[#6B7280] dark:text-[#94A3B8]">
+                  <Wifi className="h-4 w-4 shrink-0" />
+                  현재 사무실 네트워크에 연결되어 있지 않습니다.
+                </div>
+              )}
+              {ipStatus === 'idle' && (
+                <p className="text-sm text-[#6B7280] dark:text-[#94A3B8] text-center py-2">
+                  출석 확인 버튼을 눌러 네트워크를 확인하세요.
+                </p>
+              )}
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="flex-none"
+                  onClick={checkIp}
+                  disabled={ipStatus === 'checking'}
+                >
+                  <Wifi className="h-3.5 w-3.5 mr-1" />
+                  재확인
+                </Button>
+                <Button
+                  type="button"
+                  className="flex-1"
+                  disabled={ipStatus !== 'allowed' || checkingIn}
+                  onClick={handleCheckIn}
+                >
+                  <CheckCircle2 className="h-4 w-4 mr-1.5" />
+                  {checkingIn ? '처리 중...' : '출석 확인'}
+                </Button>
               </div>
             </div>
           ) : (

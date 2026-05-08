@@ -7,7 +7,8 @@ function toKSTDate(isoStr: string): string {
   return new Date(utc + 9 * 3600000).toISOString().slice(0, 10)
 }
 
-function calcDays(startAt: string, endAt: string): number {
+function calcDays(startAt: string, endAt: string, isAllDay: boolean): number {
+  if (!isAllDay) return 0.5
   const s = new Date(toKSTDate(startAt))
   const e = new Date(toKSTDate(endAt))
   return Math.round((e.getTime() - s.getTime()) / 86400000) + 1
@@ -33,7 +34,7 @@ export async function GET() {
   // 이 연도의 휴가 이벤트 조회 (범위를 넓게 잡고 KST 기준 필터링)
   const { data: events } = await supabase
     .from('cg_events')
-    .select('id, title, start_at, end_at')
+    .select('id, title, start_at, end_at, is_all_day')
     .eq('created_by', user.id)
     .eq('is_vacation', true)
     .gte('start_at', `${currentYear - 1}-12-22T00:00:00.000Z`)
@@ -52,7 +53,7 @@ export async function GET() {
       end_at: e.end_at,
       start_date: toKSTDate(e.start_at),
       end_date: toKSTDate(e.end_at),
-      days: calcDays(e.start_at, e.end_at),
+      days: calcDays(e.start_at, e.end_at, e.is_all_day ?? true),
     }))
 
   const usedDays = history.reduce((sum, e) => sum + e.days, 0)

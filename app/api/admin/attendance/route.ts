@@ -25,13 +25,13 @@ export async function GET(request: NextRequest) {
       .order('full_name'),
     supabase
       .from('cg_attendance')
-      .select('user_id, checked_in_at')
+      .select('user_id, checked_in_at, method')
       .eq('date', date),
   ])
 
-  const attendanceMap: Record<string, string> = {}
+  const attendanceMap: Record<string, { checked_in_at: string; method: string }> = {}
   for (const a of attendanceRes.data ?? []) {
-    attendanceMap[a.user_id] = a.checked_in_at
+    attendanceMap[a.user_id] = { checked_in_at: a.checked_in_at, method: a.method ?? 'gps' }
   }
 
   const result = (usersRes.data ?? []).map(u => ({
@@ -40,7 +40,8 @@ export async function GET(request: NextRequest) {
     color: u.color,
     team_id: u.team_id,
     role: u.role,
-    checked_in_at: attendanceMap[u.id] ?? null,
+    checked_in_at: attendanceMap[u.id]?.checked_in_at ?? null,
+    method: attendanceMap[u.id]?.method ?? null,
   }))
 
   return NextResponse.json({ date, records: result })

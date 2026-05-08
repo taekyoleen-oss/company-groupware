@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Check, Plus, Trash2, X, Save, Palmtree, MapPin, Navigation, ChevronLeft, ChevronRight, ClipboardList, Settings } from 'lucide-react'
+import { Check, Plus, Trash2, X, Save, Palmtree, MapPin, Navigation, ChevronLeft, ChevronRight, ClipboardList, Settings, Clock, CheckCircle, XCircle, Wifi } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
@@ -26,6 +26,15 @@ interface VacationUser {
   remaining_days: number
 }
 
+interface CancelRequest {
+  id: string
+  event_id: string
+  reason: string | null
+  created_at: string
+  requester: { id: string; full_name: string; color: string }
+  event: { id: string; title: string; start_at: string; end_at: string; is_all_day: boolean }
+}
+
 interface AttendanceRecord {
   id: string
   full_name: string
@@ -33,6 +42,7 @@ interface AttendanceRecord {
   team_id: string | null
   role: string
   checked_in_at: string | null
+  method: string | null
 }
 
 interface CompanySettings {
@@ -40,6 +50,8 @@ interface CompanySettings {
   latitude: number | null
   longitude: number | null
   radius_meters: number
+  attendance_method: 'gps' | 'ip'
+  office_ips: string
 }
 
 const STATUS_LABEL = { pending: '대기', active: '활성', inactive: '비활성' }
@@ -75,6 +87,8 @@ export default function AdminPage() {
   const [vacationUsers, setVacationUsers] = useState<VacationUser[]>([])
   const [vacEdits, setVacEdits] = useState<Record<string, number>>({})
   const [vacSaving, setVacSaving] = useState<string | null>(null)
+  const [cancelRequests, setCancelRequests] = useState<CancelRequest[]>([])
+  const [cancelProcessing, setCancelProcessing] = useState<string | null>(null)
 
   // 출석 관리
   const [attendanceDate, setAttendanceDate] = useState<string>(toLocalDateStr())
@@ -82,15 +96,15 @@ export default function AdminPage() {
   const [attendanceLoading, setAttendanceLoading] = useState(false)
 
   // 회사 설정
-  const [settings, setSettings] = useState<CompanySettings>({ address: '', latitude: null, longitude: null, radius_meters: 200 })
+  const [settings, setSettings] = useState<CompanySettings>({ address: '', latitude: null, longitude: null, radius_meters: 200, attendance_method: 'gps', office_ips: '' })
   const [settingsDirty, setSettingsDirty] = useState(false)
   const [settingsSaving, setSettingsSaving] = useState(false)
   const [gpsLoading, setGpsLoading] = useState(false)
 
   const fetchAll = useCallback(async () => {
-    const [usersRes, teamsRes, catsRes, vacRes] = await Promise.all([
+    const [usersRes, teamsRes, catsRes, vacRes, cancelRes] = await Promise.all([
       fetch('/api/admin/users'), fetch('/api/admin/teams'), fetch('/api/admin/categories'),
-      fetch('/api/admin/vacation'),
+      fetch('/api/admin/vacation'), fetch('/api/vacation-cancel-requests'),
     ])
     if (usersRes.ok) {
       const data: ProfileWithTeam[] = await usersRes.json()
@@ -116,6 +130,7 @@ export default function AdminPage() {
       vacData.forEach(u => { initVac[u.id] = u.total_days })
       setVacEdits(initVac)
     }
+    if (cancelRes.ok) setCancelRequests(await cancelRes.json())
   }, [])
 
   const fetchAttendance = useCallback(async (date: string) => {
@@ -132,7 +147,7 @@ export default function AdminPage() {
     const res = await fetch('/api/admin/settings')
     if (res.ok) {
       const data = await res.json()
-      setSettings(data)
+      setSettings({ ...data, office_ips: data.office_ips ?? '' })
     }
   }, [])
 
@@ -212,6 +227,23 @@ export default function AdminPage() {
     fetchAll()
   }
 
+  const handleVacationCancelRequest = async (id: string, action: 'approve' | 'reject') => {
+    setCancelProcessing(id)
+    const res = await fetch(`/api/vacation-cancel-requests/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action }),
+    })
+    setCancelProcessing(null)
+    if (res.ok) {
+      showToast(action === 'approve' ? '휴가 취소가 승인되었습니다.' : '취소 신청이 거부되었습니다.', 'success')
+      fetchAll()
+    } else {
+      const data = await res.json()
+      showToast(data.error ?? '처리에 실패했습니다.', 'error')
+    }
+  }
+
   const saveVacation = async (userId: string) => {
     const total = vacEdits[userId]
     if (total === undefined) return
@@ -265,6 +297,19 @@ export default function AdminPage() {
     )
   }
 
+  const fillCurrentIp = async () => {
+    const res = await fetch('/api/attendance/ip-check')
+    if (!res.ok) { showToast('IP를 가져올 수 없습니다.', 'error'); return }
+    const { ip } = await res.json()
+    setSettings(s => {
+      const existing = s.office_ips.split(',').map((x: string) => x.trim()).filter(Boolean)
+      if (existing.includes(ip)) { showToast('이미 등록된 IP입니다.', 'error'); return s }
+      return { ...s, office_ips: [...existing, ip].join(', ') }
+    })
+    setSettingsDirty(true)
+    showToast(`${ip} 가 추가되었습니다.`, 'success')
+  }
+
   const pending = users.filter(u => u.status === 'pending')
   const active = users.filter(u => u.status !== 'pending')
 
@@ -288,7 +333,12 @@ export default function AdminPage() {
           <TabsTrigger value="attendance">
             <ClipboardList className="h-3.5 w-3.5 mr-1" />출석 관리
           </TabsTrigger>
-          <TabsTrigger value="vacation">휴가 관리</TabsTrigger>
+          <TabsTrigger value="vacation">
+            휴가 관리
+            {cancelRequests.length > 0 && (
+              <span className="ml-1 text-xs bg-orange-500 text-white rounded-full px-1.5">{cancelRequests.length}</span>
+            )}
+          </TabsTrigger>
           <TabsTrigger value="teams">팀 관리</TabsTrigger>
           <TabsTrigger value="categories">카테고리</TabsTrigger>
           <TabsTrigger value="settings">
@@ -418,6 +468,11 @@ export default function AdminPage() {
                       <span className="text-xs text-[#6B7280] dark:text-[#94A3B8]">
                         {format(parseISO(r.checked_in_at), 'HH:mm', { locale: ko })}
                       </span>
+                      {r.method === 'office_login' ? (
+                        <span className="text-[10px] bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300 rounded px-1.5 py-0.5">🖥️ 사무실</span>
+                      ) : (
+                        <span className="text-[10px] bg-green-100 dark:bg-green-900/40 text-green-600 dark:text-green-300 rounded px-1.5 py-0.5">📍 GPS</span>
+                      )}
                     </div>
                   ) : (
                     <div className="flex items-center gap-1.5">
@@ -436,6 +491,66 @@ export default function AdminPage() {
 
         {/* ── 휴가 관리 ─────────────────────────────────────── */}
         <TabsContent value="vacation">
+          {/* 휴가 취소 요청 */}
+          {cancelRequests.length > 0 && (
+            <div className="mb-6">
+              <h2 className="text-sm font-semibold text-orange-600 dark:text-orange-400 mb-2 flex items-center gap-1.5">
+                <Clock className="h-4 w-4" />
+                휴가 취소 요청 ({cancelRequests.length}건)
+              </h2>
+              <div className="space-y-2">
+                {cancelRequests.map(req => {
+                  const isProcessing = cancelProcessing === req.id
+                  const startDate = req.event?.is_all_day
+                    ? format(parseISO(req.event.start_at), 'M월 d일', { locale: ko })
+                    : format(parseISO(req.event.start_at), 'M월 d일 HH:mm', { locale: ko })
+                  const endDate = req.event?.is_all_day
+                    ? format(parseISO(req.event.end_at), 'M월 d일', { locale: ko })
+                    : format(parseISO(req.event.end_at), 'HH:mm')
+                  return (
+                    <div key={req.id} className="bg-white dark:bg-[#1E293B] border border-orange-200 dark:border-orange-800 rounded-lg p-3">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <UserAvatar name={req.requester?.full_name ?? ''} color={req.requester?.color ?? '#6B7280'} size={32} />
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm dark:text-[#F1F5F9]">{req.requester?.full_name}</p>
+                          <p className="text-xs text-[#6B7280] dark:text-[#94A3B8]">
+                            {req.event?.title} · {startDate}
+                            {startDate !== endDate && ` ~ ${endDate}`}
+                            {!req.event?.is_all_day && <span className="ml-1 text-orange-500">반차</span>}
+                          </p>
+                          {req.reason && (
+                            <p className="text-xs text-[#6B7280] dark:text-[#94A3B8] mt-0.5 italic">"{req.reason}"</p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <Button
+                            size="sm"
+                            className="bg-green-500 hover:bg-green-600 text-white h-8"
+                            disabled={isProcessing}
+                            onClick={() => handleVacationCancelRequest(req.id, 'approve')}
+                          >
+                            <CheckCircle className="h-3.5 w-3.5 mr-1" />
+                            승인
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-[#EF4444] border-[#EF4444] hover:bg-[#FEF2F2] h-8"
+                            disabled={isProcessing}
+                            onClick={() => handleVacationCancelRequest(req.id, 'reject')}
+                          >
+                            <XCircle className="h-3.5 w-3.5 mr-1" />
+                            거부
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
           <div className="mb-3 flex items-center gap-2 text-sm text-[#6B7280] dark:text-[#94A3B8]">
             <Palmtree className="h-4 w-4 text-orange-500" />
             <span>{new Date().getFullYear()}년 휴가 할당량 관리</span>
@@ -550,79 +665,141 @@ export default function AdminPage() {
         {/* ── 회사 설정 ─────────────────────────────────────── */}
         <TabsContent value="settings">
           <form onSubmit={saveSettings} className="space-y-4 max-w-md">
-            <div className="bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded-xl p-5 space-y-4">
+
+            {/* 출석 체크 방식 선택 */}
+            <div className="bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded-xl p-5 space-y-3">
               <div className="flex items-center gap-2 mb-1">
-                <MapPin className="h-4 w-4 text-[#2563EB]" />
-                <h2 className="text-sm font-semibold text-[#111827] dark:text-[#F1F5F9]">회사 위치 설정</h2>
+                <Settings className="h-4 w-4 text-[#2563EB]" />
+                <h2 className="text-sm font-semibold text-[#111827] dark:text-[#F1F5F9]">출석 체크 방식</h2>
               </div>
-              <p className="text-xs text-[#6B7280] dark:text-[#94A3B8]">
-                GPS 출석 체크 기준 위치입니다. 주소와 좌표를 입력하거나 현재 위치를 사용하세요.
-              </p>
-
-              <div>
-                <label className="block text-sm font-medium mb-1">회사 주소</label>
-                <Input
-                  value={settings.address}
-                  onChange={e => { setSettings(s => ({ ...s, address: e.target.value })); setSettingsDirty(true) }}
-                  placeholder="예: 서울시 강남구 테헤란로 123"
-                />
+              <div className="flex gap-3">
+                {(['gps', 'ip'] as const).map(method => (
+                  <button
+                    key={method}
+                    type="button"
+                    onClick={() => { setSettings(s => ({ ...s, attendance_method: method })); setSettingsDirty(true) }}
+                    className={`flex-1 flex items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors ${
+                      settings.attendance_method === method
+                        ? 'border-[#2563EB] bg-[#EFF6FF] dark:bg-[#1E3A5F] text-[#2563EB] dark:text-[#93C5FD]'
+                        : 'border-[#E5E7EB] dark:border-[#334155] text-[#6B7280] dark:text-[#94A3B8] hover:border-[#9CA3AF]'
+                    }`}
+                  >
+                    {method === 'gps' ? <Navigation className="h-4 w-4" /> : <Wifi className="h-4 w-4" />}
+                    {method === 'gps' ? 'GPS 위치' : '사무실 IP'}
+                  </button>
+                ))}
               </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium mb-1">위도 (Latitude)</label>
-                  <Input
-                    type="number"
-                    step="any"
-                    value={settings.latitude ?? ''}
-                    onChange={e => { setSettings(s => ({ ...s, latitude: e.target.value ? Number(e.target.value) : null })); setSettingsDirty(true) }}
-                    placeholder="37.123456"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">경도 (Longitude)</label>
-                  <Input
-                    type="number"
-                    step="any"
-                    value={settings.longitude ?? ''}
-                    onChange={e => { setSettings(s => ({ ...s, longitude: e.target.value ? Number(e.target.value) : null })); setSettingsDirty(true) }}
-                    placeholder="127.123456"
-                  />
-                </div>
-              </div>
-
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full"
-                onClick={useCurrentGPS}
-                disabled={gpsLoading}
-              >
-                <Navigation className="h-4 w-4 mr-2" />
-                {gpsLoading ? 'GPS 확인 중...' : '현재 위치로 자동 입력'}
-              </Button>
-
-              <div>
-                <label className="block text-sm font-medium mb-1">출석 인정 반경 (미터)</label>
-                <Input
-                  type="number"
-                  min={50}
-                  max={5000}
-                  value={settings.radius_meters}
-                  onChange={e => { setSettings(s => ({ ...s, radius_meters: Number(e.target.value) })); setSettingsDirty(true) }}
-                />
-                <p className="text-xs text-[#6B7280] dark:text-[#94A3B8] mt-1">
-                  회사 위치로부터 이 반경 내에서 출석 체크가 가능합니다. (기본: 200m)
-                </p>
-              </div>
-
-              {settings.latitude && settings.longitude && (
-                <div className="rounded-lg bg-[#EFF6FF] dark:bg-[#1E3A5F] border border-[#BFDBFE] dark:border-[#2563EB] px-3 py-2 text-xs text-[#2563EB] dark:text-[#93C5FD]">
-                  위치 설정됨: {settings.latitude.toFixed(6)}, {settings.longitude.toFixed(6)}
-                  {' · '}반경 {settings.radius_meters}m
-                </div>
-              )}
             </div>
+
+            {/* GPS 설정 */}
+            {settings.attendance_method === 'gps' && (
+              <div className="bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded-xl p-5 space-y-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <MapPin className="h-4 w-4 text-[#2563EB]" />
+                  <h2 className="text-sm font-semibold text-[#111827] dark:text-[#F1F5F9]">회사 위치 설정</h2>
+                </div>
+                <p className="text-xs text-[#6B7280] dark:text-[#94A3B8]">
+                  GPS 출석 체크 기준 위치입니다. 주소와 좌표를 입력하거나 현재 위치를 사용하세요.
+                </p>
+
+                <div>
+                  <label className="block text-sm font-medium mb-1">회사 주소</label>
+                  <Input
+                    value={settings.address}
+                    onChange={e => { setSettings(s => ({ ...s, address: e.target.value })); setSettingsDirty(true) }}
+                    placeholder="예: 서울시 강남구 테헤란로 123"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium mb-1">위도 (Latitude)</label>
+                    <Input
+                      type="number"
+                      step="any"
+                      value={settings.latitude ?? ''}
+                      onChange={e => { setSettings(s => ({ ...s, latitude: e.target.value ? Number(e.target.value) : null })); setSettingsDirty(true) }}
+                      placeholder="37.123456"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">경도 (Longitude)</label>
+                    <Input
+                      type="number"
+                      step="any"
+                      value={settings.longitude ?? ''}
+                      onChange={e => { setSettings(s => ({ ...s, longitude: e.target.value ? Number(e.target.value) : null })); setSettingsDirty(true) }}
+                      placeholder="127.123456"
+                    />
+                  </div>
+                </div>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  onClick={useCurrentGPS}
+                  disabled={gpsLoading}
+                >
+                  <Navigation className="h-4 w-4 mr-2" />
+                  {gpsLoading ? 'GPS 확인 중...' : '현재 위치로 자동 입력'}
+                </Button>
+
+                <div>
+                  <label className="block text-sm font-medium mb-1">출석 인정 반경 (미터)</label>
+                  <Input
+                    type="number"
+                    min={50}
+                    max={5000}
+                    value={settings.radius_meters}
+                    onChange={e => { setSettings(s => ({ ...s, radius_meters: Number(e.target.value) })); setSettingsDirty(true) }}
+                  />
+                  <p className="text-xs text-[#6B7280] dark:text-[#94A3B8] mt-1">
+                    회사 위치로부터 이 반경 내에서 출석 체크가 가능합니다. (기본: 200m)
+                  </p>
+                </div>
+
+                {settings.latitude && settings.longitude && (
+                  <div className="rounded-lg bg-[#EFF6FF] dark:bg-[#1E3A5F] border border-[#BFDBFE] dark:border-[#2563EB] px-3 py-2 text-xs text-[#2563EB] dark:text-[#93C5FD]">
+                    위치 설정됨: {settings.latitude.toFixed(6)}, {settings.longitude.toFixed(6)}
+                    {' · '}반경 {settings.radius_meters}m
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* IP 설정 */}
+            {settings.attendance_method === 'ip' && (
+              <div className="bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded-xl p-5 space-y-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <Wifi className="h-4 w-4 text-[#2563EB]" />
+                  <h2 className="text-sm font-semibold text-[#111827] dark:text-[#F1F5F9]">허용 IP 주소 설정</h2>
+                </div>
+                <p className="text-xs text-[#6B7280] dark:text-[#94A3B8]">
+                  사무실 네트워크 IP를 쉼표로 구분하여 입력하세요. 이 IP에서만 출석 체크가 가능합니다.
+                </p>
+                <div>
+                  <label className="block text-sm font-medium mb-1">허용 IP 목록</label>
+                  <Input
+                    value={settings.office_ips}
+                    onChange={e => { setSettings(s => ({ ...s, office_ips: e.target.value })); setSettingsDirty(true) }}
+                    placeholder="예: 192.168.1.1, 10.0.0.1"
+                  />
+                  <p className="text-xs text-[#6B7280] dark:text-[#94A3B8] mt-1">
+                    쉼표(,)로 구분하세요.
+                  </p>
+                </div>
+                <Button type="button" variant="outline" className="w-full" onClick={fillCurrentIp}>
+                  <Wifi className="h-4 w-4 mr-2" />
+                  현재 내 IP 자동 추가
+                </Button>
+                {settings.office_ips && (
+                  <div className="rounded-lg bg-[#EFF6FF] dark:bg-[#1E3A5F] border border-[#BFDBFE] dark:border-[#2563EB] px-3 py-2 text-xs text-[#2563EB] dark:text-[#93C5FD]">
+                    허용 IP: {settings.office_ips}
+                  </div>
+                )}
+              </div>
+            )}
 
             <Button type="submit" className="w-full max-w-md" disabled={!settingsDirty || settingsSaving}>
               <Save className="h-4 w-4 mr-2" />

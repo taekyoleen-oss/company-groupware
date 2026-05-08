@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { getClientIp } from '@/lib/utils/ip'
 
 export async function GET(request: NextRequest) {
   const supabase = await createClient()
@@ -12,7 +13,7 @@ export async function GET(request: NextRequest) {
 
   const { data } = await supabase
     .from('cg_attendance')
-    .select('*')
+    .select('id, user_id, date, checked_in_at, method')
     .eq('user_id', user.id)
     .eq('date', date)
     .single()
@@ -26,10 +27,23 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await request.json()
-  // 클라이언트 로컬 날짜 사용 (KST 등 시차 보정)
   const { date } = body
   if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     return NextResponse.json({ error: '날짜 형식이 올바르지 않습니다.' }, { status: 400 })
+  }
+
+  const { data: settings } = await supabase
+    .from('cg_company_settings')
+    .select('attendance_method, office_ips')
+    .single()
+
+  if (settings?.attendance_method === 'ip') {
+    const ip = getClientIp(request)
+    const allowedIps = (settings.office_ips ?? '')
+      .split(',').map((s: string) => s.trim()).filter(Boolean)
+    if (!allowedIps.includes(ip)) {
+      return NextResponse.json({ error: '사무실 네트워크에서만 출석 체크가 가능합니다.' }, { status: 403 })
+    }
   }
 
   const { data: existing } = await supabase

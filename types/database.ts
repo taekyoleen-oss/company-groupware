@@ -280,6 +280,54 @@ export interface Database {
           }
         ]
       }
+      cg_vacation_cancel_requests: {
+        Row: {
+          id: string
+          event_id: string
+          requested_by: string
+          status: 'pending' | 'approved' | 'rejected'
+          reason: string | null
+          reviewed_by: string | null
+          reviewed_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          event_id: string
+          requested_by: string
+          status?: 'pending' | 'approved' | 'rejected'
+          reason?: string | null
+          reviewed_by?: string | null
+          reviewed_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          event_id?: string
+          requested_by?: string
+          status?: 'pending' | 'approved' | 'rejected'
+          reason?: string | null
+          reviewed_by?: string | null
+          reviewed_at?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'cg_vacation_cancel_requests_event_id_fkey'
+            columns: ['event_id']
+            isOneToOne: false
+            referencedRelation: 'cg_events'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'cg_vacation_cancel_requests_requested_by_fkey'
+            columns: ['requested_by']
+            isOneToOne: false
+            referencedRelation: 'cg_profiles'
+            referencedColumns: ['id']
+          }
+        ]
+      }
       cg_vacation_allocations: {
         Row: {
           id: string
@@ -322,6 +370,8 @@ export interface Database {
           latitude: number | null
           longitude: number | null
           radius_meters: number
+          attendance_method: 'gps' | 'ip'
+          office_ips: string | null
           updated_at: string
         }
         Insert: {
@@ -330,6 +380,8 @@ export interface Database {
           latitude?: number | null
           longitude?: number | null
           radius_meters?: number
+          attendance_method?: 'gps' | 'ip'
+          office_ips?: string | null
           updated_at?: string
         }
         Update: {
@@ -338,9 +390,43 @@ export interface Database {
           latitude?: number | null
           longitude?: number | null
           radius_meters?: number
+          attendance_method?: 'gps' | 'ip'
+          office_ips?: string | null
           updated_at?: string
         }
         Relationships: []
+      }
+      cg_office_networks: {
+        Row: {
+          id: string
+          cidr: string
+          label: string | null
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          cidr: string
+          label?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          cidr?: string
+          label?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'cg_office_networks_created_by_fkey'
+            columns: ['created_by']
+            isOneToOne: false
+            referencedRelation: 'cg_profiles'
+            referencedColumns: ['id']
+          }
+        ]
       }
       cg_attendance: {
         Row: {
@@ -348,18 +434,21 @@ export interface Database {
           user_id: string
           date: string
           checked_in_at: string
+          method: 'gps' | 'office_login'
         }
         Insert: {
           id?: string
           user_id: string
           date: string
           checked_in_at?: string
+          method?: 'gps' | 'office_login'
         }
         Update: {
           id?: string
           user_id?: string
           date?: string
           checked_in_at?: string
+          method?: 'gps' | 'office_login'
         }
         Relationships: [
           {

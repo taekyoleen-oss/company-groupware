@@ -5,7 +5,8 @@ function toKSTDate(isoStr: string): string {
   return new Date(new Date(isoStr).getTime() + 9 * 3600000).toISOString().slice(0, 10)
 }
 
-function calcDays(startAt: string, endAt: string): number {
+function calcDays(startAt: string, endAt: string, isAllDay: boolean): number {
+  if (!isAllDay) return 0.5
   const s = new Date(toKSTDate(startAt))
   const e = new Date(toKSTDate(endAt))
   return Math.round((e.getTime() - s.getTime()) / 86400000) + 1
@@ -38,7 +39,7 @@ export async function GET() {
       .eq('year', currentYear),
     supabase
       .from('cg_events')
-      .select('created_by, start_at, end_at')
+      .select('created_by, start_at, end_at, is_all_day')
       .eq('is_vacation', true)
       .gte('start_at', `${currentYear - 1}-12-22T00:00:00.000Z`)
       .lte('start_at', `${currentYear}-12-31T23:59:59.999Z`),
@@ -53,7 +54,7 @@ export async function GET() {
   for (const e of eventsRes.data ?? []) {
     const kstYear = parseInt(toKSTDate(e.start_at).slice(0, 4))
     if (kstYear !== currentYear) continue
-    usedMap[e.created_by] = (usedMap[e.created_by] ?? 0) + calcDays(e.start_at, e.end_at)
+    usedMap[e.created_by] = (usedMap[e.created_by] ?? 0) + calcDays(e.start_at, e.end_at, e.is_all_day ?? true)
   }
 
   const result = (usersRes.data ?? []).map(u => ({
