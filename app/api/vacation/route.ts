@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { countWorkdays } from '@/lib/utils/holidayDates'
 
 // KST(+9)로 변환하여 날짜 문자열(YYYY-MM-DD) 반환
 function toKSTDate(isoStr: string): string {
@@ -9,9 +10,7 @@ function toKSTDate(isoStr: string): string {
 
 function calcDays(startAt: string, endAt: string, isAllDay: boolean): number {
   if (!isAllDay) return 0.5
-  const s = new Date(toKSTDate(startAt))
-  const e = new Date(toKSTDate(endAt))
-  return Math.round((e.getTime() - s.getTime()) / 86400000) + 1
+  return countWorkdays(toKSTDate(startAt), toKSTDate(endAt))
 }
 
 export async function GET() {

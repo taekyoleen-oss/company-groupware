@@ -65,6 +65,13 @@ body {
   font-size: 0.75rem !important;
   cursor: pointer !important;
 }
+/* 휴가/반차 이벤트 — 점선 테두리 + 이탤릭 */
+.fc-vacation-event {
+  border-style: dashed !important;
+  border-width: 1.5px !important;
+  border-radius: 6px !important;
+  font-style: italic !important;
+}
 .fc .fc-daygrid-day.fc-day-today {
   background-color: var(--primary-soft) !important;
 }

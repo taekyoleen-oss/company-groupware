@@ -10,6 +10,7 @@ import { useToast } from '@/components/ui/toast'
 import { User, Clock, MapPin, Tag, Eye, Bell, Palmtree, AlertTriangle } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import type { EventCategory } from '@/types/app'
+import { countWorkdays } from '@/lib/utils/holidayDates'
 
 const VISIBILITY_LABEL = { company: '전사 공개', team: '팀 공개', private: '나만 보기' }
 const VACATION_COLOR = '#F97316'
@@ -42,9 +43,7 @@ interface EventModalProps {
 }
 
 function calcDaysFromLocalStr(startStr: string, endStr: string): number {
-  const s = new Date(startStr.slice(0, 10))
-  const e = new Date(endStr.slice(0, 10))
-  return Math.round((e.getTime() - s.getTime()) / 86400000) + 1
+  return countWorkdays(startStr.slice(0, 10), endStr.slice(0, 10))
 }
 
 export function EventModal({ isOpen, onClose, initialDate, eventId, onSuccess }: EventModalProps) {

@@ -115,7 +115,14 @@ function CalendarContent() {
     ...KOREAN_HOLIDAYS,
     ...(showAnniversaries ? KOREAN_ANNIVERSARIES : []),
     ...events.map(e => {
-      const prefix = e.visibility === 'company' ? '[전사] ' : e.visibility === 'team' ? `[${getTeamAbbr(e.team_id)}] ` : ''
+      const isVac = e.is_vacation
+      const isHalf = isVac && !e.is_all_day
+      const prefix = isVac
+        ? ''
+        : e.visibility === 'company' ? '[전사] ' : e.visibility === 'team' ? `[${getTeamAbbr(e.team_id)}] ` : ''
+      const title = isVac
+        ? `🌴 ${e.title}${isHalf ? ' (반차)' : ''}`
+        : prefix + e.title
 
       // FullCalendar all-day 이벤트의 end는 배타적(exclusive).
       // 저장된 end_at(당일 23:59)을 로컬 기준 +1일로 조정해야 기간이 올바르게 표시됨.
@@ -125,16 +132,19 @@ function CalendarContent() {
         endDate = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).toISOString()
       }
 
+      const baseColor = resolveEventColor({ color: e.color, category: e.category as any, author: e.author as any })
+
       return {
         id:              e.id,
-        title:           prefix + e.title,
+        title,
         start:           e.start_at,
         end:             endDate,
         allDay:          e.is_all_day,
-        backgroundColor: resolveEventColor({ color: e.color, category: e.category as any, author: e.author as any }),
-        borderColor:     resolveEventColor({ color: e.color, category: e.category as any, author: e.author as any }),
-        textColor:       '#ffffff',
+        backgroundColor: isVac ? '#FEF3C7' : baseColor,
+        borderColor:     isVac ? '#F59E0B' : baseColor,
+        textColor:       isVac ? '#92400E' : '#ffffff',
         editable:        canEditEvent(e),
+        classNames:      isVac ? ['fc-vacation-event'] : [],
       }
     }),
   ]
