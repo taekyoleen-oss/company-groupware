@@ -190,7 +190,7 @@ function CalendarContent() {
         ? ''
         : e.visibility === 'company' ? '[전사] ' : e.visibility === 'team' ? `[${getTeamAbbr(e.team_id)}] ` : ''
       const title = isVac
-        ? `🌴 ${e.title}${isHalf ? ' (반차)' : ''}`
+        ? `☀️ ${e.title}${isHalf ? ' (반차)' : ''}`
         : prefix + e.title
 
       let endDate = e.end_at

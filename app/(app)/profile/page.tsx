@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import {
-  X, Eye, EyeOff, KeyRound, Palmtree, CalendarDays,
+  X, Eye, EyeOff, KeyRound, Sun, CalendarDays,
   MapPin, CheckCircle2, Navigation, Clock, Wifi, Settings, Lock,
 } from 'lucide-react'
 import { UserAvatar } from '@/components/ui/avatar'
@@ -67,7 +67,7 @@ function getLocalDateStr(): string {
 const TABS: { key: TabKey; icon: React.ReactNode; label: string }[] = [
   { key: '설정',    icon: <Settings className="h-3.5 w-3.5" />,  label: '설정' },
   { key: '출석',    icon: <CheckCircle2 className="h-3.5 w-3.5" />, label: '출석' },
-  { key: '휴가',    icon: <Palmtree className="h-3.5 w-3.5" />,  label: '휴가' },
+  { key: '휴가',    icon: <Sun className="h-3.5 w-3.5" />,  label: '휴가' },
   { key: '비밀번호', icon: <Lock className="h-3.5 w-3.5" />,      label: '비밀번호' },
 ]
 
@@ -430,7 +430,7 @@ export default function ProfilePage() {
           ) : (
             <>
               <div className="flex items-center gap-2 mb-4">
-                <Palmtree className="h-4 w-4 text-orange-500" />
+                <Sun className="h-4 w-4 text-orange-500" />
                 <h2 className="text-sm font-semibold text-[#111827] dark:text-[#F1F5F9]">
                   {vacSummary.year}년 휴가 현황
                 </h2>
@@ -481,7 +481,7 @@ export default function ProfilePage() {
                     {vacSummary.history.map(h => (
                       <div key={h.id} className="flex items-center justify-between rounded-lg bg-[#F9FAFB] dark:bg-[#0F172A] px-3 py-2">
                         <div className="flex items-center gap-2">
-                          <span className="text-sm">🌴</span>
+                          <span className="text-sm">☀️</span>
                           <span className="text-xs text-[#374151] dark:text-[#D1D5DB]">
                             {h.start_date === h.end_date
                               ? format(new Date(h.start_date), 'M월 d일 (EEE)', { locale: ko })

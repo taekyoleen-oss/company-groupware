@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Check, Plus, Trash2, X, Save, Palmtree, MapPin, Navigation, ChevronLeft, ChevronRight, ClipboardList, Settings, Clock, CheckCircle, XCircle, Wifi } from 'lucide-react'
+import { Check, Plus, Trash2, X, Save, Sun, MapPin, Navigation, ChevronLeft, ChevronRight, ClipboardList, Settings, Clock, CheckCircle, XCircle, Wifi } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
@@ -552,7 +552,7 @@ export default function AdminPage() {
           )}
 
           <div className="mb-3 flex items-center gap-2 text-sm text-[#6B7280] dark:text-[#94A3B8]">
-            <Palmtree className="h-4 w-4 text-orange-500" />
+            <Sun className="h-4 w-4 text-orange-500" />
             <span>{new Date().getFullYear()}년 휴가 할당량 관리</span>
           </div>
           <div className="space-y-2">
