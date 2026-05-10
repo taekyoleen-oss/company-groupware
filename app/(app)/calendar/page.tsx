@@ -8,9 +8,10 @@ import interactionPlugin from '@fullcalendar/interaction'
 import type { DateClickArg } from '@fullcalendar/interaction'
 import type { EventClickArg, EventInput, EventDropArg } from '@fullcalendar/core'
 import { startOfDay, endOfDay, parseISO } from 'date-fns'
-import { Plus, X, Users, User } from 'lucide-react'
+import { Plus, X, Users, User, Sun } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { EventModal } from '@/components/calendar/EventModal'
+import { VacationModal } from '@/components/calendar/VacationModal'
 import { DayEventsPopup } from '@/components/calendar/DayEventsPopup'
 import { resolveEventColor } from '@/lib/utils/eventColor'
 import { KOREAN_HOLIDAYS, KOREAN_ANNIVERSARIES, HOLIDAY_DATE_SET } from '@/lib/utils/koreanHolidays'
@@ -34,6 +35,10 @@ function CalendarContent() {
   const [dayPopupDate,   setDayPopupDate]   = useState<Date>(new Date())
   const [dayPopupEvents, setDayPopupEvents] = useState<EventWithDetails[]>([])
 
+  const [isVacationModalOpen, setIsVacationModalOpen] = useState(false)
+  const [vacationModalDate, setVacationModalDate]     = useState<Date | null>(null)
+  const [vacationEventId, setVacationEventId]         = useState<string | null>(null)
+
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [isAdminUser,   setIsAdminUser]   = useState(false)
 
@@ -45,6 +50,70 @@ function CalendarContent() {
   const lastClickDateRef = useRef<string | null>(null)
   const touchStartX      = useRef<number>(0)
   const touchStartY      = useRef<number>(0)
+
+  // Track whether we pushed a history entry for the current modal
+  const modalHistoryPushed = useRef(false)
+  const skipPopstate       = useRef(false)
+
+  // Back-button: push state when any modal/popup opens, pop on back
+  useEffect(() => {
+    const anyOpen = isModalOpen || isDayPopupOpen || isVacationModalOpen
+    if (anyOpen && !modalHistoryPushed.current) {
+      window.history.pushState({ cgModal: true }, '')
+      modalHistoryPushed.current = true
+    }
+  }, [isModalOpen, isDayPopupOpen, isVacationModalOpen])
+
+  useEffect(() => {
+    const handlePopState = () => {
+      if (skipPopstate.current) {
+        skipPopstate.current = false
+        return
+      }
+      modalHistoryPushed.current = false
+      setIsModalOpen(false)
+      setModalDate(null)
+      setEditEventId(null)
+      setIsDayPopupOpen(false)
+      setIsVacationModalOpen(false)
+      setVacationModalDate(null)
+      setVacationEventId(null)
+    }
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
+
+  // Wrap close callbacks to also clean up history state
+  const closeEventModal = useCallback(() => {
+    if (modalHistoryPushed.current) {
+      skipPopstate.current = true
+      modalHistoryPushed.current = false
+      window.history.back()
+    }
+    setIsModalOpen(false)
+    setModalDate(null)
+    setEditEventId(null)
+  }, [])
+
+  const closeDayPopup = useCallback(() => {
+    if (modalHistoryPushed.current) {
+      skipPopstate.current = true
+      modalHistoryPushed.current = false
+      window.history.back()
+    }
+    setIsDayPopupOpen(false)
+  }, [])
+
+  const closeVacationModal = useCallback(() => {
+    if (modalHistoryPushed.current) {
+      skipPopstate.current = true
+      modalHistoryPushed.current = false
+      window.history.back()
+    }
+    setIsVacationModalOpen(false)
+    setVacationModalDate(null)
+    setVacationEventId(null)
+  }, [])
 
   useEffect(() => {
     fetch('/api/profiles')
@@ -124,8 +193,6 @@ function CalendarContent() {
         ? `🌴 ${e.title}${isHalf ? ' (반차)' : ''}`
         : prefix + e.title
 
-      // FullCalendar all-day 이벤트의 end는 배타적(exclusive).
-      // 저장된 end_at(당일 23:59)을 로컬 기준 +1일로 조정해야 기간이 올바르게 표시됨.
       let endDate = e.end_at
       if (e.is_all_day) {
         const d = new Date(e.end_at)
@@ -159,6 +226,19 @@ function CalendarContent() {
     })
   }
 
+  const openEventOrVacation = (eventId: string) => {
+    const ev = events.find(e => e.id === eventId)
+    if (ev?.is_vacation) {
+      setVacationEventId(eventId)
+      setVacationModalDate(null)
+      setIsVacationModalOpen(true)
+    } else {
+      setEditEventId(eventId)
+      setModalDate(null)
+      setIsModalOpen(true)
+    }
+  }
+
   const handleDateClick = (info: DateClickArg) => {
     const clickedDate    = info.date
     const clickedDateStr = info.dateStr
@@ -187,18 +267,13 @@ function CalendarContent() {
   }
 
   const handleEventClick = (info: EventClickArg) => {
-    // 공휴일·기념일은 클릭 무시
     if (info.event.id.startsWith('holiday-') || info.event.id.startsWith('anniversary-')) return
-    setEditEventId(info.event.id)
-    setModalDate(null)
-    setIsModalOpen(true)
+    openEventOrVacation(info.event.id)
   }
 
   const handleDayPopupEventClick = (eventId: string) => {
     setIsDayPopupOpen(false)
-    setEditEventId(eventId)
-    setModalDate(null)
-    setIsModalOpen(true)
+    openEventOrVacation(eventId)
   }
 
   const handleDayPopupNewEvent = () => {
@@ -210,7 +285,6 @@ function CalendarContent() {
 
   const handleEventDrop = async (info: EventDropArg) => {
     const { event, revert } = info
-    // 드래그는 editable:false 이벤트에서 이미 막히지만, 안전망으로도 검사
     if (event.id.startsWith('holiday-') || event.id.startsWith('anniversary-')) { revert(); return }
     const start = event.start
     const end   = event.end ?? (start ? new Date(start.getTime() + 3600000) : null)
@@ -237,7 +311,7 @@ function CalendarContent() {
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-xl font-bold text-[#111827] dark:text-[#F1F5F9]">캘린더</h1>
         <div className="flex items-center gap-2 sm:gap-3">
-          {/* 기념일 표시 토글 */}
+          {/* 기념일 토글 */}
           <button
             type="button"
             onClick={() => setShowAnniversaries(v => !v)}
@@ -250,6 +324,21 @@ function CalendarContent() {
             <span className={`inline-block h-2 w-2 rounded-full ${showAnniversaries ? 'bg-[#9CA3AF]' : 'bg-[#D1D5DB]'}`} />
             기념일
           </button>
+          {/* 휴가 신청 버튼 */}
+          <Button
+            size="sm"
+            variant="outline"
+            className="border-orange-300 text-orange-600 hover:bg-orange-50 dark:border-orange-700 dark:text-orange-400 dark:hover:bg-orange-950/30"
+            onClick={() => {
+              setVacationModalDate(new Date())
+              setVacationEventId(null)
+              setIsVacationModalOpen(true)
+            }}
+          >
+            <Sun className="h-4 w-4 mr-1" />
+            휴가
+          </Button>
+          {/* 새 일정 버튼 */}
           <Button size="sm" onClick={() => { setModalDate(new Date()); setEditEventId(null); setIsModalOpen(true) }}>
             <Plus className="h-4 w-4 mr-1" />
             새 일정
@@ -324,7 +413,7 @@ function CalendarContent() {
           buttonText={{ today: '오늘', month: '월', week: '주', day: '일' }}
           eventTimeFormat={{ hour: '2-digit', minute: '2-digit', hour12: false }}
           dayCellDidMount={(arg) => {
-            const dateStr = arg.date.toLocaleDateString('sv-SE') // YYYY-MM-DD
+            const dateStr = arg.date.toLocaleDateString('sv-SE')
             const isSunday  = arg.date.getDay() === 0
             const isHoliday = HOLIDAY_DATE_SET.has(dateStr)
             if (isSunday || isHoliday) {
@@ -337,7 +426,7 @@ function CalendarContent() {
 
       <DayEventsPopup
         isOpen={isDayPopupOpen}
-        onClose={() => setIsDayPopupOpen(false)}
+        onClose={closeDayPopup}
         date={dayPopupDate}
         events={dayPopupEvents}
         onEventClick={handleDayPopupEventClick}
@@ -346,9 +435,17 @@ function CalendarContent() {
 
       <EventModal
         isOpen={isModalOpen}
-        onClose={() => { setIsModalOpen(false); setModalDate(null); setEditEventId(null) }}
+        onClose={closeEventModal}
         initialDate={modalDate}
         eventId={editEventId}
+        onSuccess={fetchEvents}
+      />
+
+      <VacationModal
+        isOpen={isVacationModalOpen}
+        onClose={closeVacationModal}
+        initialDate={vacationModalDate}
+        eventId={vacationEventId}
         onSuccess={fetchEvents}
       />
     </div>
