@@ -417,7 +417,7 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
                   <div>
                     <label className="block text-xs font-medium mb-1 text-[#6B7280]">시작일</label>
                     <Input type="date" value={form.start_at.slice(0, 10)}
-                      onChange={e => setForm(f => ({ ...f, start_at: e.target.value + 'T00:00' }))} required />
+                      onChange={e => setForm(f => ({ ...f, start_at: e.target.value + 'T00:00', end_at: e.target.value + 'T00:00' }))} required />
                   </div>
                   <div>
                     <label className="block text-xs font-medium mb-1 text-[#6B7280]">종료일</label>

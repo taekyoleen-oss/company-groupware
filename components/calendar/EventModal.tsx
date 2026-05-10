@@ -270,7 +270,7 @@ export function EventModal({ isOpen, onClose, initialDate, eventId, onSuccess }:
                 <div>
                   <label className="block text-xs font-medium mb-1 text-[#6B7280]">시작</label>
                   {form.is_all_day
-                    ? <Input type="date" value={form.start_at.slice(0, 10)} onChange={e => setForm(f => ({ ...f, start_at: e.target.value + 'T00:00' }))} required />
+                    ? <Input type="date" value={form.start_at.slice(0, 10)} onChange={e => setForm(f => ({ ...f, start_at: e.target.value + 'T00:00', end_at: e.target.value + 'T00:00' }))} required />
                     : <Input type="datetime-local" value={form.start_at} onChange={e => {
                         const s = e.target.value
                         setForm(f => ({ ...f, start_at: s, end_at: format(addHours(new Date(s), 1), "yyyy-MM-dd'T'HH:mm") }))
