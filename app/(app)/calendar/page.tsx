@@ -6,7 +6,7 @@ import dayGridPlugin from '@fullcalendar/daygrid'
 import timeGridPlugin from '@fullcalendar/timegrid'
 import interactionPlugin from '@fullcalendar/interaction'
 import type { DateClickArg } from '@fullcalendar/interaction'
-import type { EventClickArg, EventInput, EventDropArg, EventContentArg } from '@fullcalendar/core'
+import type { EventClickArg, EventInput, EventDropArg } from '@fullcalendar/core'
 import { startOfDay, endOfDay, parseISO } from 'date-fns'
 import { Plus, X, Users, User, Sun } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
@@ -221,8 +221,9 @@ function CalendarContent() {
       const prefix = isVac
         ? ''
         : e.visibility === 'company' ? '[전사] ' : e.visibility === 'team' ? `[${getTeamAbbr(e.team_id)}] ` : ''
+      const isCancelPending = isVac && pendingCancelIds.has(e.id)
       const title = isVac
-        ? `☀️ ${e.title}${isHalf ? ' (반차)' : ''}`
+        ? `☀️ ${e.title}${isHalf ? ' (반차)' : ''}${isCancelPending ? ' 취소중' : ''}`
         : prefix + e.title
 
       let endDate = e.end_at
@@ -244,7 +245,6 @@ function CalendarContent() {
         textColor:       isVac ? '#92400E' : '#ffffff',
         editable:        !e.is_vacation && canEditEvent(e),
         classNames:      isVac ? ['fc-vacation-event'] : [],
-        extendedProps:   { pendingCancel: pendingCancelIds.has(e.id) },
       }
     }),
   ]
@@ -447,19 +447,6 @@ function CalendarContent() {
           dayMaxEvents={3}
           buttonText={{ today: '오늘', month: '월', week: '주', day: '일' }}
           eventTimeFormat={{ hour: '2-digit', minute: '2-digit', hour12: false }}
-          eventContent={(arg: EventContentArg) => {
-            if (!arg.event.extendedProps.pendingCancel) return undefined
-            return (
-              <div style={{ display: 'flex', alignItems: 'center', overflow: 'hidden', width: '100%', padding: '0 2px', gap: '2px' }}>
-                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 'inherit' }}>
-                  {arg.event.title}
-                </span>
-                <span style={{ fontSize: '9px', flexShrink: 0, background: 'rgba(146,64,14,0.25)', borderRadius: '3px', padding: '0 3px', lineHeight: '14px', whiteSpace: 'nowrap' }}>
-                  취소중
-                </span>
-              </div>
-            )
-          }}
           dayCellDidMount={(arg) => {
             const dateStr = arg.date.toLocaleDateString('sv-SE')
             const isSunday  = arg.date.getDay() === 0
