@@ -60,8 +60,8 @@ export async function GET() {
       requester:cg_profiles!requested_by(id, full_name, color),
       event:cg_events(id, title, start_at, end_at, is_all_day)
     `)
-    .eq('status', 'pending')
-    .order('created_at', { ascending: true })
+    .order('created_at', { ascending: false })
+    .limit(50)
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json(data ?? [])

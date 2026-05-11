@@ -9,6 +9,7 @@ import type { DateClickArg } from '@fullcalendar/interaction'
 import type { EventClickArg, EventInput, EventDropArg } from '@fullcalendar/core'
 import { startOfDay, endOfDay, parseISO } from 'date-fns'
 import { Plus, X, Users, User, Sun } from 'lucide-react'
+import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { EventModal } from '@/components/calendar/EventModal'
 import { VacationModal } from '@/components/calendar/VacationModal'
@@ -154,6 +155,22 @@ function CalendarContent() {
   }, [filterType, filterUserId, includeCompany])
 
   useEffect(() => { fetchEvents() }, [fetchEvents])
+
+  // 휴가 취소 승인 메시지 수신 시 캘린더 자동 새로고침
+  useEffect(() => {
+    if (!currentUserId) return
+    const supabase = createClient()
+    const channel = supabase
+      .channel('calendar-vacation-refresh')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'cg_messages' }, (payload) => {
+        const msg = payload.new as any
+        if (msg.recipient_id === currentUserId && typeof msg.content === 'string' && msg.content.startsWith('[휴가 취소 승인]')) {
+          fetchEvents()
+        }
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [currentUserId, fetchEvents])
 
   const canEditEvent = (e: EventWithDetails) =>
     isAdminUser || e.created_by === currentUserId

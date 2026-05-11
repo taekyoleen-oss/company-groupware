@@ -29,10 +29,11 @@ interface VacationUser {
 interface CancelRequest {
   id: string
   event_id: string
+  status: 'pending' | 'approved' | 'rejected'
   reason: string | null
   created_at: string
   requester: { id: string; full_name: string; color: string }
-  event: { id: string; title: string; start_at: string; end_at: string; is_all_day: boolean }
+  event: { id: string; title: string; start_at: string; end_at: string; is_all_day: boolean } | null
 }
 
 interface AttendanceRecord {
@@ -312,6 +313,8 @@ export default function AdminPage() {
 
   const pending = users.filter(u => u.status === 'pending')
   const active = users.filter(u => u.status !== 'pending')
+  const pendingCancelRequests = cancelRequests.filter(r => r.status === 'pending')
+  const totalPending = pending.length + pendingCancelRequests.length
 
   const attendedCount = attendanceRecords.filter(r => r.checked_in_at).length
   const isToday = attendanceDate === toLocalDateStr()
@@ -325,6 +328,16 @@ export default function AdminPage() {
         </Button>
       </div>
 
+      {totalPending > 0 && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 dark:bg-red-950/30 dark:border-red-800 px-4 py-3 flex items-center gap-3">
+          <span className="flex items-center justify-center w-7 h-7 rounded-full bg-red-500 text-white text-sm font-bold shrink-0">{totalPending}</span>
+          <div className="text-sm text-red-700 dark:text-red-300 flex flex-wrap gap-x-4 gap-y-0.5">
+            {pending.length > 0 && <span>회원 승인 대기 <strong>{pending.length}명</strong></span>}
+            {pendingCancelRequests.length > 0 && <span>휴가 취소 승인 대기 <strong>{pendingCancelRequests.length}건</strong></span>}
+          </div>
+        </div>
+      )}
+
       <Tabs defaultValue="users">
         <TabsList className="mb-4 flex-wrap">
           <TabsTrigger value="users">
@@ -335,8 +348,8 @@ export default function AdminPage() {
           </TabsTrigger>
           <TabsTrigger value="vacation">
             휴가 관리
-            {cancelRequests.length > 0 && (
-              <span className="ml-1 text-xs bg-orange-500 text-white rounded-full px-1.5">{cancelRequests.length}</span>
+            {pendingCancelRequests.length > 0 && (
+              <span className="ml-1 text-xs bg-orange-500 text-white rounded-full px-1.5">{pendingCancelRequests.length}</span>
             )}
           </TabsTrigger>
           <TabsTrigger value="teams">팀 관리</TabsTrigger>
@@ -496,52 +509,64 @@ export default function AdminPage() {
             <div className="mb-6">
               <h2 className="text-sm font-semibold text-orange-600 dark:text-orange-400 mb-2 flex items-center gap-1.5">
                 <Clock className="h-4 w-4" />
-                휴가 취소 요청 ({cancelRequests.length}건)
+                휴가 취소 요청
+                {pendingCancelRequests.length > 0 && (
+                  <span className="text-xs bg-orange-500 text-white rounded-full px-1.5">{pendingCancelRequests.length}건 대기</span>
+                )}
               </h2>
               <div className="space-y-2">
                 {cancelRequests.map(req => {
                   const isProcessing = cancelProcessing === req.id
-                  const startDate = req.event?.is_all_day
-                    ? format(parseISO(req.event.start_at), 'M월 d일', { locale: ko })
-                    : format(parseISO(req.event.start_at), 'M월 d일 HH:mm', { locale: ko })
-                  const endDate = req.event?.is_all_day
-                    ? format(parseISO(req.event.end_at), 'M월 d일', { locale: ko })
-                    : format(parseISO(req.event.end_at), 'HH:mm')
+                  const isPending = req.status === 'pending'
+                  const isApproved = req.status === 'approved'
+                  const startDate = req.event
+                    ? (req.event.is_all_day
+                        ? format(parseISO(req.event.start_at), 'M월 d일', { locale: ko })
+                        : format(parseISO(req.event.start_at), 'M월 d일 HH:mm', { locale: ko }))
+                    : '(삭제된 일정)'
+                  const endDate = req.event
+                    ? (req.event.is_all_day
+                        ? format(parseISO(req.event.end_at), 'M월 d일', { locale: ko })
+                        : format(parseISO(req.event.end_at), 'HH:mm'))
+                    : ''
                   return (
-                    <div key={req.id} className="bg-white dark:bg-[#1E293B] border border-orange-200 dark:border-orange-800 rounded-lg p-3">
+                    <div key={req.id} className={`bg-white dark:bg-[#1E293B] rounded-lg p-3 border ${
+                      isPending ? 'border-orange-200 dark:border-orange-800' :
+                      isApproved ? 'border-green-200 dark:border-green-800' :
+                      'border-[#E5E7EB] dark:border-[#334155]'
+                    }`}>
                       <div className="flex flex-wrap items-center gap-3">
                         <UserAvatar name={req.requester?.full_name ?? ''} color={req.requester?.color ?? '#6B7280'} size={32} />
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-sm dark:text-[#F1F5F9]">{req.requester?.full_name}</p>
                           <p className="text-xs text-[#6B7280] dark:text-[#94A3B8]">
-                            {req.event?.title} · {startDate}
-                            {startDate !== endDate && ` ~ ${endDate}`}
-                            {!req.event?.is_all_day && <span className="ml-1 text-orange-500">반차</span>}
+                            {req.event?.title ?? '휴가'} · {startDate}
+                            {endDate && startDate !== endDate && ` ~ ${endDate}`}
+                            {req.event && !req.event.is_all_day && <span className="ml-1 text-orange-500">반차</span>}
                           </p>
                           {req.reason && (
                             <p className="text-xs text-[#6B7280] dark:text-[#94A3B8] mt-0.5 italic">"{req.reason}"</p>
                           )}
                         </div>
-                        <div className="flex items-center gap-1.5">
-                          <Button
-                            size="sm"
-                            className="bg-green-500 hover:bg-green-600 text-white h-8"
-                            disabled={isProcessing}
-                            onClick={() => handleVacationCancelRequest(req.id, 'approve')}
-                          >
-                            <CheckCircle className="h-3.5 w-3.5 mr-1" />
-                            승인
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="text-[#EF4444] border-[#EF4444] hover:bg-[#FEF2F2] h-8"
-                            disabled={isProcessing}
-                            onClick={() => handleVacationCancelRequest(req.id, 'reject')}
-                          >
-                            <XCircle className="h-3.5 w-3.5 mr-1" />
-                            거부
-                          </Button>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {isPending ? (
+                            <>
+                              <Button size="sm" className="bg-green-500 hover:bg-green-600 text-white h-8" disabled={isProcessing} onClick={() => handleVacationCancelRequest(req.id, 'approve')}>
+                                <CheckCircle className="h-3.5 w-3.5 mr-1" />승인
+                              </Button>
+                              <Button size="sm" variant="outline" className="text-[#EF4444] border-[#EF4444] hover:bg-[#FEF2F2] h-8" disabled={isProcessing} onClick={() => handleVacationCancelRequest(req.id, 'reject')}>
+                                <XCircle className="h-3.5 w-3.5 mr-1" />거부
+                              </Button>
+                            </>
+                          ) : isApproved ? (
+                            <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700 dark:text-green-400 bg-green-100 dark:bg-green-900/40 px-2 py-1 rounded-full">
+                              <CheckCircle className="h-3 w-3" />취소완료
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-xs font-medium text-[#6B7280] dark:text-[#94A3B8] bg-[#F3F4F6] dark:bg-[#374151] px-2 py-1 rounded-full">
+                              <XCircle className="h-3 w-3" />거부됨
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
