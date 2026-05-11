@@ -252,7 +252,7 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
           <Clock className="h-4 w-4 mt-0.5 shrink-0" />
           <span>
             {eventData.is_all_day
-              ? format(parseISO(eventData.start_at), 'yyyy년 M월 d일', { locale: ko }) + ' 하루 종일'
+              ? `${format(parseISO(eventData.start_at), 'yyyy년 M월 d일', { locale: ko })} ~ ${format(parseISO(eventData.end_at), 'M월 d일', { locale: ko })}`
               : `${format(parseISO(eventData.start_at), 'M월 d일 HH:mm', { locale: ko })} ~ ${format(parseISO(eventData.end_at), 'HH:mm')}`
             }
           </span>
@@ -267,8 +267,18 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
             {eventData.description}
           </div>
         )}
-        <div className="pt-2">
-          <Button type="button" variant="outline" className="w-full" onClick={onClose}>닫기</Button>
+        <div className="flex gap-2 pt-2">
+          {canRequestCancellation && (
+            <Button type="button" variant="outline" className="text-orange-600 border-orange-300 hover:bg-orange-50" onClick={() => setCancelRequestOpen(true)}>
+              취소 신청
+            </Button>
+          )}
+          {canDirectDelete && (
+            <Button type="button" variant="outline" className="text-[#EF4444] border-[#EF4444] hover:bg-[#FEF2F2]" onClick={() => setDeleteConfirmOpen(true)} disabled={deleting}>
+              삭제
+            </Button>
+          )}
+          <Button type="button" variant="outline" className="flex-1" onClick={onClose}>닫기</Button>
         </div>
       </div>
     )
@@ -355,7 +365,7 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Sun className="h-4 w-4 text-orange-500" />
-              {eventId ? (canEdit ? '휴가 수정' : (eventData?.title ?? '휴가 상세')) : '휴가 신청'}
+              {eventId ? '휴가 상세' : '휴가 신청'}
             </DialogTitle>
             {eventId && authorName && (
               <p className="flex items-center gap-1.5 text-xs text-[#6B7280] mt-1">
@@ -365,7 +375,7 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
             )}
           </DialogHeader>
 
-          {eventId && !canEdit ? (
+          {eventId ? (
             <ReadOnlyView />
           ) : (
             <form onSubmit={handleSubmit} className="space-y-3">
@@ -489,19 +499,9 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
 
               {/* 버튼 */}
               <div className="flex gap-2 pt-1">
-                {canRequestCancellation && (
-                  <Button type="button" variant="outline" className="text-orange-600 border-orange-300 hover:bg-orange-50" onClick={() => setCancelRequestOpen(true)}>
-                    취소 신청
-                  </Button>
-                )}
-                {canDirectDelete && (
-                  <Button type="button" variant="outline" className="text-[#EF4444] border-[#EF4444] hover:bg-[#FEF2F2]" onClick={() => setDeleteConfirmOpen(true)} disabled={deleting}>
-                    삭제
-                  </Button>
-                )}
                 <Button type="button" variant="outline" className="flex-1" onClick={onClose}>취소</Button>
                 <Button type="submit" className="flex-1 bg-orange-500 hover:bg-orange-600 text-white" disabled={loading}>
-                  {loading ? '저장 중...' : '저장'}
+                  {loading ? '저장 중...' : '신청'}
                 </Button>
               </div>
             </form>
