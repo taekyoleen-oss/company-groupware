@@ -239,15 +239,16 @@ export default function AdminPage() {
     setCancelProcessing(null)
     if (res.ok) {
       if (action === 'approve') {
+        // 승인: 팝업 표시 (확인 버튼 클릭 시 fetchAll → 승인된 항목 자동 제거)
+        setCancelRequests(prev =>
+          prev.map(r => r.id === id ? { ...r, status: 'approved' } : r)
+        )
         setApproveSuccessOpen(true)
-        setTimeout(() => { setApproveSuccessOpen(false); fetchAll() }, 2000)
       } else {
+        // 거부: 토스트 + 즉시 새로고침
         showToast('취소 신청이 거부되었습니다.', 'success')
         fetchAll()
       }
-      setCancelRequests(prev =>
-        prev.map(r => r.id === id ? { ...r, status: action === 'approve' ? 'approved' : 'rejected' } : r)
-      )
     } else {
       const data = await res.json()
       showToast(data.error ?? '처리에 실패했습니다.', 'error')
@@ -843,15 +844,32 @@ export default function AdminPage() {
         </TabsContent>
       </Tabs>
 
-      {/* 승인완료 팝업 */}
-      <Dialog open={approveSuccessOpen} onOpenChange={open => { if (!open) { setApproveSuccessOpen(false); fetchAll() } }}>
+      {/* 승인완료 팝업 — 확인 클릭 시 목록 리프레시 */}
+      <Dialog
+        open={approveSuccessOpen}
+        onOpenChange={open => {
+          if (!open) {
+            setApproveSuccessOpen(false)
+            fetchAll()
+          }
+        }}
+      >
         <DialogContent className="max-w-xs text-center">
           <div className="flex flex-col items-center gap-3 py-4">
             <div className="flex items-center justify-center w-16 h-16 rounded-full bg-green-100 dark:bg-green-900/40">
               <CheckCircle className="h-9 w-9 text-green-500" />
             </div>
-            <DialogTitle className="text-lg font-bold text-[#111827] dark:text-[#F1F5F9]">승인완료</DialogTitle>
+            <DialogTitle className="text-lg font-bold text-[#111827] dark:text-[#F1F5F9]">승인 완료</DialogTitle>
             <p className="text-sm text-[#6B7280] dark:text-[#94A3B8]">휴가 취소가 승인되었습니다.</p>
+            <Button
+              className="w-full mt-2"
+              onClick={() => {
+                setApproveSuccessOpen(false)
+                fetchAll()
+              }}
+            >
+              확인
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

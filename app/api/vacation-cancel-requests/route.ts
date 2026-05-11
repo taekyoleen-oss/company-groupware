@@ -62,7 +62,7 @@ export async function GET() {
     return NextResponse.json(data ?? [])
   }
 
-  // 관리자: 전체 요청 (모든 상태)
+  // 관리자: 대기 중인 요청만 반환 (승인/거부된 건은 자동으로 목록에서 제외)
   const { data, error } = await supabase
     .from('cg_vacation_cancel_requests')
     .select(`
@@ -70,6 +70,7 @@ export async function GET() {
       requester:cg_profiles!requested_by(id, full_name, color),
       event:cg_events(id, title, start_at, end_at, is_all_day)
     `)
+    .eq('status', 'pending')
     .order('created_at', { ascending: false })
     .limit(50)
 
