@@ -5,6 +5,7 @@ import { Sidebar } from '@/components/layout/Sidebar'
 import { AdminSidebar } from '@/components/layout/AdminSidebar'
 import { BottomTabBar } from '@/components/layout/BottomTabBar'
 import { MessageNotification } from '@/components/messages/MessageNotification'
+import { IdleRefresh } from '@/components/layout/IdleRefresh'
 import type { ProfileWithTeam } from '@/types/app'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -32,6 +33,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       </div>
       <BottomTabBar role={(profile as ProfileWithTeam).role} />
       <MessageNotification userId={(profile as ProfileWithTeam).id} teamId={(profile as ProfileWithTeam).team_id ?? null} />
+      <IdleRefresh />
     </div>
   )
 }
