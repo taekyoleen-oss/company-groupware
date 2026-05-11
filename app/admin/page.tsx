@@ -90,6 +90,7 @@ export default function AdminPage() {
   const [vacSaving, setVacSaving] = useState<string | null>(null)
   const [cancelRequests, setCancelRequests] = useState<CancelRequest[]>([])
   const [cancelProcessing, setCancelProcessing] = useState<string | null>(null)
+  const [approveSuccessOpen, setApproveSuccessOpen] = useState(false)
 
   // 출석 관리
   const [attendanceDate, setAttendanceDate] = useState<string>(toLocalDateStr())
@@ -237,12 +238,16 @@ export default function AdminPage() {
     })
     setCancelProcessing(null)
     if (res.ok) {
-      showToast(action === 'approve' ? '휴가 취소가 승인되었습니다.' : '취소 신청이 거부되었습니다.', 'success')
-      // 즉시 로컬 상태 업데이트 → 버튼이 바로 취소완료/거부됨으로 전환
+      if (action === 'approve') {
+        setApproveSuccessOpen(true)
+        setTimeout(() => { setApproveSuccessOpen(false); fetchAll() }, 2000)
+      } else {
+        showToast('취소 신청이 거부되었습니다.', 'success')
+        fetchAll()
+      }
       setCancelRequests(prev =>
         prev.map(r => r.id === id ? { ...r, status: action === 'approve' ? 'approved' : 'rejected' } : r)
       )
-      fetchAll()
     } else {
       const data = await res.json()
       showToast(data.error ?? '처리에 실패했습니다.', 'error')
@@ -837,6 +842,19 @@ export default function AdminPage() {
           </form>
         </TabsContent>
       </Tabs>
+
+      {/* 승인완료 팝업 */}
+      <Dialog open={approveSuccessOpen} onOpenChange={open => { if (!open) { setApproveSuccessOpen(false); fetchAll() } }}>
+        <DialogContent className="max-w-xs text-center">
+          <div className="flex flex-col items-center gap-3 py-4">
+            <div className="flex items-center justify-center w-16 h-16 rounded-full bg-green-100 dark:bg-green-900/40">
+              <CheckCircle className="h-9 w-9 text-green-500" />
+            </div>
+            <DialogTitle className="text-lg font-bold text-[#111827] dark:text-[#F1F5F9]">승인완료</DialogTitle>
+            <p className="text-sm text-[#6B7280] dark:text-[#94A3B8]">휴가 취소가 승인되었습니다.</p>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* 삭제 확인 다이얼로그 */}
       <Dialog open={!!confirmAction} onOpenChange={open => { if (!open) setConfirmAction(null) }}>
