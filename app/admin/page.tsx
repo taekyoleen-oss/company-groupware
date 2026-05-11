@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
 import { Check, Plus, Trash2, X, Save, Sun, MapPin, Navigation, ChevronLeft, ChevronRight, ClipboardList, Settings, Clock, CheckCircle, XCircle, Wifi } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -157,6 +158,21 @@ export default function AdminPage() {
   useEffect(() => { fetchAttendance(attendanceDate) }, [fetchAttendance, attendanceDate])
   useEffect(() => { fetchSettings() }, [fetchSettings])
 
+  // 휴가 취소 요청 변경 / 사이드바에서 승인 → 자동 새로고침
+  useEffect(() => {
+    const supabase = createClient()
+    const channel = supabase
+      .channel('admin-page-refresh')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cg_vacation_cancel_requests' }, () => fetchAll())
+      .subscribe()
+    const handler = () => fetchAll()
+    window.addEventListener('vacation-cancel-approved', handler)
+    return () => {
+      supabase.removeChannel(channel)
+      window.removeEventListener('vacation-cancel-approved', handler)
+    }
+  }, [fetchAll])
+
   const shiftDate = (days: number) => {
     const d = new Date(attendanceDate + 'T12:00:00')
     d.setDate(d.getDate() + days)
@@ -237,21 +253,20 @@ export default function AdminPage() {
       body: JSON.stringify({ action }),
     })
     setCancelProcessing(null)
-    if (res.ok) {
-      if (action === 'approve') {
-        // 승인: 팝업 표시 (확인 버튼 클릭 시 fetchAll → 승인된 항목 자동 제거)
-        setCancelRequests(prev =>
-          prev.map(r => r.id === id ? { ...r, status: 'approved' } : r)
-        )
-        setApproveSuccessOpen(true)
-      } else {
-        // 거부: 토스트 + 즉시 새로고침
-        showToast('취소 신청이 거부되었습니다.', 'success')
-        fetchAll()
-      }
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      showToast((data as any).error ?? '처리에 실패했습니다.', 'error')
+      return
+    }
+
+    // 처리 즉시 목록에서 제거 (옵티미스틱)
+    setCancelRequests(prev => prev.filter(r => r.id !== id))
+
+    if (action === 'approve') {
+      setApproveSuccessOpen(true)
     } else {
-      const data = await res.json()
-      showToast(data.error ?? '처리에 실패했습니다.', 'error')
+      showToast('취소 신청이 거부되었습니다.', 'success')
     }
   }
 
@@ -844,15 +859,10 @@ export default function AdminPage() {
         </TabsContent>
       </Tabs>
 
-      {/* 승인완료 팝업 — 확인 클릭 시 목록 리프레시 */}
+      {/* 승인완료 팝업 */}
       <Dialog
         open={approveSuccessOpen}
-        onOpenChange={open => {
-          if (!open) {
-            setApproveSuccessOpen(false)
-            fetchAll()
-          }
-        }}
+        onOpenChange={open => { if (!open) setApproveSuccessOpen(false) }}
       >
         <DialogContent className="max-w-xs text-center">
           <div className="flex flex-col items-center gap-3 py-4">

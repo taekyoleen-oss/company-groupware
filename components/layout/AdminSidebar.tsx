@@ -1,8 +1,11 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { Settings, Users, Building2, Tag, UserCheck } from 'lucide-react'
+import { Settings, Users, Building2, Tag, UserCheck, Sun } from 'lucide-react'
 import { UserAvatar } from '@/components/ui/avatar'
+import { format, parseISO } from 'date-fns'
+import { ko } from 'date-fns/locale'
+import { createClient } from '@/lib/supabase/client'
 import type { ProfileWithTeam, Team, EventCategory } from '@/types/app'
 
 interface PendingUser {
@@ -12,17 +15,27 @@ interface PendingUser {
   email?: string | null
 }
 
+interface CancelRequest {
+  id: string
+  status: string
+  requester: { id: string; full_name: string; color: string } | null
+  event: { id: string; title: string; start_at: string; is_all_day: boolean } | null
+}
+
 export function AdminSidebar() {
   const [pendingUsers, setPendingUsers] = useState<PendingUser[]>([])
+  const [cancelReqs, setCancelReqs] = useState<CancelRequest[]>([])
   const [teamCount, setTeamCount] = useState(0)
   const [categoryCount, setCategoryCount] = useState(0)
   const [approving, setApproving] = useState<string | null>(null)
+  const [processingCancel, setProcessingCancel] = useState<string | null>(null)
 
   const fetchData = useCallback(async () => {
-    const [usersRes, teamsRes, catsRes] = await Promise.all([
+    const [usersRes, teamsRes, catsRes, cancelRes] = await Promise.all([
       fetch('/api/admin/users'),
       fetch('/api/admin/teams'),
       fetch('/api/admin/categories'),
+      fetch('/api/vacation-cancel-requests'),
     ])
     if (usersRes.ok) {
       const data: ProfileWithTeam[] = await usersRes.json()
@@ -36,9 +49,24 @@ export function AdminSidebar() {
       const data: EventCategory[] = await catsRes.json()
       if (Array.isArray(data)) setCategoryCount(data.length)
     }
+    if (cancelRes.ok) {
+      const data: CancelRequest[] = await cancelRes.json()
+      if (Array.isArray(data)) setCancelReqs(data.filter(r => r.status === 'pending'))
+    }
   }, [])
 
   useEffect(() => { fetchData() }, [fetchData])
+
+  // cg_messages / cg_vacation_cancel_requests 변경 감지 → 자동 갱신
+  useEffect(() => {
+    const supabase = createClient()
+    const channel = supabase
+      .channel('admin-sidebar-refresh')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cg_vacation_cancel_requests' }, () => fetchData())
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'cg_profiles' }, () => fetchData())
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [fetchData])
 
   const handleApprove = async (userId: string) => {
     setApproving(userId)
@@ -51,6 +79,24 @@ export function AdminSidebar() {
     if (res.ok) fetchData()
   }
 
+  const handleCancelAction = async (id: string, action: 'approve' | 'reject') => {
+    setProcessingCancel(id)
+    const res = await fetch(`/api/vacation-cancel-requests/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action }),
+    })
+    setProcessingCancel(null)
+    if (res.ok) {
+      // 사이드바에서 즉시 제거
+      setCancelReqs(prev => prev.filter(r => r.id !== id))
+      if (action === 'approve') {
+        // 사용자 정의 이벤트로 관리자 페이지에 알림 (같은 탭에서 열려있을 때)
+        window.dispatchEvent(new CustomEvent('vacation-cancel-approved', { detail: { id } }))
+      }
+    }
+  }
+
   return (
     <aside className="hidden md:flex flex-col w-52 shrink-0 bg-[#F8FAFC] border-l border-[#E5E7EB] p-4 gap-4 overflow-y-auto dark:bg-[#2D3440] dark:border-[#4B5563]">
 
@@ -59,6 +105,7 @@ export function AdminSidebar() {
         <h2 className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider dark:text-[#94A3B8]">관리자 패널</h2>
       </div>
 
+      {/* 가입 승인 대기 */}
       <div>
         <div className="flex items-center justify-between mb-2">
           <h3 className="text-xs font-semibold text-[#374151] flex items-center gap-1 dark:text-[#D1D5DB]">
@@ -90,6 +137,57 @@ export function AdminSidebar() {
                 </button>
               </li>
             ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="border-t border-[#E5E7EB] dark:border-[#4B5563]" />
+
+      {/* 휴가 취소 대기 */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-xs font-semibold text-[#374151] flex items-center gap-1 dark:text-[#D1D5DB]">
+            <Sun className="h-3.5 w-3.5 text-orange-500" />
+            휴가 취소 대기
+            {cancelReqs.length > 0 && (
+              <span className="ml-1 inline-flex items-center justify-center w-4 h-4 rounded-full bg-[#EF4444] text-white text-[10px] font-bold">
+                {cancelReqs.length}
+              </span>
+            )}
+          </h3>
+        </div>
+
+        {cancelReqs.length === 0 ? (
+          <p className="text-[10px] text-[#9CA3AF] dark:text-[#6B7280]">대기 중인 취소 요청이 없습니다.</p>
+        ) : (
+          <ul className="space-y-1.5">
+            {cancelReqs.slice(0, 5).map(req => (
+              <li key={req.id}
+                className="flex items-center gap-2 bg-white rounded-lg px-2 py-1.5 border border-orange-200 dark:bg-[#374151] dark:border-orange-800">
+                <UserAvatar name={req.requester?.full_name ?? ''} color={req.requester?.color ?? '#6B7280'} size={24} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-[#111827] truncate dark:text-[#F1F5F9]">{req.requester?.full_name ?? '(알 수 없음)'}</p>
+                  {req.event && (
+                    <p className="text-[10px] text-[#6B7280] dark:text-[#94A3B8] truncate">
+                      {format(parseISO(req.event.start_at), 'M/d', { locale: ko })}
+                    </p>
+                  )}
+                </div>
+                <button
+                  onClick={() => handleCancelAction(req.id, 'approve')}
+                  disabled={processingCancel === req.id}
+                  className="text-[10px] font-medium text-white bg-green-500 hover:bg-green-600 disabled:opacity-50 rounded px-1.5 py-0.5 shrink-0 transition-colors"
+                  title="승인"
+                >
+                  {processingCancel === req.id ? '…' : '승인'}
+                </button>
+              </li>
+            ))}
+            {cancelReqs.length > 5 && (
+              <li className="text-[10px] text-[#9CA3AF] text-center pt-1">
+                외 {cancelReqs.length - 5}건
+              </li>
+            )}
           </ul>
         )}
       </div>

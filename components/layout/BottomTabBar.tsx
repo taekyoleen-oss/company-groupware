@@ -1,9 +1,10 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Calendar, FileText, CheckSquare, User, Settings } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
+import { createClient } from '@/lib/supabase/client'
 
 const BASE_TABS = [
   { href: '/calendar', label: '캘린더', icon: Calendar },
@@ -20,7 +21,7 @@ export function BottomTabBar({ role }: BottomTabBarProps) {
   const pathname = usePathname()
   const [pendingCount, setPendingCount] = useState(0)
 
-  useEffect(() => {
+  const fetchCount = useCallback(() => {
     if (role !== 'admin') return
     Promise.all([
       fetch('/api/admin/users').then(r => r.ok ? r.json() : []),
@@ -31,6 +32,20 @@ export function BottomTabBar({ role }: BottomTabBarProps) {
       setPendingCount(pendingUsers + pendingCancel)
     }).catch(() => {})
   }, [role])
+
+  useEffect(() => { fetchCount() }, [fetchCount])
+
+  // 휴가 취소 요청 / 회원 가입 변경 시 자동 갱신
+  useEffect(() => {
+    if (role !== 'admin') return
+    const supabase = createClient()
+    const channel = supabase
+      .channel('bottom-tab-bar-refresh')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cg_vacation_cancel_requests' }, () => fetchCount())
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'cg_profiles' }, () => fetchCount())
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [role, fetchCount])
 
   const tabs = role === 'admin'
     ? [...BASE_TABS, { href: '/admin', label: '관리자', icon: Settings }]
