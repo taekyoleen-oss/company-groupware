@@ -609,26 +609,30 @@ export default function AdminPage() {
             </div>
           )}
 
-          {/* 휴가 취소 처리 이력 (승인/거부) */}
-          {historyCancelRequests.length > 0 && (
-            <div className="mb-6">
-              <button
-                type="button"
-                onClick={() => setHistoryOpen(o => !o)}
-                className="w-full flex items-center justify-between text-sm font-semibold text-[#6B7280] dark:text-[#94A3B8] mb-2 hover:text-[#374151] dark:hover:text-[#D1D5DB] transition-colors"
-              >
-                <span className="flex items-center gap-1.5">
-                  <ClipboardList className="h-4 w-4" />
-                  휴가 취소 처리 이력
-                  <span className="text-xs bg-[#E5E7EB] dark:bg-[#374151] text-[#374151] dark:text-[#D1D5DB] rounded-full px-1.5">
-                    {historyCancelRequests.length}건
-                  </span>
+          {/* 휴가 취소 처리 이력 (승인/거부) — 항상 표시, 빈 상태 노출 */}
+          <div className="mb-6">
+            <button
+              type="button"
+              onClick={() => setHistoryOpen(o => !o)}
+              className="w-full flex items-center justify-between text-sm font-semibold text-[#6B7280] dark:text-[#94A3B8] mb-2 hover:text-[#374151] dark:hover:text-[#D1D5DB] transition-colors"
+            >
+              <span className="flex items-center gap-1.5">
+                <ClipboardList className="h-4 w-4" />
+                휴가 취소 처리 이력
+                <span className="text-xs bg-[#E5E7EB] dark:bg-[#374151] text-[#374151] dark:text-[#D1D5DB] rounded-full px-1.5">
+                  {historyCancelRequests.length}건
                 </span>
-                {historyOpen
-                  ? <ChevronUp className="h-4 w-4" />
-                  : <ChevronDown className="h-4 w-4" />}
-              </button>
-              {historyOpen && (
+              </span>
+              {historyOpen
+                ? <ChevronUp className="h-4 w-4" />
+                : <ChevronDown className="h-4 w-4" />}
+            </button>
+            {historyOpen && (
+              historyCancelRequests.length === 0 ? (
+                <div className="text-xs text-[#9CA3AF] dark:text-[#6B7280] bg-[#F9FAFB] dark:bg-[#1E293B]/40 border border-dashed border-[#E5E7EB] dark:border-[#334155] rounded-lg px-4 py-6 text-center">
+                  아직 처리된 휴가 취소 신청이 없습니다.
+                </div>
+              ) : (
                 <div className="space-y-2">
                   {historyCancelRequests.map(req => {
                     const info = eventInfo(req)
@@ -683,9 +687,9 @@ export default function AdminPage() {
                     )
                   })}
                 </div>
-              )}
-            </div>
-          )}
+              )
+            )}
+          </div>
 
           <div className="mb-3 flex items-center gap-2 text-sm text-[#6B7280] dark:text-[#94A3B8]">
             <Sun className="h-4 w-4 text-orange-500" />
