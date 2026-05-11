@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { format, addHours, setHours, setMinutes, setSeconds, setMilliseconds, parseISO } from 'date-fns'
+import { format, addHours, addDays, differenceInDays, setHours, setMinutes, setSeconds, setMilliseconds, parseISO } from 'date-fns'
 import { ko } from 'date-fns/locale'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -270,10 +270,18 @@ export function EventModal({ isOpen, onClose, initialDate, eventId, onSuccess }:
                 <div>
                   <label className="block text-xs font-medium mb-1 text-[#6B7280]">시작</label>
                   {form.is_all_day
-                    ? <Input type="date" value={form.start_at.slice(0, 10)} onChange={e => setForm(f => ({ ...f, start_at: e.target.value + 'T00:00', end_at: e.target.value + 'T00:00' }))} required />
+                    ? <Input type="date" value={form.start_at.slice(0, 10)} onChange={e => setForm(f => {
+                        const diff = differenceInDays(parseISO(f.end_at.slice(0, 10)), parseISO(f.start_at.slice(0, 10)))
+                        const newStart = parseISO(e.target.value)
+                        return { ...f, start_at: e.target.value + 'T00:00', end_at: format(addDays(newStart, Math.max(0, diff)), 'yyyy-MM-dd') + 'T00:00' }
+                      })} required />
                     : <Input type="datetime-local" value={form.start_at} onChange={e => {
                         const s = e.target.value
-                        setForm(f => ({ ...f, start_at: s, end_at: format(addHours(new Date(s), 1), "yyyy-MM-dd'T'HH:mm") }))
+                        setForm(f => {
+                          const diffMs = new Date(f.end_at).getTime() - new Date(f.start_at).getTime()
+                          const newEnd = new Date(new Date(s).getTime() + Math.max(0, diffMs))
+                          return { ...f, start_at: s, end_at: format(newEnd, "yyyy-MM-dd'T'HH:mm") }
+                        })
                       }} required />
                   }
                 </div>

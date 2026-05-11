@@ -210,7 +210,7 @@ function CalendarContent() {
         backgroundColor: isVac ? '#FEF3C7' : baseColor,
         borderColor:     isVac ? '#F59E0B' : baseColor,
         textColor:       isVac ? '#92400E' : '#ffffff',
-        editable:        canEditEvent(e),
+        editable:        !e.is_vacation && canEditEvent(e),
         classNames:      isVac ? ['fc-vacation-event'] : [],
       }
     }),
@@ -286,6 +286,8 @@ function CalendarContent() {
   const handleEventDrop = async (info: EventDropArg) => {
     const { event, revert } = info
     if (event.id.startsWith('holiday-') || event.id.startsWith('anniversary-')) { revert(); return }
+    const eventData = events.find(e => e.id === event.id)
+    if (eventData?.is_vacation) { revert(); return }
     const start = event.start
     const end   = event.end ?? (start ? new Date(start.getTime() + 3600000) : null)
     if (!start) { revert(); return }

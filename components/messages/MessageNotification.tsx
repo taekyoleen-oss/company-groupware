@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { X, MessageSquare } from 'lucide-react'
+import { X, MessageSquare, Sun, XCircle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
 interface Notification {
@@ -68,38 +68,56 @@ export function MessageNotification({ userId, teamId }: MessageNotificationProps
 
   return (
     <div className="fixed top-16 right-4 z-50 flex flex-col gap-2" style={{ maxWidth: '20rem' }}>
-      {items.map(item => (
-        <div
-          key={item.id}
-          className="bg-white border border-[#E5E7EB] rounded-xl shadow-lg p-3.5 flex items-start gap-3"
-        >
-          <div className="shrink-0 w-8 h-8 rounded-full bg-[#2563EB] flex items-center justify-center">
-            <MessageSquare className="h-4 w-4 text-white" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-semibold text-[#111827] flex items-center gap-1">
-              {item.sender_name}
-              {item.is_team && (
-                <span className="text-[10px] text-[#6B7280] font-normal bg-[#F3F4F6] px-1.5 py-0.5 rounded">
-                  팀
-                </span>
-              )}
-            </p>
-            <p className="text-xs text-[#374151] mt-0.5 whitespace-pre-wrap break-words line-clamp-4">
-              {item.content}
-            </p>
-            <p className="text-[10px] text-[#9CA3AF] mt-1">알림에서 확인하세요 · 10초 후 자동 닫힘</p>
-          </div>
-          {/* 수동 닫기 */}
-          <button
-            onClick={() => dismiss(item.id)}
-            className="shrink-0 text-[#9CA3AF] hover:text-[#374151] transition-colors"
-            aria-label="닫기"
+      {items.map(item => {
+        const isVacApproved = item.content.startsWith('[휴가 취소 승인]')
+        const isVacRejected = item.content.startsWith('[휴가 취소 거부]')
+        const isVacNotice   = isVacApproved || isVacRejected
+
+        const iconBg  = isVacApproved ? '#10B981' : isVacRejected ? '#EF4444' : '#2563EB'
+        const borderColor = isVacApproved ? '#A7F3D0' : isVacRejected ? '#FECACA' : '#E5E7EB'
+        const bgColor = isVacApproved ? '#ECFDF5' : isVacRejected ? '#FEF2F2' : '#FFFFFF'
+
+        return (
+          <div
+            key={item.id}
+            className="rounded-xl shadow-lg p-3.5 flex items-start gap-3 border"
+            style={{ backgroundColor: bgColor, borderColor }}
           >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      ))}
+            <div className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center" style={{ backgroundColor: iconBg }}>
+              {isVacApproved ? <Sun className="h-4 w-4 text-white" /> :
+               isVacRejected ? <XCircle className="h-4 w-4 text-white" /> :
+               <MessageSquare className="h-4 w-4 text-white" />}
+            </div>
+            <div className="flex-1 min-w-0">
+              {isVacNotice ? (
+                <p className="text-xs font-semibold" style={{ color: isVacApproved ? '#065F46' : '#991B1B' }}>
+                  {isVacApproved ? '휴가 취소 승인' : '휴가 취소 거부'}
+                </p>
+              ) : (
+                <p className="text-xs font-semibold text-[#111827] flex items-center gap-1">
+                  {item.sender_name}
+                  {item.is_team && (
+                    <span className="text-[10px] text-[#6B7280] font-normal bg-[#F3F4F6] px-1.5 py-0.5 rounded">팀</span>
+                  )}
+                </p>
+              )}
+              <p className="text-xs mt-0.5 whitespace-pre-wrap break-words line-clamp-4" style={{ color: isVacApproved ? '#065F46' : isVacRejected ? '#7F1D1D' : '#374151' }}>
+                {isVacNotice
+                  ? item.content.replace(/^\[휴가 취소 (승인|거부)\]\s*/, '')
+                  : item.content}
+              </p>
+              <p className="text-[10px] text-[#9CA3AF] mt-1">10초 후 자동 닫힘</p>
+            </div>
+            <button
+              onClick={() => dismiss(item.id)}
+              className="shrink-0 text-[#9CA3AF] hover:text-[#374151] transition-colors"
+              aria-label="닫기"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )
+      })}
     </div>
   )
 }
