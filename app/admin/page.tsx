@@ -859,10 +859,15 @@ export default function AdminPage() {
         </TabsContent>
       </Tabs>
 
-      {/* 승인완료 팝업 */}
+      {/* 승인완료 팝업 — 확인 시 페이지 전체 새로고침 */}
       <Dialog
         open={approveSuccessOpen}
-        onOpenChange={open => { if (!open) setApproveSuccessOpen(false) }}
+        onOpenChange={open => {
+          if (!open) {
+            setApproveSuccessOpen(false)
+            window.location.reload()
+          }
+        }}
       >
         <DialogContent className="max-w-xs text-center">
           <div className="flex flex-col items-center gap-3 py-4">
@@ -873,10 +878,7 @@ export default function AdminPage() {
             <p className="text-sm text-[#6B7280] dark:text-[#94A3B8]">휴가 취소가 승인되었습니다.</p>
             <Button
               className="w-full mt-2"
-              onClick={() => {
-                setApproveSuccessOpen(false)
-                fetchAll()
-              }}
+              onClick={() => window.location.reload()}
             >
               확인
             </Button>
