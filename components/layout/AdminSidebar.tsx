@@ -87,13 +87,16 @@ export function AdminSidebar() {
       body: JSON.stringify({ action }),
     })
     setProcessingCancel(null)
-    if (res.ok) {
-      // 사이드바에서 즉시 제거
-      setCancelReqs(prev => prev.filter(r => r.id !== id))
-      if (action === 'approve') {
-        // 사용자 정의 이벤트로 관리자 페이지에 알림 (같은 탭에서 열려있을 때)
-        window.dispatchEvent(new CustomEvent('vacation-cancel-approved', { detail: { id } }))
-      }
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      alert((data as any).error ?? '처리에 실패했습니다.')
+      return
+    }
+    // 사이드바에서 즉시 제거
+    setCancelReqs(prev => prev.filter(r => r.id !== id))
+    if (action === 'approve') {
+      // 관리자 페이지 / 캘린더 등 다른 컴포넌트에 알림
+      window.dispatchEvent(new CustomEvent('vacation-cancel-approved', { detail: { id } }))
     }
   }
 

@@ -254,9 +254,14 @@ export default function AdminPage() {
     })
     setCancelProcessing(null)
 
+    const raw = await res.text()
+    let parsed: any = {}
+    try { parsed = raw ? JSON.parse(raw) : {} } catch { /* non-JSON */ }
+
     if (!res.ok) {
-      const data = await res.json().catch(() => ({}))
-      showToast((data as any).error ?? '처리에 실패했습니다.', 'error')
+      const msg = parsed.error
+        ?? (raw ? `처리 실패 (${res.status}): ${raw.slice(0, 200)}` : `처리 실패 (${res.status})`)
+      showToast(msg, 'error')
       return
     }
 
