@@ -47,24 +47,76 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const adminName = (profile as any)?.full_name ?? '관리자'
     const requesterName = (requesterProfile as any)?.full_name ?? null
 
-    if (action === 'approve') {
-      // 휴가 일정 삭제 → cg_vacation_cancel_requests 도 ON DELETE CASCADE 로 함께 제거됨
-      const { error: deleteError } = await supabase
-        .from('cg_events')
-        .delete()
-        .eq('id', cancelReq.event_id)
+    // 승인·거부 모두 처리 이력으로 남기기 위해 대상 이벤트를 스냅샷한다.
+    // 이벤트가 이미 삭제된 경우(잔존 신청건)에는 스냅샷이 null이 된다.
+    let eventSnapshot: {
+      event_title: string | null
+      event_start_at: string | null
+      event_end_at: string | null
+      event_is_all_day: boolean | null
+    } = { event_title: null, event_start_at: null, event_end_at: null, event_is_all_day: null }
 
-      if (deleteError) {
+    if (cancelReq.event_id) {
+      const { data: ev } = await supabase
+        .from('cg_events')
+        .select('title, start_at, end_at, is_all_day')
+        .eq('id', cancelReq.event_id)
+        .single()
+      if (ev) {
+        eventSnapshot = {
+          event_title:      ev.title,
+          event_start_at:   ev.start_at,
+          event_end_at:     ev.end_at,
+          event_is_all_day: ev.is_all_day,
+        }
+      }
+    }
+
+    const reviewedAt = new Date().toISOString()
+
+    if (action === 'approve') {
+      // 1) 신청 row를 먼저 approved 로 갱신 + 이벤트 정보 스냅샷 저장
+      const { error: updateError } = await (supabase as any)
+        .from('cg_vacation_cancel_requests')
+        .update({
+          status:      'approved',
+          reviewed_by: user.id,
+          reviewed_at: reviewedAt,
+          ...eventSnapshot,
+        })
+        .eq('id', id)
+
+      if (updateError) {
         return NextResponse.json(
-          { error: `휴가 일정 삭제 실패: ${deleteError.message}` },
+          { error: `승인 처리 실패: ${updateError.message}` },
           { status: 500 }
         )
       }
+
+      // 2) 휴가 일정 삭제 — FK가 ON DELETE SET NULL 이므로 신청 row는 유지된다.
+      if (cancelReq.event_id) {
+        const { error: deleteError } = await supabase
+          .from('cg_events')
+          .delete()
+          .eq('id', cancelReq.event_id)
+
+        if (deleteError) {
+          return NextResponse.json(
+            { error: `휴가 일정 삭제 실패: ${deleteError.message}` },
+            { status: 500 }
+          )
+        }
+      }
     } else {
-      // 거부: 상태만 'rejected' 로 업데이트
-      const { error: updateError } = await supabase
+      // 거부: 상태 + 스냅샷 저장
+      const { error: updateError } = await (supabase as any)
         .from('cg_vacation_cancel_requests')
-        .update({ status: 'rejected', reviewed_by: user.id, reviewed_at: new Date().toISOString() })
+        .update({
+          status:      'rejected',
+          reviewed_by: user.id,
+          reviewed_at: reviewedAt,
+          ...eventSnapshot,
+        })
         .eq('id', id)
 
       if (updateError) {

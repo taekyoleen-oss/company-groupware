@@ -62,17 +62,18 @@ export async function GET() {
     return NextResponse.json(data ?? [])
   }
 
-  // 관리자: 대기 중인 요청만 반환 (승인/거부된 건은 자동으로 목록에서 제외)
+  // 관리자: 대기 + 승인 + 거부 모두 반환 (이력 표시용)
+  // UI 측에서 status로 필터링한다. 사이드바·하단탭 배지는 이미 status==='pending' 필터를 거치므로 호환 유지.
   const { data, error } = await supabase
     .from('cg_vacation_cancel_requests')
     .select(`
       *,
       requester:cg_profiles!requested_by(id, full_name, color),
+      reviewer:cg_profiles!reviewed_by(id, full_name, color),
       event:cg_events(id, title, start_at, end_at, is_all_day)
     `)
-    .eq('status', 'pending')
     .order('created_at', { ascending: false })
-    .limit(50)
+    .limit(100)
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json(data ?? [])

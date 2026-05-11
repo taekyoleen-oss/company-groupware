@@ -283,33 +283,45 @@ export interface Database {
       cg_vacation_cancel_requests: {
         Row: {
           id: string
-          event_id: string
+          event_id: string | null
           requested_by: string
           status: 'pending' | 'approved' | 'rejected'
           reason: string | null
           reviewed_by: string | null
           reviewed_at: string | null
           created_at: string
+          event_title: string | null
+          event_start_at: string | null
+          event_end_at: string | null
+          event_is_all_day: boolean | null
         }
         Insert: {
           id?: string
-          event_id: string
+          event_id?: string | null
           requested_by: string
           status?: 'pending' | 'approved' | 'rejected'
           reason?: string | null
           reviewed_by?: string | null
           reviewed_at?: string | null
           created_at?: string
+          event_title?: string | null
+          event_start_at?: string | null
+          event_end_at?: string | null
+          event_is_all_day?: boolean | null
         }
         Update: {
           id?: string
-          event_id?: string
+          event_id?: string | null
           requested_by?: string
           status?: 'pending' | 'approved' | 'rejected'
           reason?: string | null
           reviewed_by?: string | null
           reviewed_at?: string | null
           created_at?: string
+          event_title?: string | null
+          event_start_at?: string | null
+          event_end_at?: string | null
+          event_is_all_day?: boolean | null
         }
         Relationships: [
           {
