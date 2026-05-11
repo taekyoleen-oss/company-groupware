@@ -238,6 +238,10 @@ export default function AdminPage() {
     setCancelProcessing(null)
     if (res.ok) {
       showToast(action === 'approve' ? '휴가 취소가 승인되었습니다.' : '취소 신청이 거부되었습니다.', 'success')
+      // 즉시 로컬 상태 업데이트 → 버튼이 바로 취소완료/거부됨으로 전환
+      setCancelRequests(prev =>
+        prev.map(r => r.id === id ? { ...r, status: action === 'approve' ? 'approved' : 'rejected' } : r)
+      )
       fetchAll()
     } else {
       const data = await res.json()
