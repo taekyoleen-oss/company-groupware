@@ -6,7 +6,7 @@ import dayGridPlugin from '@fullcalendar/daygrid'
 import timeGridPlugin from '@fullcalendar/timegrid'
 import interactionPlugin from '@fullcalendar/interaction'
 import type { DateClickArg } from '@fullcalendar/interaction'
-import type { EventClickArg, EventInput, EventDropArg } from '@fullcalendar/core'
+import type { EventClickArg, EventInput, EventDropArg, EventContentArg } from '@fullcalendar/core'
 import { startOfDay, endOfDay, parseISO } from 'date-fns'
 import { Plus, X, Users, User, Sun } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
@@ -42,6 +42,7 @@ function CalendarContent() {
 
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [isAdminUser,   setIsAdminUser]   = useState(false)
+  const [pendingCancelIds, setPendingCancelIds] = useState<Set<string>>(new Set())
 
   const [currentView, setCurrentView] = useState('dayGridMonth')
   const [showAnniversaries, setShowAnniversaries] = useState(true)
@@ -156,7 +157,17 @@ function CalendarContent() {
 
   useEffect(() => { fetchEvents() }, [fetchEvents])
 
-  // 휴가 취소 승인 메시지 수신 시 캘린더 자동 새로고침
+  const fetchPendingCancels = useCallback(async () => {
+    const res = await fetch('/api/vacation-cancel-requests')
+    if (res.ok) {
+      const data: { event_id: string }[] = await res.json()
+      setPendingCancelIds(new Set(data.map(r => r.event_id)))
+    }
+  }, [])
+
+  useEffect(() => { fetchPendingCancels() }, [fetchPendingCancels])
+
+  // 휴가 취소 승인/거부 메시지 수신 시 캘린더 자동 새로고침
   useEffect(() => {
     if (!currentUserId) return
     const supabase = createClient()
@@ -164,13 +175,17 @@ function CalendarContent() {
       .channel('calendar-vacation-refresh')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'cg_messages' }, (payload) => {
         const msg = payload.new as any
-        if (msg.recipient_id === currentUserId && typeof msg.content === 'string' && msg.content.startsWith('[휴가 취소 승인]')) {
+        if (msg.recipient_id !== currentUserId || typeof msg.content !== 'string') return
+        if (msg.content.startsWith('[휴가 취소 승인]')) {
           fetchEvents()
+          fetchPendingCancels()
+        } else if (msg.content.startsWith('[휴가 취소 거부]')) {
+          fetchPendingCancels()
         }
       })
       .subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [currentUserId, fetchEvents])
+  }, [currentUserId, fetchEvents, fetchPendingCancels])
 
   const canEditEvent = (e: EventWithDetails) =>
     isAdminUser || e.created_by === currentUserId
@@ -229,6 +244,7 @@ function CalendarContent() {
         textColor:       isVac ? '#92400E' : '#ffffff',
         editable:        !e.is_vacation && canEditEvent(e),
         classNames:      isVac ? ['fc-vacation-event'] : [],
+        extendedProps:   { pendingCancel: pendingCancelIds.has(e.id) },
       }
     }),
   ]
@@ -431,6 +447,19 @@ function CalendarContent() {
           dayMaxEvents={3}
           buttonText={{ today: '오늘', month: '월', week: '주', day: '일' }}
           eventTimeFormat={{ hour: '2-digit', minute: '2-digit', hour12: false }}
+          eventContent={(arg: EventContentArg) => {
+            if (!arg.event.extendedProps.pendingCancel) return undefined
+            return (
+              <div style={{ display: 'flex', alignItems: 'center', overflow: 'hidden', width: '100%', padding: '0 2px', gap: '2px' }}>
+                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 'inherit' }}>
+                  {arg.event.title}
+                </span>
+                <span style={{ fontSize: '9px', flexShrink: 0, background: 'rgba(146,64,14,0.25)', borderRadius: '3px', padding: '0 3px', lineHeight: '14px', whiteSpace: 'nowrap' }}>
+                  취소중
+                </span>
+              </div>
+            )
+          }}
           dayCellDidMount={(arg) => {
             const dateStr = arg.date.toLocaleDateString('sv-SE')
             const isSunday  = arg.date.getDay() === 0
@@ -465,7 +494,7 @@ function CalendarContent() {
         onClose={closeVacationModal}
         initialDate={vacationModalDate}
         eventId={vacationEventId}
-        onSuccess={fetchEvents}
+        onSuccess={() => { fetchEvents(); fetchPendingCancels() }}
       />
     </div>
   )

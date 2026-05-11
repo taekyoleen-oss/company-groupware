@@ -51,8 +51,18 @@ export async function GET() {
     .eq('id', user.id)
     .single()
 
-  if (profile?.role !== 'admin') return NextResponse.json({ error: 'Admin only' }, { status: 403 })
+  // 일반 사용자: 본인의 대기 중 취소 신청 event_id 목록만 반환
+  if (profile?.role !== 'admin') {
+    const { data, error } = await supabase
+      .from('cg_vacation_cancel_requests')
+      .select('id, event_id, status')
+      .eq('requested_by', user.id)
+      .eq('status', 'pending')
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json(data ?? [])
+  }
 
+  // 관리자: 전체 요청 (모든 상태)
   const { data, error } = await supabase
     .from('cg_vacation_cancel_requests')
     .select(`
