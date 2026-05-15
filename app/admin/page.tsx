@@ -26,7 +26,26 @@ interface VacationUser {
   approver_name: string | null
   total_days: number
   used_days: number
+  pending_days: number
   remaining_days: number
+}
+
+interface VacationRequest {
+  id: string
+  requested_by: string
+  approver_id: string | null
+  title: string
+  description: string | null
+  start_at: string
+  end_at: string
+  is_all_day: boolean
+  status: 'pending' | 'approved' | 'rejected'
+  reject_reason: string | null
+  reviewed_at: string | null
+  created_at: string
+  requester: { id: string; full_name: string; color: string; approver_id: string | null }
+  approver: { id: string; full_name: string; color: string } | null
+  reviewer: { id: string; full_name: string; color: string } | null
 }
 
 interface CancelRequest {
@@ -47,7 +66,7 @@ interface CancelRequest {
 
 interface HistoryItem {
   id: string
-  kind: 'grant' | 'cancel_approved' | 'cancel_rejected'
+  kind: 'grant' | 'cancel_approved' | 'cancel_rejected' | 'request_rejected'
   happened_at: string
   requester: { id: string; full_name: string; color: string; approver_id: string | null }
   event_title: string
@@ -122,6 +141,8 @@ export default function AdminPage() {
   const [vacSaving, setVacSaving] = useState<string | null>(null)
   const [cancelRequests, setCancelRequests] = useState<CancelRequest[]>([])
   const [cancelProcessing, setCancelProcessing] = useState<string | null>(null)
+  const [vacationRequests, setVacationRequests] = useState<VacationRequest[]>([])
+  const [requestProcessing, setRequestProcessing] = useState<string | null>(null)
   const [approveSuccessOpen, setApproveSuccessOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([])
@@ -138,11 +159,12 @@ export default function AdminPage() {
   const [gpsLoading, setGpsLoading] = useState(false)
 
   const fetchAll = useCallback(async () => {
-    const [usersRes, teamsRes, catsRes, vacRes, cancelRes, historyRes] = await Promise.all([
+    const [usersRes, teamsRes, catsRes, vacRes, cancelRes, historyRes, vacReqRes] = await Promise.all([
       fetch('/api/admin/users'), fetch('/api/admin/teams'), fetch('/api/admin/categories'),
       fetch('/api/admin/vacation'), fetch('/api/vacation-cancel-requests'),
-      fetch('/api/vacation-history'),
+      fetch('/api/vacation-history'), fetch('/api/vacation/requests'),
     ])
+    if (vacReqRes.ok) setVacationRequests(await vacReqRes.json())
     if (usersRes.ok) {
       const data: ProfileWithTeam[] = await usersRes.json()
       setUsers(data)
@@ -198,12 +220,13 @@ export default function AdminPage() {
   useEffect(() => { fetchAttendance(attendanceDate) }, [fetchAttendance, attendanceDate])
   useEffect(() => { fetchSettings() }, [fetchSettings])
 
-  // 휴가 취소 요청 변경 / 사이드바에서 승인 → 자동 새로고침
+  // 휴가 취소 요청 / 신청 변경 / 사이드바에서 승인 → 자동 새로고침
   useEffect(() => {
     const supabase = createClient()
     const channel = supabase
       .channel('admin-page-refresh')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'cg_vacation_cancel_requests' }, () => fetchAll())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cg_vacation_requests' }, () => fetchAll())
       .subscribe()
     const handler = () => fetchAll()
     window.addEventListener('vacation-cancel-approved', handler)
@@ -282,6 +305,28 @@ export default function AdminPage() {
     }
     setConfirming(false)
     setConfirmAction(null)
+    fetchAll()
+  }
+
+  const handleVacationRequestAction = async (id: string, action: 'approve' | 'reject') => {
+    setRequestProcessing(id)
+    let reject_reason: string | null = null
+    if (action === 'reject') {
+      const r = window.prompt('거부 사유를 입력해 주세요. (선택)')
+      reject_reason = r ?? null
+    }
+    const res = await fetch(`/api/vacation/requests/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, reject_reason }),
+    })
+    setRequestProcessing(null)
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      showToast((data as any).error ?? '처리에 실패했습니다.', 'error')
+      return
+    }
+    showToast(action === 'approve' ? '휴가 신청이 승인되었습니다.' : '휴가 신청이 거부되었습니다.', 'success')
     fetchAll()
   }
 
@@ -409,11 +454,16 @@ export default function AdminPage() {
   const pending = users.filter(u => u.status === 'pending')
   const active = users.filter(u => u.status !== 'pending')
   const pendingCancelRequests = cancelRequests.filter(r => r.status === 'pending')
-  // 관리자가 직접 결재할 수 있는 대기 건 (대상 직원의 approver_id가 null)
+  const pendingVacationRequests = vacationRequests.filter(r => r.status === 'pending')
+  // 관리자가 직접 결재할 수 있는 대기 건 (대상의 approver_id가 null)
   const myActionableCancelRequests = pendingCancelRequests.filter(r =>
     (r.requester?.approver_id ?? null) === null
   )
-  const totalPending = pending.length + myActionableCancelRequests.length
+  const myActionableVacationRequests = pendingVacationRequests.filter(r =>
+    (r.approver_id ?? null) === null
+  )
+  const totalPending =
+    pending.length + myActionableCancelRequests.length + myActionableVacationRequests.length
 
   const attendedCount = attendanceRecords.filter(r => r.checked_in_at).length
   const isToday = attendanceDate === toLocalDateStr()
@@ -432,6 +482,7 @@ export default function AdminPage() {
           <span className="flex items-center justify-center w-7 h-7 rounded-full bg-red-500 text-white text-sm font-bold shrink-0">{totalPending}</span>
           <div className="text-sm text-red-700 dark:text-red-300 flex flex-wrap gap-x-4 gap-y-0.5">
             {pending.length > 0 && <span>회원 승인 대기 <strong>{pending.length}명</strong></span>}
+            {myActionableVacationRequests.length > 0 && <span>휴가 신청 승인 대기 <strong>{myActionableVacationRequests.length}건</strong></span>}
             {myActionableCancelRequests.length > 0 && <span>휴가 취소 승인 대기 <strong>{myActionableCancelRequests.length}건</strong></span>}
           </div>
         </div>
@@ -447,8 +498,10 @@ export default function AdminPage() {
           </TabsTrigger>
           <TabsTrigger value="vacation">
             휴가 관리
-            {myActionableCancelRequests.length > 0 && (
-              <span className="ml-1 text-xs bg-orange-500 text-white rounded-full px-1.5">{myActionableCancelRequests.length}</span>
+            {(myActionableVacationRequests.length + myActionableCancelRequests.length) > 0 && (
+              <span className="ml-1 text-xs bg-orange-500 text-white rounded-full px-1.5">
+                {myActionableVacationRequests.length + myActionableCancelRequests.length}
+              </span>
             )}
           </TabsTrigger>
           <TabsTrigger value="teams">팀 관리</TabsTrigger>
@@ -603,6 +656,71 @@ export default function AdminPage() {
 
         {/* ── 휴가 관리 ─────────────────────────────────────── */}
         <TabsContent value="vacation">
+          {/* 휴가 신청 대기 — 전체 노출, 타인 결재 건은 읽기전용 */}
+          {pendingVacationRequests.length > 0 && (
+            <div className="mb-6">
+              <h2 className="text-sm font-semibold text-blue-600 dark:text-blue-400 mb-2 flex items-center gap-1.5">
+                <Clock className="h-4 w-4" />
+                휴가 신청 요청
+                <span className="text-xs bg-blue-500 text-white rounded-full px-1.5">{pendingVacationRequests.length}건 대기</span>
+              </h2>
+              <div className="space-y-2">
+                {pendingVacationRequests.map(req => {
+                  const isProcessing = requestProcessing === req.id
+                  const canApprove = (req.approver_id ?? null) === null
+                  const startDate = req.is_all_day
+                    ? format(parseISO(req.start_at), 'M월 d일', { locale: ko })
+                    : format(parseISO(req.start_at), 'M월 d일 HH:mm', { locale: ko })
+                  const endDate = req.is_all_day
+                    ? format(parseISO(req.end_at), 'M월 d일', { locale: ko })
+                    : format(parseISO(req.end_at), 'HH:mm')
+                  const otherApprover = req.approver?.full_name ?? null
+                  return (
+                    <div key={req.id} className={`bg-white dark:bg-[#1E293B] rounded-lg p-3 border ${
+                      canApprove ? 'border-blue-200 dark:border-blue-800' : 'border-[#E5E7EB] dark:border-[#334155]'
+                    }`}>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <UserAvatar name={req.requester?.full_name ?? ''} color={req.requester?.color ?? '#6B7280'} size={32} />
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm dark:text-[#F1F5F9]">{req.requester?.full_name}</p>
+                          <p className="text-xs text-[#6B7280] dark:text-[#94A3B8]">
+                            {req.title} · {startDate}
+                            {startDate !== endDate && ` ~ ${endDate}`}
+                            {!req.is_all_day && <span className="ml-1 text-orange-500">반차</span>}
+                          </p>
+                          {req.description && (
+                            <p className="text-xs text-[#6B7280] dark:text-[#94A3B8] mt-0.5 italic">"{req.description}"</p>
+                          )}
+                          {!canApprove && otherApprover && (
+                            <p className="text-[11px] text-[#9CA3AF] dark:text-[#6B7280] mt-1">
+                              결재자: <span className="font-medium text-[#6B7280] dark:text-[#94A3B8]">{otherApprover}</span>
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {canApprove ? (
+                            <>
+                              <Button size="sm" className="bg-green-500 hover:bg-green-600 text-white h-8" disabled={isProcessing} onClick={() => handleVacationRequestAction(req.id, 'approve')}>
+                                <CheckCircle className="h-3.5 w-3.5 mr-1" />승인
+                              </Button>
+                              <Button size="sm" variant="outline" className="text-[#EF4444] border-[#EF4444] hover:bg-[#FEF2F2] h-8" disabled={isProcessing} onClick={() => handleVacationRequestAction(req.id, 'reject')}>
+                                <XCircle className="h-3.5 w-3.5 mr-1" />거부
+                              </Button>
+                            </>
+                          ) : (
+                            <span className="text-[11px] text-[#9CA3AF] bg-[#F3F4F6] dark:bg-[#374151] dark:text-[#94A3B8] rounded-full px-2 py-1">
+                              조회 전용
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
           {/* 휴가 취소 요청 (대기) — 전체 노출, 타인 결재 건은 읽기전용 */}
           {pendingCancelRequests.length > 0 && (
             <div className="mb-6">
@@ -721,7 +839,9 @@ export default function AdminPage() {
                       ? { border: 'border-blue-200 dark:border-blue-800', badge: 'text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/40', label: '휴가 승인', icon: <CheckCircle className="h-3 w-3" /> }
                       : item.kind === 'cancel_approved'
                       ? { border: 'border-green-200 dark:border-green-800', badge: 'text-green-700 dark:text-green-400 bg-green-100 dark:bg-green-900/40', label: '취소 승인', icon: <CheckCircle className="h-3 w-3" /> }
-                      : { border: 'border-[#E5E7EB] dark:border-[#334155]', badge: 'text-[#6B7280] dark:text-[#94A3B8] bg-[#F3F4F6] dark:bg-[#374151]', label: '취소 거부', icon: <XCircle className="h-3 w-3" /> }
+                      : item.kind === 'cancel_rejected'
+                      ? { border: 'border-[#E5E7EB] dark:border-[#334155]', badge: 'text-[#6B7280] dark:text-[#94A3B8] bg-[#F3F4F6] dark:bg-[#374151]', label: '취소 거부', icon: <XCircle className="h-3 w-3" /> }
+                      : { border: 'border-red-200 dark:border-red-800', badge: 'text-red-700 dark:text-red-300 bg-red-100 dark:bg-red-900/40', label: '신청 거부', icon: <XCircle className="h-3 w-3" /> }
                     return (
                       <div key={item.id} className={`bg-white dark:bg-[#1E293B] rounded-lg p-3 border ${kindStyle.border}`}>
                         <div className="flex flex-wrap items-center gap-3">
@@ -778,7 +898,9 @@ export default function AdminPage() {
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm dark:text-[#F1F5F9]">{u.full_name}</p>
                       <p className="text-xs text-[#6B7280] dark:text-[#94A3B8]">
-                        총 {u.total_days}일 · 사용 {u.used_days}일 · 잔여{' '}
+                        총 {u.total_days}일 · 사용 {u.used_days}일 · 대기{' '}
+                        <span className="text-amber-600 dark:text-amber-400 font-semibold">{u.pending_days}일</span>
+                        {' · '}잔여{' '}
                         <span className={u.remaining_days <= 0 ? 'text-red-500 font-semibold' : 'text-green-600 font-semibold'}>
                           {u.remaining_days}일
                         </span>

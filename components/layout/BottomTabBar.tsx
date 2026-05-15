@@ -26,13 +26,17 @@ export function BottomTabBar({ role }: BottomTabBarProps) {
     Promise.all([
       fetch('/api/admin/users').then(r => r.ok ? r.json() : []),
       fetch('/api/vacation-cancel-requests').then(r => r.ok ? r.json() : []),
-    ]).then(([users, cancelReqs]: [any[], any[]]) => {
+      fetch('/api/vacation/requests').then(r => r.ok ? r.json() : []),
+    ]).then(([users, cancelReqs, vacReqs]: [any[], any[], any[]]) => {
       const pendingUsers = Array.isArray(users) ? users.filter(u => u.status === 'pending').length : 0
-      // 관리자 actionable 취소요청: 신청자의 approver_id가 NULL인 건만 (= 관리자가 결재자)
+      // 관리자 actionable: 관리자가 결재자(approver_id=null)인 건만
       const pendingCancel = Array.isArray(cancelReqs)
         ? cancelReqs.filter((r: any) => r.status === 'pending' && (r.requester?.approver_id ?? null) === null).length
         : 0
-      setPendingCount(pendingUsers + pendingCancel)
+      const pendingVacation = Array.isArray(vacReqs)
+        ? vacReqs.filter((r: any) => r.status === 'pending' && (r.approver_id ?? null) === null).length
+        : 0
+      setPendingCount(pendingUsers + pendingCancel + pendingVacation)
     }).catch(() => {})
   }, [role])
 
@@ -45,6 +49,7 @@ export function BottomTabBar({ role }: BottomTabBarProps) {
     const channel = supabase
       .channel('bottom-tab-bar-refresh')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'cg_vacation_cancel_requests' }, () => fetchCount())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cg_vacation_requests' }, () => fetchCount())
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'cg_profiles' }, () => fetchCount())
       .subscribe()
     return () => { supabase.removeChannel(channel) }

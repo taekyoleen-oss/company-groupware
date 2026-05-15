@@ -46,7 +46,26 @@ interface ApproverEmployee {
   status: string
   total_days: number
   used_days: number
+  pending_days: number
   remaining_days: number
+}
+
+interface VacationRequest {
+  id: string
+  requested_by: string
+  approver_id: string | null
+  title: string
+  description: string | null
+  start_at: string
+  end_at: string
+  is_all_day: boolean
+  status: 'pending' | 'approved' | 'rejected'
+  reject_reason: string | null
+  reviewed_at: string | null
+  created_at: string
+  requester?: { id: string; full_name: string; color: string; approver_id: string | null }
+  approver?: { id: string; full_name: string; color: string } | null
+  reviewer?: { id: string; full_name: string; color: string } | null
 }
 
 interface ApproverCancelRequest {
@@ -68,11 +87,12 @@ interface ApproverCancelRequest {
 interface ApproverData {
   employees: ApproverEmployee[]
   cancel_requests: ApproverCancelRequest[]
+  vacation_requests: VacationRequest[]
 }
 
 interface VacHistoryItem {
   id: string
-  kind: 'grant' | 'cancel_approved' | 'cancel_rejected'
+  kind: 'grant' | 'cancel_approved' | 'cancel_rejected' | 'request_rejected'
   happened_at: string
   requester: { id: string; full_name: string; color: string; approver_id: string | null }
   event_title: string
@@ -81,6 +101,20 @@ interface VacHistoryItem {
   event_is_all_day: boolean
   reviewer: { id: string; full_name: string; color: string } | null
   reason: string | null
+}
+
+interface VacSummaryV2 extends VacSummary {
+  pending_days?: number
+  pending_requests?: Array<{
+    id: string
+    title: string
+    start_at: string
+    end_at: string
+    is_all_day: boolean
+    created_at: string
+    approver: { id: string; full_name: string; color: string } | null
+    days: number
+  }>
 }
 
 interface CompanySettings {
@@ -157,7 +191,9 @@ export default function ProfilePage() {
   const [pwForm, setPwForm] = useState({ current: '', next: '', confirm: '' })
   const [pwLoading, setPwLoading] = useState(false)
   const [showPw, setShowPw] = useState({ current: false, next: false, confirm: false })
-  const [vacSummary, setVacSummary] = useState<VacSummary | null>(null)
+  const [vacSummary, setVacSummary] = useState<VacSummaryV2 | null>(null)
+  const [withdrawing, setWithdrawing] = useState<string | null>(null)
+  const [empRequestProcessing, setEmpRequestProcessing] = useState<string | null>(null)
   const [approverData, setApproverData] = useState<ApproverData | null>(null)
   const [empTotalEdits, setEmpTotalEdits] = useState<Record<string, number>>({})
   const [empSaving, setEmpSaving] = useState<string | null>(null)
@@ -214,6 +250,11 @@ export default function ProfilePage() {
     }
   }
 
+  const fetchOwnVacation = async () => {
+    const res = await fetch('/api/vacation')
+    if (res.ok) setVacSummary(await res.json())
+  }
+
   useEffect(() => {
     import('@/lib/supabase/client').then(({ createClient }) => {
       createClient().auth.getUser().then(({ data }) => setEmail(data.user?.email ?? ''))
@@ -226,7 +267,7 @@ export default function ProfilePage() {
       fetch('/api/admin/settings').then(r => r.json()),
       fetch(`/api/attendance?date=${todayStr}`).then(r => r.json()),
     ]).then(([profileData, teamsData, vacData, settingsData, attendanceData]: [
-      ProfileWithTeam, Team[], VacSummary, CompanySettings, { checked_in_at: string; method?: string } | null
+      ProfileWithTeam, Team[], VacSummaryV2, CompanySettings, { checked_in_at: string; method?: string } | null
     ]) => {
       setProfile(profileData)
       setForm({ full_name: profileData.full_name, color: profileData.color, team_id: profileData.team_id ?? 'none' })
@@ -280,6 +321,42 @@ export default function ProfilePage() {
     }
     showToast(action === 'approve' ? '취소를 승인했습니다.' : '취소를 거부했습니다.', 'success')
     fetchApproverData()
+  }
+
+  const handleEmployeeRequestAction = async (id: string, action: 'approve' | 'reject') => {
+    setEmpRequestProcessing(id)
+    let reject_reason: string | null = null
+    if (action === 'reject') {
+      const r = window.prompt('거부 사유를 입력해 주세요. (선택)')
+      reject_reason = r ?? null
+    }
+    const res = await fetch(`/api/vacation/requests/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, reject_reason }),
+    })
+    setEmpRequestProcessing(null)
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      showToast((data as any).error ?? '처리에 실패했습니다.', 'error')
+      return
+    }
+    showToast(action === 'approve' ? '휴가 신청을 승인했습니다.' : '휴가 신청을 거부했습니다.', 'success')
+    fetchApproverData()
+  }
+
+  const handleWithdrawRequest = async (id: string) => {
+    if (!window.confirm('이 휴가 신청을 철회하시겠습니까?')) return
+    setWithdrawing(id)
+    const res = await fetch(`/api/vacation/requests/${id}`, { method: 'DELETE' })
+    setWithdrawing(null)
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      showToast((data as any).error ?? '철회에 실패했습니다.', 'error')
+      return
+    }
+    showToast('휴가 신청이 철회되었습니다.', 'success')
+    fetchOwnVacation()
   }
 
   const handleCheckIn = async () => {
@@ -573,22 +650,67 @@ export default function ProfilePage() {
                 <span className="ml-auto text-xs text-[#9CA3AF] dark:text-[#64748B]">평일 기준</span>
               </div>
 
-              <div className="grid grid-cols-3 gap-3 mb-4">
-                <div className="rounded-lg bg-[#F9FAFB] dark:bg-[#0F172A] p-3 text-center">
-                  <p className="text-xs text-[#6B7280] dark:text-[#94A3B8] mb-1">총 휴가</p>
-                  <p className="text-xl font-bold text-[#111827] dark:text-[#F1F5F9]">{vacSummary.total_days}일</p>
+              <div className="grid grid-cols-4 gap-2 mb-4">
+                <div className="rounded-lg bg-[#F9FAFB] dark:bg-[#0F172A] p-2.5 text-center">
+                  <p className="text-[10px] text-[#6B7280] dark:text-[#94A3B8] mb-0.5">총 휴가</p>
+                  <p className="text-base font-bold text-[#111827] dark:text-[#F1F5F9]">{vacSummary.total_days}일</p>
                 </div>
-                <div className="rounded-lg bg-orange-50 dark:bg-orange-950/30 p-3 text-center">
-                  <p className="text-xs text-orange-600 dark:text-orange-400 mb-1">사용</p>
-                  <p className="text-xl font-bold text-orange-600 dark:text-orange-400">{vacSummary.used_days}일</p>
+                <div className="rounded-lg bg-orange-50 dark:bg-orange-950/30 p-2.5 text-center">
+                  <p className="text-[10px] text-orange-600 dark:text-orange-400 mb-0.5">사용</p>
+                  <p className="text-base font-bold text-orange-600 dark:text-orange-400">{vacSummary.used_days}일</p>
                 </div>
-                <div className={`rounded-lg p-3 text-center ${vacSummary.remaining_days <= 0 ? 'bg-red-50 dark:bg-red-950/30' : 'bg-green-50 dark:bg-green-950/30'}`}>
-                  <p className={`text-xs mb-1 ${vacSummary.remaining_days <= 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>잔여</p>
-                  <p className={`text-xl font-bold ${vacSummary.remaining_days <= 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
+                <div className="rounded-lg bg-amber-50 dark:bg-amber-950/30 p-2.5 text-center">
+                  <p className="text-[10px] text-amber-600 dark:text-amber-400 mb-0.5">대기</p>
+                  <p className="text-base font-bold text-amber-600 dark:text-amber-400">{vacSummary.pending_days ?? 0}일</p>
+                </div>
+                <div className={`rounded-lg p-2.5 text-center ${vacSummary.remaining_days <= 0 ? 'bg-red-50 dark:bg-red-950/30' : 'bg-green-50 dark:bg-green-950/30'}`}>
+                  <p className={`text-[10px] mb-0.5 ${vacSummary.remaining_days <= 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>잔여</p>
+                  <p className={`text-base font-bold ${vacSummary.remaining_days <= 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
                     {vacSummary.remaining_days}일
                   </p>
                 </div>
               </div>
+
+              {/* 결재 대기 중인 신청 (본인) */}
+              {vacSummary.pending_requests && vacSummary.pending_requests.length > 0 && (
+                <div className="mb-4">
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <Clock className="h-3.5 w-3.5 text-amber-500" />
+                    <p className="text-xs font-medium text-amber-600 dark:text-amber-400">
+                      결재 대기 ({vacSummary.pending_requests.length}건)
+                    </p>
+                  </div>
+                  <div className="space-y-1.5">
+                    {vacSummary.pending_requests.map(pr => (
+                      <div key={pr.id} className="flex items-center justify-between rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 px-3 py-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs text-[#374151] dark:text-[#D1D5DB] truncate">
+                            <span className="font-medium">{pr.title}</span>
+                            <span className="text-[#6B7280] dark:text-[#94A3B8]"> · {pr.is_all_day
+                              ? format(parseISO(pr.start_at), 'M월 d일', { locale: ko })
+                              : format(parseISO(pr.start_at), 'M월 d일 HH:mm', { locale: ko })}
+                              {pr.is_all_day && pr.start_at.slice(0, 10) !== pr.end_at.slice(0, 10) &&
+                                ` ~ ${format(parseISO(pr.end_at), 'M월 d일', { locale: ko })}`}
+                            </span>
+                          </p>
+                          <p className="text-[10px] text-[#6B7280] dark:text-[#94A3B8] mt-0.5">
+                            결재자: {pr.approver?.full_name ?? '관리자'} · {pr.days}일
+                          </p>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-2 text-xs text-[#EF4444] border-[#EF4444] hover:bg-[#FEF2F2]"
+                          disabled={withdrawing === pr.id}
+                          onClick={() => handleWithdrawRequest(pr.id)}
+                        >
+                          {withdrawing === pr.id ? '…' : '철회'}
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="mb-4">
                 <div className="flex justify-between text-xs text-[#6B7280] dark:text-[#94A3B8] mb-1">
@@ -655,6 +777,7 @@ export default function ProfilePage() {
                       <th className="py-2 pr-2 font-medium">이름</th>
                       <th className="py-2 px-1 font-medium text-center">총</th>
                       <th className="py-2 px-1 font-medium text-center">사용</th>
+                      <th className="py-2 px-1 font-medium text-center">대기</th>
                       <th className="py-2 px-1 font-medium text-center">잔여</th>
                       <th className="py-2 pl-1 font-medium text-right">총휴가 편집</th>
                     </tr>
@@ -673,6 +796,7 @@ export default function ProfilePage() {
                           </td>
                           <td className="py-2 px-1 text-center text-[#374151] dark:text-[#D1D5DB]">{emp.total_days}일</td>
                           <td className="py-2 px-1 text-center text-orange-600 dark:text-orange-400">{emp.used_days}일</td>
+                          <td className="py-2 px-1 text-center text-amber-600 dark:text-amber-400">{emp.pending_days}일</td>
                           <td className={`py-2 px-1 text-center font-medium ${emp.remaining_days <= 0 ? 'text-red-500' : 'text-green-600'}`}>{emp.remaining_days}일</td>
                           <td className="py-2 pl-1">
                             <div className="flex items-center gap-1 justify-end">
@@ -692,6 +816,51 @@ export default function ProfilePage() {
                   </tbody>
                 </table>
               </div>
+
+              {/* 직원 휴가 신청 대기 (본인이 결재자) */}
+              {approverData.vacation_requests.filter(r => r.status === 'pending').length > 0 && (
+                <div className="mt-4">
+                  <h3 className="text-xs font-semibold text-blue-600 dark:text-blue-400 mb-2 flex items-center gap-1.5">
+                    <Clock className="h-3.5 w-3.5" />
+                    휴가 신청 대기
+                  </h3>
+                  <div className="space-y-1.5">
+                    {approverData.vacation_requests
+                      .filter(r => r.status === 'pending')
+                      .map(req => {
+                        const isProcessing = empRequestProcessing === req.id
+                        const sd = req.is_all_day
+                          ? format(parseISO(req.start_at), 'M월 d일', { locale: ko })
+                          : format(parseISO(req.start_at), 'M월 d일 HH:mm', { locale: ko })
+                        const ed = req.is_all_day
+                          ? format(parseISO(req.end_at), 'M월 d일', { locale: ko })
+                          : format(parseISO(req.end_at), 'HH:mm')
+                        return (
+                          <div key={req.id} className="bg-white dark:bg-[#1E293B] rounded-lg p-2.5 border border-blue-200 dark:border-blue-800 flex flex-wrap items-center gap-2">
+                            <UserAvatar name={req.requester?.full_name ?? ''} color={req.requester?.color ?? '#6B7280'} size={24} />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-medium dark:text-[#F1F5F9]">{req.requester?.full_name}</p>
+                              <p className="text-[11px] text-[#6B7280] dark:text-[#94A3B8]">
+                                {req.title} · {sd}{sd !== ed && ` ~ ${ed}`}
+                              </p>
+                              {req.description && (
+                                <p className="text-[11px] text-[#6B7280] dark:text-[#94A3B8] mt-0.5 italic">"{req.description}"</p>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <Button size="sm" className="bg-green-500 hover:bg-green-600 text-white h-7 px-2 text-xs" disabled={isProcessing} onClick={() => handleEmployeeRequestAction(req.id, 'approve')}>
+                                <CheckCircle className="h-3 w-3 mr-0.5" />승인
+                              </Button>
+                              <Button size="sm" variant="outline" className="text-[#EF4444] border-[#EF4444] hover:bg-[#FEF2F2] h-7 px-2 text-xs" disabled={isProcessing} onClick={() => handleEmployeeRequestAction(req.id, 'reject')}>
+                                <XCircle className="h-3 w-3 mr-0.5" />거부
+                              </Button>
+                            </div>
+                          </div>
+                        )
+                      })}
+                  </div>
+                </div>
+              )}
 
               {/* 대기 취소 요청 */}
               {approverData.cancel_requests.filter(r => r.status === 'pending').length > 0 && (
@@ -777,7 +946,9 @@ export default function ProfilePage() {
                           ? { badge: 'text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/40', label: '휴가 승인' }
                           : item.kind === 'cancel_approved'
                           ? { badge: 'text-green-700 dark:text-green-400 bg-green-100 dark:bg-green-900/40', label: '취소 승인' }
-                          : { badge: 'text-[#6B7280] dark:text-[#94A3B8] bg-[#F3F4F6] dark:bg-[#374151]', label: '취소 거부' }
+                          : item.kind === 'cancel_rejected'
+                          ? { badge: 'text-[#6B7280] dark:text-[#94A3B8] bg-[#F3F4F6] dark:bg-[#374151]', label: '취소 거부' }
+                          : { badge: 'text-red-700 dark:text-red-300 bg-red-100 dark:bg-red-900/40', label: '신청 거부' }
                         return (
                           <div key={item.id} className="bg-white dark:bg-[#1E293B] rounded-lg px-2.5 py-2 border border-[#E5E7EB] dark:border-[#334155] flex items-center gap-2">
                             <UserAvatar name={item.requester?.full_name ?? ''} color={item.requester?.color ?? '#6B7280'} size={22} />

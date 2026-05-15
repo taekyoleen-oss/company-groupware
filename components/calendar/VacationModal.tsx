@@ -62,6 +62,8 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
   const [currentUserId, setCurrentUserId]   = useState<string | null>(null)
   const [currentUserName, setCurrentUserName] = useState<string>('')
   const [isAdmin, setIsAdmin]               = useState(false)
+  const [approverId, setApproverId]         = useState<string | null>(null)
+  const [approverName, setApproverName]     = useState<string | null>(null)
   const [eventData, setEventData]           = useState<any>(null)
   const [vacationSummary, setVacationSummary] = useState<VacationSummary | null>(null)
   const [vacationType, setVacationType]     = useState<VacationType>('full')
@@ -72,6 +74,8 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
       setCurrentUserId(p?.id ?? null)
       setCurrentUserName(p?.full_name ?? '')
       setIsAdmin(p?.role === 'admin')
+      setApproverId(p?.approver_id ?? null)
+      setApproverName(p?.approver?.full_name ?? null)
     }).catch(() => {})
   }, [])
 
@@ -161,6 +165,9 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
     ? vacationSummary.remaining_days + origVacDays - pendingVacDays
     : 0
 
+  // 본인이 결재자(관리자 + approver_id 없음)인 경우 자동 승인
+  const isSelfApproved = isAdmin && approverId == null
+
   const executeSave = async () => {
     setLoading(true)
     const payload = {
@@ -171,20 +178,49 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
         ? new Date(form.end_at.slice(0, 10) + 'T23:59').toISOString()
         : new Date(form.end_at).toISOString(),
       is_all_day: isAllDay,
-      is_vacation: true,
-      visibility: 'company',
-      color: '#F97316',
-      category_id: null,
     }
-    const url = eventId ? `/api/events/${eventId}` : '/api/events'
-    const method = eventId ? 'PATCH' : 'POST'
-    const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+    if (eventId) {
+      // 기존 이벤트 수정: cg_events 직접 PATCH (관리자/본인)
+      const res = await fetch(`/api/events/${eventId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...payload,
+          is_vacation: true,
+          visibility: 'company',
+          color: '#F97316',
+          category_id: null,
+        }),
+      })
+      setLoading(false)
+      if (res.ok) {
+        showToast('휴가가 수정되었습니다.', 'success')
+        setTimeout(() => { onSuccess(); onClose() }, 500)
+      } else {
+        const data = await res.json()
+        showToast(data.error ?? '오류가 발생했습니다.', 'error')
+      }
+      return
+    }
+
+    // 신규 신청 → /api/vacation/request (자동승인/결재대기를 서버가 분기)
+    const res = await fetch('/api/vacation/request', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
     setLoading(false)
     if (res.ok) {
-      showToast(eventId ? '휴가가 수정되었습니다.' : '휴가가 등록되었습니다.', 'success')
+      const data = await res.json().catch(() => ({}))
+      if (data.mode === 'pending') {
+        const targetName = approverName ?? (approverId ? '결재자' : '관리자')
+        showToast(`결재 요청이 ${targetName}에게 전달되었습니다.`, 'success')
+      } else {
+        showToast('휴가가 등록되었습니다.', 'success')
+      }
       setTimeout(() => { onSuccess(); onClose() }, 500)
     } else {
-      const data = await res.json()
+      const data = await res.json().catch(() => ({}))
       showToast(data.error ?? '오류가 발생했습니다.', 'error')
     }
   }
@@ -300,22 +336,34 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
         </DialogContent>
       </Dialog>
 
-      {/* 휴가 등록 확인 */}
+      {/* 휴가 등록/신청 확인 */}
       <Dialog open={vacSaveConfirmOpen} onOpenChange={setVacSaveConfirmOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <AlertTriangle className="h-4 w-4 text-amber-500" />
-              휴가 등록 확인
+              {isSelfApproved ? '휴가 등록 확인' : '휴가 신청 확인'}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
-            <div className="rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-3">
-              <p className="text-sm text-amber-800 dark:text-amber-200 leading-relaxed">
-                등록한 휴가를 취소하는 경우, <strong>관리자가 승인</strong>해야 합니다.
-              </p>
-            </div>
-            <p className="text-sm text-[#6B7280]">위 내용을 확인하셨습니까? 그래도 휴가를 등록하시겠습니까?</p>
+            {isSelfApproved ? (
+              <div className="rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-3">
+                <p className="text-sm text-amber-800 dark:text-amber-200 leading-relaxed">
+                  본인이 결재자이므로 <strong>즉시 등록</strong>됩니다.
+                  등록한 휴가를 취소하는 경우 별도 절차 없이 삭제할 수 있습니다.
+                </p>
+              </div>
+            ) : (
+              <div className="rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 p-3">
+                <p className="text-sm text-blue-800 dark:text-blue-200 leading-relaxed">
+                  결재자({approverName ?? (approverId ? '지정 결재자' : '관리자')})의 <strong>승인 후</strong> 휴가가 등록됩니다.
+                  취소 시에도 결재자 승인이 필요합니다.
+                </p>
+              </div>
+            )}
+            <p className="text-sm text-[#6B7280]">
+              {isSelfApproved ? '위 내용을 확인하셨습니까? 휴가를 등록하시겠습니까?' : '위 내용을 확인하셨습니까? 결재 요청을 보내시겠습니까?'}
+            </p>
             <div className="flex gap-2">
               <Button type="button" variant="outline" className="flex-1" onClick={() => setVacSaveConfirmOpen(false)}>취소</Button>
               <Button
@@ -324,7 +372,7 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
                 onClick={() => { setVacSaveConfirmOpen(false); executeSave() }}
                 disabled={loading}
               >
-                {loading ? '등록 중...' : '확인 후 등록'}
+                {loading ? '처리 중...' : (isSelfApproved ? '확인 후 등록' : '결재 요청 보내기')}
               </Button>
             </div>
           </div>
@@ -394,6 +442,25 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
                   </span>
                 </div>
               )}
+
+              {/* 결재자 안내 */}
+              <div className={`rounded-lg px-3 py-2 border text-xs ${
+                isSelfApproved
+                  ? 'bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800 text-green-700 dark:text-green-300'
+                  : 'bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300'
+              }`}>
+                <p className="flex items-center gap-1.5">
+                  <User className="h-3.5 w-3.5" />
+                  결재자:{' '}
+                  <span className="font-medium">
+                    {isSelfApproved
+                      ? '본인 (즉시 등록)'
+                      : (approverName ?? (approverId ? '지정 결재자' : '관리자'))}
+                    {!isSelfApproved && ' — 승인 필요'}
+                  </span>
+                </p>
+              </div>
+
 
               {/* 휴가 유형 */}
               <div>
@@ -501,7 +568,7 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
               <div className="flex gap-2 pt-1">
                 <Button type="button" variant="outline" className="flex-1" onClick={onClose}>취소</Button>
                 <Button type="submit" className="flex-1 bg-orange-500 hover:bg-orange-600 text-white" disabled={loading}>
-                  {loading ? '저장 중...' : '신청'}
+                  {loading ? '처리 중...' : (isSelfApproved ? '등록' : '결재 요청')}
                 </Button>
               </div>
             </form>

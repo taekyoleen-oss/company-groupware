@@ -27,7 +27,7 @@ export async function GET() {
 
   const currentYear = new Date().getFullYear()
 
-  const [usersRes, allocRes, eventsRes] = await Promise.all([
+  const [usersRes, allocRes, eventsRes, pendingRes] = await Promise.all([
     supabase
       .from('cg_profiles')
       .select('id, full_name, color, team_id, role, status, approver_id')
@@ -41,6 +41,12 @@ export async function GET() {
       .from('cg_events')
       .select('created_by, start_at, end_at, is_all_day')
       .eq('is_vacation', true)
+      .gte('start_at', `${currentYear - 1}-12-22T00:00:00.000Z`)
+      .lte('start_at', `${currentYear}-12-31T23:59:59.999Z`),
+    supabase
+      .from('cg_vacation_requests')
+      .select('requested_by, start_at, end_at, is_all_day')
+      .eq('status', 'pending')
       .gte('start_at', `${currentYear - 1}-12-22T00:00:00.000Z`)
       .lte('start_at', `${currentYear}-12-31T23:59:59.999Z`),
   ])
@@ -57,25 +63,35 @@ export async function GET() {
     usedMap[e.created_by] = (usedMap[e.created_by] ?? 0) + calcDays(e.start_at, e.end_at, e.is_all_day ?? true)
   }
 
-  // 결재자 이름 매핑 (전체 user 데이터에서 lookup)
-  const nameMap: Record<string, string> = {}
-  for (const u of usersRes.data ?? []) {
-    nameMap[u.id] = u.full_name
+  const pendingMap: Record<string, number> = {}
+  for (const p of pendingRes.data ?? []) {
+    const kstYear = parseInt(toKSTDate(p.start_at).slice(0, 4))
+    if (kstYear !== currentYear) continue
+    pendingMap[p.requested_by] = (pendingMap[p.requested_by] ?? 0) + calcDays(p.start_at, p.end_at, p.is_all_day ?? true)
   }
 
-  const result = (usersRes.data ?? []).map(u => ({
-    id: u.id,
-    full_name: u.full_name,
-    color: u.color,
-    team_id: u.team_id,
-    role: u.role,
-    status: u.status,
-    approver_id: u.approver_id,
-    approver_name: u.approver_id ? (nameMap[u.approver_id] ?? null) : null,
-    total_days: allocMap[u.id] ?? 10,
-    used_days: usedMap[u.id] ?? 0,
-    remaining_days: (allocMap[u.id] ?? 10) - (usedMap[u.id] ?? 0),
-  }))
+  const nameMap: Record<string, string> = {}
+  for (const u of usersRes.data ?? []) nameMap[u.id] = u.full_name
+
+  const result = (usersRes.data ?? []).map(u => {
+    const total = allocMap[u.id] ?? 10
+    const used = usedMap[u.id] ?? 0
+    const pending = pendingMap[u.id] ?? 0
+    return {
+      id: u.id,
+      full_name: u.full_name,
+      color: u.color,
+      team_id: u.team_id,
+      role: u.role,
+      status: u.status,
+      approver_id: u.approver_id,
+      approver_name: u.approver_id ? (nameMap[u.approver_id] ?? null) : null,
+      total_days: total,
+      used_days: used,
+      pending_days: pending,
+      remaining_days: total - used - pending,
+    }
+  })
 
   return NextResponse.json(result)
 }

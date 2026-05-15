@@ -20,7 +20,7 @@ export async function GET() {
 
   const currentYear = new Date().getFullYear()
 
-  // 이 연도의 할당량 조회 (없으면 기본 10일)
+  // 할당량
   const { data: allocation } = await supabase
     .from('cg_vacation_allocations')
     .select('total_days')
@@ -30,7 +30,7 @@ export async function GET() {
 
   const totalDays = allocation?.total_days ?? 10
 
-  // 이 연도의 휴가 이벤트 조회 (범위를 넓게 잡고 KST 기준 필터링)
+  // 승인된 휴가 이벤트
   const { data: events } = await supabase
     .from('cg_events')
     .select('id, title, start_at, end_at, is_all_day')
@@ -57,11 +57,35 @@ export async function GET() {
 
   const usedDays = history.reduce((sum, e) => sum + e.days, 0)
 
+  // 대기 중인 신청
+  const { data: pendings } = await supabase
+    .from('cg_vacation_requests')
+    .select('id, title, start_at, end_at, is_all_day, created_at, approver_id, approver:cg_profiles!approver_id(id, full_name, color)')
+    .eq('requested_by', user.id)
+    .eq('status', 'pending')
+    .gte('start_at', `${currentYear - 1}-12-22T00:00:00.000Z`)
+    .lte('start_at', `${currentYear}-12-31T23:59:59.999Z`)
+    .order('created_at', { ascending: false })
+
+  const pendingList = (pendings ?? []).map((p: any) => ({
+    id: p.id,
+    title: p.title,
+    start_at: p.start_at,
+    end_at: p.end_at,
+    is_all_day: p.is_all_day,
+    created_at: p.created_at,
+    approver: p.approver ?? null,
+    days: calcDays(p.start_at, p.end_at, p.is_all_day ?? true),
+  }))
+  const pendingDays = pendingList.reduce((sum, p) => sum + p.days, 0)
+
   return NextResponse.json({
     year: currentYear,
     total_days: totalDays,
     used_days: usedDays,
-    remaining_days: totalDays - usedDays,
+    pending_days: pendingDays,
+    remaining_days: totalDays - usedDays - pendingDays,
     history,
+    pending_requests: pendingList,
   })
 }

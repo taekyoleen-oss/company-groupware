@@ -343,6 +343,79 @@ export interface Database {
           }
         ]
       }
+      cg_vacation_requests: {
+        Row: {
+          id: string
+          requested_by: string
+          approver_id: string | null
+          title: string
+          description: string | null
+          start_at: string
+          end_at: string
+          is_all_day: boolean
+          status: 'pending' | 'approved' | 'rejected'
+          event_id: string | null
+          reject_reason: string | null
+          reviewed_by: string | null
+          reviewed_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          requested_by: string
+          approver_id?: string | null
+          title: string
+          description?: string | null
+          start_at: string
+          end_at: string
+          is_all_day?: boolean
+          status?: 'pending' | 'approved' | 'rejected'
+          event_id?: string | null
+          reject_reason?: string | null
+          reviewed_by?: string | null
+          reviewed_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          requested_by?: string
+          approver_id?: string | null
+          title?: string
+          description?: string | null
+          start_at?: string
+          end_at?: string
+          is_all_day?: boolean
+          status?: 'pending' | 'approved' | 'rejected'
+          event_id?: string | null
+          reject_reason?: string | null
+          reviewed_by?: string | null
+          reviewed_at?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'cg_vacation_requests_requested_by_fkey'
+            columns: ['requested_by']
+            isOneToOne: false
+            referencedRelation: 'cg_profiles'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'cg_vacation_requests_approver_id_fkey'
+            columns: ['approver_id']
+            isOneToOne: false
+            referencedRelation: 'cg_profiles'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'cg_vacation_requests_event_id_fkey'
+            columns: ['event_id']
+            isOneToOne: false
+            referencedRelation: 'cg_events'
+            referencedColumns: ['id']
+          }
+        ]
+      }
       cg_vacation_allocations: {
         Row: {
           id: string
