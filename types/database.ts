@@ -18,6 +18,7 @@ export interface Database {
           role: 'admin' | 'manager' | 'member'
           status: 'pending' | 'active' | 'inactive'
           color: string
+          approver_id: string | null
           created_at: string
         }
         Insert: {
@@ -28,6 +29,7 @@ export interface Database {
           role?: 'admin' | 'manager' | 'member'
           status?: 'pending' | 'active' | 'inactive'
           color?: string
+          approver_id?: string | null
           created_at?: string
         }
         Update: {
@@ -38,6 +40,7 @@ export interface Database {
           role?: 'admin' | 'manager' | 'member'
           status?: 'pending' | 'active' | 'inactive'
           color?: string
+          approver_id?: string | null
           created_at?: string
         }
         Relationships: [

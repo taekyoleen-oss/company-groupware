@@ -28,7 +28,10 @@ export function BottomTabBar({ role }: BottomTabBarProps) {
       fetch('/api/vacation-cancel-requests').then(r => r.ok ? r.json() : []),
     ]).then(([users, cancelReqs]: [any[], any[]]) => {
       const pendingUsers = Array.isArray(users) ? users.filter(u => u.status === 'pending').length : 0
-      const pendingCancel = Array.isArray(cancelReqs) ? cancelReqs.filter((r: any) => r.status === 'pending').length : 0
+      // 관리자 actionable 취소요청: 신청자의 approver_id가 NULL인 건만 (= 관리자가 결재자)
+      const pendingCancel = Array.isArray(cancelReqs)
+        ? cancelReqs.filter((r: any) => r.status === 'pending' && (r.requester?.approver_id ?? null) === null).length
+        : 0
       setPendingCount(pendingUsers + pendingCancel)
     }).catch(() => {})
   }, [role])

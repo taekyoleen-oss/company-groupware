@@ -18,7 +18,7 @@ interface PendingUser {
 interface CancelRequest {
   id: string
   status: string
-  requester: { id: string; full_name: string; color: string } | null
+  requester: { id: string; full_name: string; color: string; approver_id: string | null } | null
   event: { id: string; title: string; start_at: string; is_all_day: boolean } | null
 }
 
@@ -51,7 +51,12 @@ export function AdminSidebar() {
     }
     if (cancelRes.ok) {
       const data: CancelRequest[] = await cancelRes.json()
-      if (Array.isArray(data)) setCancelReqs(data.filter(r => r.status === 'pending'))
+      // 사이드바엔 관리자 본인이 결재할 수 있는 건만 표시 (approver_id == null)
+      if (Array.isArray(data)) {
+        setCancelReqs(
+          data.filter(r => r.status === 'pending' && (r.requester?.approver_id ?? null) === null)
+        )
+      }
     }
   }, [])
 

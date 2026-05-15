@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
-// PATCH: 취소 신청 승인 또는 거부 (관리자 전용)
+// PATCH: 취소 신청 승인 또는 거부
+//   - 관리자: 본인이 결재자(approver_id == null)인 직원만 처리
+//   - 결재자(일반): 본인이 결재자인 직원만 처리
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
@@ -9,14 +11,14 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { data: profile } = await supabase
+    const { data: me } = await supabase
       .from('cg_profiles')
-      .select('role, full_name')
+      .select('id, role, full_name')
       .eq('id', user.id)
       .single()
-    if (profile?.role !== 'admin') {
-      return NextResponse.json({ error: 'Admin only' }, { status: 403 })
-    }
+    if (!me) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+
+    const isAdmin = (me as any).role === 'admin'
 
     const body = await request.json().catch(() => ({}))
     const action = (body as any).action
@@ -37,18 +39,27 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       return NextResponse.json({ error: '이미 처리된 요청입니다.' }, { status: 400 })
     }
 
-    // 신청자 이름 별도 조회 (알림 표시용)
+    // 결재 권한 판정: 대상 직원의 approver_id가 본인이거나, NULL이면서 본인이 관리자
     const { data: requesterProfile } = await supabase
       .from('cg_profiles')
-      .select('full_name')
+      .select('full_name, approver_id')
       .eq('id', cancelReq.requested_by)
       .single()
 
-    const adminName = (profile as any)?.full_name ?? '관리자'
-    const requesterName = (requesterProfile as any)?.full_name ?? null
+    if (!requesterProfile) {
+      return NextResponse.json({ error: '신청자 정보를 찾을 수 없습니다.' }, { status: 404 })
+    }
 
-    // 승인·거부 모두 처리 이력으로 남기기 위해 대상 이벤트를 스냅샷한다.
-    // 이벤트가 이미 삭제된 경우(잔존 신청건)에는 스냅샷이 null이 된다.
+    const targetApproverId = (requesterProfile as any).approver_id as string | null
+    const canApprove = (targetApproverId == null && isAdmin) || targetApproverId === user.id
+    if (!canApprove) {
+      return NextResponse.json({ error: '이 신청을 결재할 권한이 없습니다.' }, { status: 403 })
+    }
+
+    const reviewerName = (me as any).full_name ?? '결재자'
+    const requesterName = (requesterProfile as any).full_name ?? null
+
+    // 이벤트 스냅샷
     let eventSnapshot: {
       event_title: string | null
       event_start_at: string | null
@@ -75,7 +86,6 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const reviewedAt = new Date().toISOString()
 
     if (action === 'approve') {
-      // 1) 신청 row를 먼저 approved 로 갱신 + 이벤트 정보 스냅샷 저장
       const { error: updateError } = await (supabase as any)
         .from('cg_vacation_cancel_requests')
         .update({
@@ -93,7 +103,6 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         )
       }
 
-      // 2) 휴가 일정 삭제 — FK가 ON DELETE SET NULL 이므로 신청 row는 유지된다.
       if (cancelReq.event_id) {
         const { error: deleteError } = await supabase
           .from('cg_events')
@@ -108,7 +117,6 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         }
       }
     } else {
-      // 거부: 상태 + 스냅샷 저장
       const { error: updateError } = await (supabase as any)
         .from('cg_vacation_cancel_requests')
         .update({
@@ -127,16 +135,15 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       }
     }
 
-    // 신청자에게 결과 알림 발송 (실패해도 메인 처리는 성공으로 응답)
     const content = action === 'approve'
-      ? `[휴가 취소 승인] 신청하신 휴가 취소가 승인되었습니다. 작성자: ${adminName}`
-      : `[휴가 취소 거부] 신청하신 휴가 취소가 거부되었습니다. 작성자: ${adminName}`
+      ? `[휴가 취소 승인] 신청하신 휴가 취소가 승인되었습니다. 결재자: ${reviewerName}`
+      : `[휴가 취소 거부] 신청하신 휴가 취소가 거부되었습니다. 결재자: ${reviewerName}`
 
     const { error: msgError } = await (supabase as any)
       .from('cg_messages')
       .insert({
         sender_id:      user.id,
-        sender_name:    adminName,
+        sender_name:    reviewerName,
         recipient_id:   cancelReq.requested_by,
         recipient_name: requesterName,
         content,

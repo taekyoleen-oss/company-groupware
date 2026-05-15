@@ -22,6 +22,8 @@ interface VacationUser {
   team_id: string | null
   role: string
   status: string
+  approver_id: string | null
+  approver_name: string | null
   total_days: number
   used_days: number
   remaining_days: number
@@ -38,9 +40,22 @@ interface CancelRequest {
   event_start_at: string | null
   event_end_at: string | null
   event_is_all_day: boolean | null
-  requester: { id: string; full_name: string; color: string }
+  requester: { id: string; full_name: string; color: string; approver_id: string | null }
   reviewer: { id: string; full_name: string; color: string } | null
   event: { id: string; title: string; start_at: string; end_at: string; is_all_day: boolean } | null
+}
+
+interface HistoryItem {
+  id: string
+  kind: 'grant' | 'cancel_approved' | 'cancel_rejected'
+  happened_at: string
+  requester: { id: string; full_name: string; color: string; approver_id: string | null }
+  event_title: string
+  event_start_at: string | null
+  event_end_at: string | null
+  event_is_all_day: boolean
+  reviewer: { id: string; full_name: string; color: string } | null
+  reason: string | null
 }
 
 // 신청 row → 표시용 휴가 정보 (라이브 이벤트가 있으면 우선, 없으면 스냅샷 fallback)
@@ -103,11 +118,13 @@ export default function AdminPage() {
   const [confirming, setConfirming] = useState(false)
   const [vacationUsers, setVacationUsers] = useState<VacationUser[]>([])
   const [vacEdits, setVacEdits] = useState<Record<string, number>>({})
+  const [vacApproverEdits, setVacApproverEdits] = useState<Record<string, string>>({})
   const [vacSaving, setVacSaving] = useState<string | null>(null)
   const [cancelRequests, setCancelRequests] = useState<CancelRequest[]>([])
   const [cancelProcessing, setCancelProcessing] = useState<string | null>(null)
   const [approveSuccessOpen, setApproveSuccessOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [historyItems, setHistoryItems] = useState<HistoryItem[]>([])
 
   // 출석 관리
   const [attendanceDate, setAttendanceDate] = useState<string>(toLocalDateStr())
@@ -121,9 +138,10 @@ export default function AdminPage() {
   const [gpsLoading, setGpsLoading] = useState(false)
 
   const fetchAll = useCallback(async () => {
-    const [usersRes, teamsRes, catsRes, vacRes, cancelRes] = await Promise.all([
+    const [usersRes, teamsRes, catsRes, vacRes, cancelRes, historyRes] = await Promise.all([
       fetch('/api/admin/users'), fetch('/api/admin/teams'), fetch('/api/admin/categories'),
       fetch('/api/admin/vacation'), fetch('/api/vacation-cancel-requests'),
+      fetch('/api/vacation-history'),
     ])
     if (usersRes.ok) {
       const data: ProfileWithTeam[] = await usersRes.json()
@@ -146,10 +164,16 @@ export default function AdminPage() {
       const vacData: VacationUser[] = await vacRes.json()
       setVacationUsers(vacData)
       const initVac: Record<string, number> = {}
-      vacData.forEach(u => { initVac[u.id] = u.total_days })
+      const initApprover: Record<string, string> = {}
+      vacData.forEach(u => {
+        initVac[u.id] = u.total_days
+        initApprover[u.id] = u.approver_id ?? 'admin'
+      })
       setVacEdits(initVac)
+      setVacApproverEdits(initApprover)
     }
     if (cancelRes.ok) setCancelRequests(await cancelRes.json())
+    if (historyRes.ok) setHistoryItems(await historyRes.json())
   }, [])
 
   const fetchAttendance = useCallback(async (date: string) => {
@@ -297,17 +321,37 @@ export default function AdminPage() {
   }
 
   const saveVacation = async (userId: string) => {
-    const total = vacEdits[userId]
-    if (total === undefined) return
+    const target = vacationUsers.find(u => u.id === userId)
+    if (!target) return
+    const totalEdit = vacEdits[userId]
+    const approverEdit = vacApproverEdits[userId] ?? 'admin'
+
+    const currentApproverKey = target.approver_id ?? 'admin'
+    const approverChanged = approverEdit !== currentApproverKey
+    const totalChanged = totalEdit !== undefined && totalEdit !== target.total_days
+
+    if (!approverChanged && !totalChanged) return
+
+    const payload: Record<string, unknown> = {}
+    if (approverChanged) payload.approver_id = approverEdit === 'admin' ? null : approverEdit
+    // total_days는 결재자가 본인(또는 관리자=null)인 경우에만 전송
+    const newApproverIsSelfAdmin =
+      (approverEdit === 'admin') // admin = null → 관리자 본인이 결재
+    if (totalChanged && newApproverIsSelfAdmin) payload.total_days = totalEdit
+
     setVacSaving(userId)
     const res = await fetch(`/api/admin/vacation/${userId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ total_days: total }),
+      body: JSON.stringify(payload),
     })
     setVacSaving(null)
-    if (res.ok) { showToast('저장되었습니다.', 'success'); fetchAll() }
-    else showToast('저장에 실패했습니다.', 'error')
+    if (res.ok) {
+      showToast('저장되었습니다.', 'success'); fetchAll()
+    } else {
+      const data = await res.json().catch(() => ({}))
+      showToast(data.error ?? '저장에 실패했습니다.', 'error')
+    }
   }
 
   const addCategory = async (e: React.FormEvent) => {
@@ -365,8 +409,11 @@ export default function AdminPage() {
   const pending = users.filter(u => u.status === 'pending')
   const active = users.filter(u => u.status !== 'pending')
   const pendingCancelRequests = cancelRequests.filter(r => r.status === 'pending')
-  const historyCancelRequests = cancelRequests.filter(r => r.status !== 'pending')
-  const totalPending = pending.length + pendingCancelRequests.length
+  // 관리자가 직접 결재할 수 있는 대기 건 (대상 직원의 approver_id가 null)
+  const myActionableCancelRequests = pendingCancelRequests.filter(r =>
+    (r.requester?.approver_id ?? null) === null
+  )
+  const totalPending = pending.length + myActionableCancelRequests.length
 
   const attendedCount = attendanceRecords.filter(r => r.checked_in_at).length
   const isToday = attendanceDate === toLocalDateStr()
@@ -385,7 +432,7 @@ export default function AdminPage() {
           <span className="flex items-center justify-center w-7 h-7 rounded-full bg-red-500 text-white text-sm font-bold shrink-0">{totalPending}</span>
           <div className="text-sm text-red-700 dark:text-red-300 flex flex-wrap gap-x-4 gap-y-0.5">
             {pending.length > 0 && <span>회원 승인 대기 <strong>{pending.length}명</strong></span>}
-            {pendingCancelRequests.length > 0 && <span>휴가 취소 승인 대기 <strong>{pendingCancelRequests.length}건</strong></span>}
+            {myActionableCancelRequests.length > 0 && <span>휴가 취소 승인 대기 <strong>{myActionableCancelRequests.length}건</strong></span>}
           </div>
         </div>
       )}
@@ -400,8 +447,8 @@ export default function AdminPage() {
           </TabsTrigger>
           <TabsTrigger value="vacation">
             휴가 관리
-            {pendingCancelRequests.length > 0 && (
-              <span className="ml-1 text-xs bg-orange-500 text-white rounded-full px-1.5">{pendingCancelRequests.length}</span>
+            {myActionableCancelRequests.length > 0 && (
+              <span className="ml-1 text-xs bg-orange-500 text-white rounded-full px-1.5">{myActionableCancelRequests.length}</span>
             )}
           </TabsTrigger>
           <TabsTrigger value="teams">팀 관리</TabsTrigger>
@@ -556,7 +603,7 @@ export default function AdminPage() {
 
         {/* ── 휴가 관리 ─────────────────────────────────────── */}
         <TabsContent value="vacation">
-          {/* 휴가 취소 요청 (대기) */}
+          {/* 휴가 취소 요청 (대기) — 전체 노출, 타인 결재 건은 읽기전용 */}
           {pendingCancelRequests.length > 0 && (
             <div className="mb-6">
               <h2 className="text-sm font-semibold text-orange-600 dark:text-orange-400 mb-2 flex items-center gap-1.5">
@@ -568,6 +615,13 @@ export default function AdminPage() {
                 {pendingCancelRequests.map(req => {
                   const isProcessing = cancelProcessing === req.id
                   const info = eventInfo(req)
+                  const approverId = req.requester?.approver_id ?? null
+                  // 관리자가 결재 가능 = approver_id가 null (관리자 본인이 결재)
+                  const canApprove = approverId === null
+                  // 결재자 이름 (타인일 때 표시용)
+                  const otherApprover = approverId
+                    ? (vacationUsers.find(u => u.id === approverId)?.full_name ?? '다른 결재자')
+                    : null
                   const startDate = info.startAt
                     ? (info.isAllDay
                         ? format(parseISO(info.startAt), 'M월 d일', { locale: ko })
@@ -579,7 +633,9 @@ export default function AdminPage() {
                         : format(parseISO(info.endAt), 'HH:mm'))
                     : ''
                   return (
-                    <div key={req.id} className="bg-white dark:bg-[#1E293B] rounded-lg p-3 border border-orange-200 dark:border-orange-800">
+                    <div key={req.id} className={`bg-white dark:bg-[#1E293B] rounded-lg p-3 border ${
+                      canApprove ? 'border-orange-200 dark:border-orange-800' : 'border-[#E5E7EB] dark:border-[#334155]'
+                    }`}>
                       <div className="flex flex-wrap items-center gap-3">
                         <UserAvatar name={req.requester?.full_name ?? ''} color={req.requester?.color ?? '#6B7280'} size={32} />
                         <div className="flex-1 min-w-0">
@@ -592,14 +648,27 @@ export default function AdminPage() {
                           {req.reason && (
                             <p className="text-xs text-[#6B7280] dark:text-[#94A3B8] mt-0.5 italic">"{req.reason}"</p>
                           )}
+                          {!canApprove && (
+                            <p className="text-[11px] text-[#9CA3AF] dark:text-[#6B7280] mt-1">
+                              결재자: <span className="font-medium text-[#6B7280] dark:text-[#94A3B8]">{otherApprover}</span>
+                            </p>
+                          )}
                         </div>
                         <div className="flex items-center gap-1.5 shrink-0">
-                          <Button size="sm" className="bg-green-500 hover:bg-green-600 text-white h-8" disabled={isProcessing} onClick={() => handleVacationCancelRequest(req.id, 'approve')}>
-                            <CheckCircle className="h-3.5 w-3.5 mr-1" />승인
-                          </Button>
-                          <Button size="sm" variant="outline" className="text-[#EF4444] border-[#EF4444] hover:bg-[#FEF2F2] h-8" disabled={isProcessing} onClick={() => handleVacationCancelRequest(req.id, 'reject')}>
-                            <XCircle className="h-3.5 w-3.5 mr-1" />거부
-                          </Button>
+                          {canApprove ? (
+                            <>
+                              <Button size="sm" className="bg-green-500 hover:bg-green-600 text-white h-8" disabled={isProcessing} onClick={() => handleVacationCancelRequest(req.id, 'approve')}>
+                                <CheckCircle className="h-3.5 w-3.5 mr-1" />승인
+                              </Button>
+                              <Button size="sm" variant="outline" className="text-[#EF4444] border-[#EF4444] hover:bg-[#FEF2F2] h-8" disabled={isProcessing} onClick={() => handleVacationCancelRequest(req.id, 'reject')}>
+                                <XCircle className="h-3.5 w-3.5 mr-1" />거부
+                              </Button>
+                            </>
+                          ) : (
+                            <span className="text-[11px] text-[#9CA3AF] bg-[#F3F4F6] dark:bg-[#374151] dark:text-[#94A3B8] rounded-full px-2 py-1">
+                              조회 전용
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -609,7 +678,7 @@ export default function AdminPage() {
             </div>
           )}
 
-          {/* 휴가 취소 처리 이력 (승인/거부) — 항상 표시, 빈 상태 노출 */}
+          {/* 휴가 처리 이력 — 항상 표시, 휴가 등록(승인) + 취소 승인/거부 통합 */}
           <div className="mb-6">
             <button
               type="button"
@@ -618,9 +687,9 @@ export default function AdminPage() {
             >
               <span className="flex items-center gap-1.5">
                 <ClipboardList className="h-4 w-4" />
-                휴가 취소 처리 이력
+                휴가 처리 이력
                 <span className="text-xs bg-[#E5E7EB] dark:bg-[#374151] text-[#374151] dark:text-[#D1D5DB] rounded-full px-1.5">
-                  {historyCancelRequests.length}건
+                  {historyItems.length}건
                 </span>
               </span>
               {historyOpen
@@ -628,59 +697,55 @@ export default function AdminPage() {
                 : <ChevronDown className="h-4 w-4" />}
             </button>
             {historyOpen && (
-              historyCancelRequests.length === 0 ? (
+              historyItems.length === 0 ? (
                 <div className="text-xs text-[#9CA3AF] dark:text-[#6B7280] bg-[#F9FAFB] dark:bg-[#1E293B]/40 border border-dashed border-[#E5E7EB] dark:border-[#334155] rounded-lg px-4 py-6 text-center">
-                  아직 처리된 휴가 취소 신청이 없습니다.
+                  아직 처리 이력이 없습니다.
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {historyCancelRequests.map(req => {
-                    const info = eventInfo(req)
-                    const isApproved = req.status === 'approved'
-                    const startDate = info.startAt
-                      ? (info.isAllDay
-                          ? format(parseISO(info.startAt), 'M월 d일', { locale: ko })
-                          : format(parseISO(info.startAt), 'M월 d일 HH:mm', { locale: ko }))
+                  {historyItems.map(item => {
+                    const startDate = item.event_start_at
+                      ? (item.event_is_all_day
+                          ? format(parseISO(item.event_start_at), 'M월 d일', { locale: ko })
+                          : format(parseISO(item.event_start_at), 'M월 d일 HH:mm', { locale: ko }))
                       : '(일정 정보 없음)'
-                    const endDate = info.endAt
-                      ? (info.isAllDay
-                          ? format(parseISO(info.endAt), 'M월 d일', { locale: ko })
-                          : format(parseISO(info.endAt), 'HH:mm'))
+                    const endDate = item.event_end_at
+                      ? (item.event_is_all_day
+                          ? format(parseISO(item.event_end_at), 'M월 d일', { locale: ko })
+                          : format(parseISO(item.event_end_at), 'HH:mm'))
                       : ''
-                    const reviewedLabel = req.reviewed_at
-                      ? format(parseISO(req.reviewed_at), 'yyyy.MM.dd HH:mm', { locale: ko })
+                    const happenedLabel = item.happened_at
+                      ? format(parseISO(item.happened_at), 'yyyy.MM.dd HH:mm', { locale: ko })
                       : '-'
+                    const kindStyle = item.kind === 'grant'
+                      ? { border: 'border-blue-200 dark:border-blue-800', badge: 'text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/40', label: '휴가 승인', icon: <CheckCircle className="h-3 w-3" /> }
+                      : item.kind === 'cancel_approved'
+                      ? { border: 'border-green-200 dark:border-green-800', badge: 'text-green-700 dark:text-green-400 bg-green-100 dark:bg-green-900/40', label: '취소 승인', icon: <CheckCircle className="h-3 w-3" /> }
+                      : { border: 'border-[#E5E7EB] dark:border-[#334155]', badge: 'text-[#6B7280] dark:text-[#94A3B8] bg-[#F3F4F6] dark:bg-[#374151]', label: '취소 거부', icon: <XCircle className="h-3 w-3" /> }
                     return (
-                      <div key={req.id} className={`bg-white dark:bg-[#1E293B] rounded-lg p-3 border ${
-                        isApproved ? 'border-green-200 dark:border-green-800' : 'border-[#E5E7EB] dark:border-[#334155]'
-                      }`}>
+                      <div key={item.id} className={`bg-white dark:bg-[#1E293B] rounded-lg p-3 border ${kindStyle.border}`}>
                         <div className="flex flex-wrap items-center gap-3">
-                          <UserAvatar name={req.requester?.full_name ?? ''} color={req.requester?.color ?? '#6B7280'} size={32} />
+                          <UserAvatar name={item.requester?.full_name ?? ''} color={item.requester?.color ?? '#6B7280'} size={32} />
                           <div className="flex-1 min-w-0">
-                            <p className="font-medium text-sm dark:text-[#F1F5F9]">{req.requester?.full_name}</p>
+                            <p className="font-medium text-sm dark:text-[#F1F5F9]">{item.requester?.full_name}</p>
                             <p className="text-xs text-[#6B7280] dark:text-[#94A3B8]">
-                              {info.title} · {startDate}
+                              {item.event_title} · {startDate}
                               {endDate && startDate !== endDate && ` ~ ${endDate}`}
-                              {!info.isAllDay && <span className="ml-1 text-orange-500">반차</span>}
+                              {!item.event_is_all_day && <span className="ml-1 text-orange-500">반차</span>}
                             </p>
-                            {req.reason && (
-                              <p className="text-xs text-[#6B7280] dark:text-[#94A3B8] mt-0.5 italic">"{req.reason}"</p>
+                            {item.reason && (
+                              <p className="text-xs text-[#6B7280] dark:text-[#94A3B8] mt-0.5 italic">"{item.reason}"</p>
                             )}
                             <p className="text-[11px] text-[#9CA3AF] dark:text-[#6B7280] mt-1">
-                              처리: {reviewedLabel}
-                              {req.reviewer?.full_name && ` · ${req.reviewer.full_name}`}
+                              {happenedLabel}
+                              {item.reviewer?.full_name && ` · ${item.reviewer.full_name}`}
                             </p>
                           </div>
                           <div className="shrink-0">
-                            {isApproved ? (
-                              <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700 dark:text-green-400 bg-green-100 dark:bg-green-900/40 px-2 py-1 rounded-full">
-                                <CheckCircle className="h-3 w-3" />취소완료
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 text-xs font-medium text-[#6B7280] dark:text-[#94A3B8] bg-[#F3F4F6] dark:bg-[#374151] px-2 py-1 rounded-full">
-                                <XCircle className="h-3 w-3" />거부됨
-                              </span>
-                            )}
+                            <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${kindStyle.badge}`}>
+                              {kindStyle.icon}
+                              {kindStyle.label}
+                            </span>
                           </div>
                         </div>
                       </div>
@@ -693,12 +758,18 @@ export default function AdminPage() {
 
           <div className="mb-3 flex items-center gap-2 text-sm text-[#6B7280] dark:text-[#94A3B8]">
             <Sun className="h-4 w-4 text-orange-500" />
-            <span>{new Date().getFullYear()}년 휴가 할당량 관리</span>
+            <span>{new Date().getFullYear()}년 휴가 할당량 / 결재자 관리</span>
           </div>
           <div className="space-y-2">
             {vacationUsers.map(u => {
               const currentTotal = vacEdits[u.id] ?? u.total_days
-              const isDirty = currentTotal !== u.total_days
+              const currentApprover = vacApproverEdits[u.id] ?? (u.approver_id ?? 'admin')
+              const isApproverSelfAdmin = currentApprover === 'admin'
+              // 본인(관리자)이 결재자일 때만 총휴가 편집 가능
+              const canEditDays = isApproverSelfAdmin
+              const approverChanged = currentApprover !== (u.approver_id ?? 'admin')
+              const totalChanged = currentTotal !== u.total_days && canEditDays
+              const isDirty = approverChanged || totalChanged
               const pct = u.total_days > 0 ? Math.min((u.used_days / u.total_days) * 100, 100) : 0
               return (
                 <div key={u.id} className="bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded-lg p-3">
@@ -707,26 +778,60 @@ export default function AdminPage() {
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm dark:text-[#F1F5F9]">{u.full_name}</p>
                       <p className="text-xs text-[#6B7280] dark:text-[#94A3B8]">
-                        사용 {u.used_days}일 · 잔여{' '}
+                        총 {u.total_days}일 · 사용 {u.used_days}일 · 잔여{' '}
                         <span className={u.remaining_days <= 0 ? 'text-red-500 font-semibold' : 'text-green-600 font-semibold'}>
                           {u.remaining_days}일
                         </span>
                       </p>
                     </div>
+                  </div>
+
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    {/* 결재자 Select */}
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs text-[#6B7280] dark:text-[#94A3B8]">결재자</span>
+                      <Select
+                        value={currentApprover}
+                        onValueChange={v => setVacApproverEdits(prev => ({ ...prev, [u.id]: v }))}
+                      >
+                        <SelectTrigger className="h-8 text-xs min-w-[8rem]"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="admin">관리자(본인)</SelectItem>
+                          {vacationUsers
+                            .filter(other => other.id !== u.id && other.status === 'active')
+                            .map(other => (
+                              <SelectItem key={other.id} value={other.id}>{other.full_name}</SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* 총휴가 — 본인 결재일 때만 편집 가능 */}
                     <div className="flex items-center gap-1.5">
                       <span className="text-xs text-[#6B7280] dark:text-[#94A3B8]">총 휴가</span>
                       <Input
                         type="number" min={0} max={365} value={currentTotal}
+                        disabled={!canEditDays}
                         onChange={e => setVacEdits(prev => ({ ...prev, [u.id]: Number(e.target.value) }))}
-                        className="w-16 h-8 text-sm text-center"
+                        className="w-16 h-8 text-sm text-center disabled:opacity-50"
                       />
                       <span className="text-xs text-[#6B7280]">일</span>
                     </div>
-                    <Button size="sm" disabled={!isDirty || vacSaving === u.id} onClick={() => saveVacation(u.id)}>
-                      <Save className="h-4 w-4 mr-1" />
-                      {vacSaving === u.id ? '저장 중...' : '저장'}
-                    </Button>
+
+                    {!canEditDays && (
+                      <span className="text-[11px] text-[#9CA3AF] dark:text-[#6B7280]">
+                        ※ 총휴가는 결재자({vacationUsers.find(v => v.id === currentApprover)?.full_name ?? '—'})가 관리
+                      </span>
+                    )}
+
+                    <div className="ml-auto">
+                      <Button size="sm" disabled={!isDirty || vacSaving === u.id} onClick={() => saveVacation(u.id)}>
+                        <Save className="h-4 w-4 mr-1" />
+                        {vacSaving === u.id ? '저장 중...' : '저장'}
+                      </Button>
+                    </div>
                   </div>
+
                   <div className="mt-2 h-1.5 bg-[#E5E7EB] dark:bg-[#334155] rounded-full overflow-hidden">
                     <div
                       className={`h-full rounded-full transition-all ${pct >= 100 ? 'bg-red-500' : pct >= 70 ? 'bg-orange-400' : 'bg-green-500'}`}

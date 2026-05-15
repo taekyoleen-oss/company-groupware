@@ -30,7 +30,7 @@ export async function GET() {
   const [usersRes, allocRes, eventsRes] = await Promise.all([
     supabase
       .from('cg_profiles')
-      .select('id, full_name, color, team_id, role, status')
+      .select('id, full_name, color, team_id, role, status, approver_id')
       .neq('status', 'pending')
       .order('full_name'),
     supabase
@@ -57,6 +57,12 @@ export async function GET() {
     usedMap[e.created_by] = (usedMap[e.created_by] ?? 0) + calcDays(e.start_at, e.end_at, e.is_all_day ?? true)
   }
 
+  // 결재자 이름 매핑 (전체 user 데이터에서 lookup)
+  const nameMap: Record<string, string> = {}
+  for (const u of usersRes.data ?? []) {
+    nameMap[u.id] = u.full_name
+  }
+
   const result = (usersRes.data ?? []).map(u => ({
     id: u.id,
     full_name: u.full_name,
@@ -64,6 +70,8 @@ export async function GET() {
     team_id: u.team_id,
     role: u.role,
     status: u.status,
+    approver_id: u.approver_id,
+    approver_name: u.approver_id ? (nameMap[u.approver_id] ?? null) : null,
     total_days: allocMap[u.id] ?? 10,
     used_days: usedMap[u.id] ?? 0,
     remaining_days: (allocMap[u.id] ?? 10) - (usedMap[u.id] ?? 0),

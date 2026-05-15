@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import {
   X, Eye, EyeOff, KeyRound, Sun, CalendarDays,
   MapPin, CheckCircle2, Navigation, Clock, Wifi, Settings, Lock,
+  IdCard, Users, Save, CheckCircle, XCircle, ClipboardList, ChevronDown, ChevronUp,
 } from 'lucide-react'
 import { UserAvatar } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
@@ -12,13 +13,13 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@
 import { useToast } from '@/components/ui/toast'
 import { USER_COLOR_PALETTE } from '@/types/app'
 import { cn } from '@/lib/utils/cn'
-import { format } from 'date-fns'
+import { format, parseISO } from 'date-fns'
 import { ko } from 'date-fns/locale'
 import type { ProfileWithTeam, Team } from '@/types/app'
 
 const ROLE_LABEL = { admin: '관리자', manager: '팀장', member: '팀원' }
 
-type TabKey = '설정' | '출석' | '휴가' | '비밀번호'
+type TabKey = '설정' | '출석' | '휴가' | '인사관리' | '비밀번호'
 
 interface VacHistory {
   id: string
@@ -34,6 +35,52 @@ interface VacSummary {
   used_days: number
   remaining_days: number
   history: VacHistory[]
+}
+
+interface ApproverEmployee {
+  id: string
+  full_name: string
+  color: string
+  team_id: string | null
+  role: string
+  status: string
+  total_days: number
+  used_days: number
+  remaining_days: number
+}
+
+interface ApproverCancelRequest {
+  id: string
+  event_id: string | null
+  status: 'pending' | 'approved' | 'rejected'
+  reason: string | null
+  created_at: string
+  reviewed_at: string | null
+  event_title: string | null
+  event_start_at: string | null
+  event_end_at: string | null
+  event_is_all_day: boolean | null
+  requester: { id: string; full_name: string; color: string }
+  reviewer: { id: string; full_name: string; color: string } | null
+  event: { id: string; title: string; start_at: string; end_at: string; is_all_day: boolean } | null
+}
+
+interface ApproverData {
+  employees: ApproverEmployee[]
+  cancel_requests: ApproverCancelRequest[]
+}
+
+interface VacHistoryItem {
+  id: string
+  kind: 'grant' | 'cancel_approved' | 'cancel_rejected'
+  happened_at: string
+  requester: { id: string; full_name: string; color: string; approver_id: string | null }
+  event_title: string
+  event_start_at: string | null
+  event_end_at: string | null
+  event_is_all_day: boolean
+  reviewer: { id: string; full_name: string; color: string } | null
+  reason: string | null
 }
 
 interface CompanySettings {
@@ -64,11 +111,39 @@ function getLocalDateStr(): string {
   return kst.toISOString().slice(0, 10)
 }
 
+function InfoRow({
+  label,
+  value,
+  muted,
+  accent,
+}: {
+  label: string
+  value: string
+  muted?: boolean
+  accent?: 'blue' | 'green'
+}) {
+  const accentClass =
+    accent === 'blue'
+      ? 'text-[#2563EB] dark:text-[#60A5FA] font-medium'
+      : accent === 'green'
+      ? 'text-green-600 dark:text-green-400 font-medium'
+      : muted
+      ? 'text-[#9CA3AF] dark:text-[#64748B]'
+      : 'text-[#111827] dark:text-[#F1F5F9]'
+  return (
+    <div className="flex items-center justify-between text-sm border-b border-[#F3F4F6] dark:border-[#334155] pb-2 last:border-0 last:pb-0">
+      <span className="text-[#6B7280] dark:text-[#94A3B8]">{label}</span>
+      <span className={accentClass}>{value}</span>
+    </div>
+  )
+}
+
 const TABS: { key: TabKey; icon: React.ReactNode; label: string }[] = [
-  { key: '설정',    icon: <Settings className="h-3.5 w-3.5" />,  label: '설정' },
-  { key: '출석',    icon: <CheckCircle2 className="h-3.5 w-3.5" />, label: '출석' },
-  { key: '휴가',    icon: <Sun className="h-3.5 w-3.5" />,  label: '휴가' },
-  { key: '비밀번호', icon: <Lock className="h-3.5 w-3.5" />,      label: '비밀번호' },
+  { key: '설정',      icon: <Settings className="h-3.5 w-3.5" />,      label: '설정' },
+  { key: '출석',      icon: <CheckCircle2 className="h-3.5 w-3.5" />, label: '출석' },
+  { key: '휴가',      icon: <Sun className="h-3.5 w-3.5" />,           label: '휴가' },
+  { key: '인사관리',  icon: <IdCard className="h-3.5 w-3.5" />,        label: '인사관리' },
+  { key: '비밀번호',  icon: <Lock className="h-3.5 w-3.5" />,          label: '비밀번호' },
 ]
 
 export default function ProfilePage() {
@@ -83,6 +158,12 @@ export default function ProfilePage() {
   const [pwLoading, setPwLoading] = useState(false)
   const [showPw, setShowPw] = useState({ current: false, next: false, confirm: false })
   const [vacSummary, setVacSummary] = useState<VacSummary | null>(null)
+  const [approverData, setApproverData] = useState<ApproverData | null>(null)
+  const [empTotalEdits, setEmpTotalEdits] = useState<Record<string, number>>({})
+  const [empSaving, setEmpSaving] = useState<string | null>(null)
+  const [empCancelProcessing, setEmpCancelProcessing] = useState<string | null>(null)
+  const [empHistoryOpen, setEmpHistoryOpen] = useState(false)
+  const [empHistory, setEmpHistory] = useState<VacHistoryItem[]>([])
   const [gpsStatus, setGpsStatus] = useState<GpsStatus>('idle')
   const [ipStatus, setIpStatus] = useState<IpStatus>('idle')
   const [distanceMeters, setDistanceMeters] = useState<number | null>(null)
@@ -115,6 +196,24 @@ export default function ProfilePage() {
     } catch { setIpStatus('denied') }
   }
 
+  const fetchApproverData = async () => {
+    const [appRes, histRes] = await Promise.all([
+      fetch('/api/vacation/approver'),
+      fetch('/api/vacation-history'),
+    ])
+    if (appRes.ok) {
+      const data: ApproverData = await appRes.json()
+      setApproverData(data)
+      const init: Record<string, number> = {}
+      data.employees.forEach(e => { init[e.id] = e.total_days })
+      setEmpTotalEdits(init)
+    }
+    if (histRes.ok) {
+      const hist: VacHistoryItem[] = await histRes.json()
+      setEmpHistory(hist)
+    }
+  }
+
   useEffect(() => {
     import('@/lib/supabase/client').then(({ createClient }) => {
       createClient().auth.getUser().then(({ data }) => setEmail(data.user?.email ?? ''))
@@ -144,7 +243,44 @@ export default function ProfilePage() {
         }
       }
     })
+    fetchApproverData()
   }, [])
+
+  const saveEmployeeTotal = async (userId: string) => {
+    const total = empTotalEdits[userId]
+    if (total === undefined) return
+    setEmpSaving(userId)
+    const res = await fetch(`/api/admin/vacation/${userId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ total_days: total }),
+    })
+    setEmpSaving(null)
+    if (res.ok) {
+      showToast('저장되었습니다.', 'success')
+      fetchApproverData()
+    } else {
+      const data = await res.json().catch(() => ({}))
+      showToast(data.error ?? '저장에 실패했습니다.', 'error')
+    }
+  }
+
+  const handleEmployeeCancelAction = async (id: string, action: 'approve' | 'reject') => {
+    setEmpCancelProcessing(id)
+    const res = await fetch(`/api/vacation-cancel-requests/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action }),
+    })
+    setEmpCancelProcessing(null)
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      showToast((data as any).error ?? '처리에 실패했습니다.', 'error')
+      return
+    }
+    showToast(action === 'approve' ? '취소를 승인했습니다.' : '취소를 거부했습니다.', 'success')
+    fetchApproverData()
+  }
 
   const handleCheckIn = async () => {
     setCheckingIn(true)
@@ -499,6 +635,208 @@ export default function ProfilePage() {
               </div>
             </>
           )}
+
+          {/* ── 직원 휴가 (본인이 결재자인 직원이 있을 때만) ── */}
+          {approverData && approverData.employees.length > 0 && (
+            <div className="mt-6 pt-6 border-t border-[#E5E7EB] dark:border-[#334155]">
+              <div className="flex items-center gap-2 mb-3">
+                <Users className="h-4 w-4 text-[#2563EB]" />
+                <h2 className="text-sm font-semibold text-[#111827] dark:text-[#F1F5F9]">직원 휴가</h2>
+                <span className="text-[10px] text-[#9CA3AF] dark:text-[#64748B] ml-1">
+                  본인이 결재
+                </span>
+              </div>
+
+              {/* 직원 휴가 테이블 */}
+              <div className="overflow-x-auto -mx-2 px-2">
+                <table className="w-full text-xs border-collapse">
+                  <thead>
+                    <tr className="text-left text-[#6B7280] dark:text-[#94A3B8] border-b border-[#E5E7EB] dark:border-[#334155]">
+                      <th className="py-2 pr-2 font-medium">이름</th>
+                      <th className="py-2 px-1 font-medium text-center">총</th>
+                      <th className="py-2 px-1 font-medium text-center">사용</th>
+                      <th className="py-2 px-1 font-medium text-center">잔여</th>
+                      <th className="py-2 pl-1 font-medium text-right">총휴가 편집</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {approverData.employees.map(emp => {
+                      const cur = empTotalEdits[emp.id] ?? emp.total_days
+                      const dirty = cur !== emp.total_days
+                      return (
+                        <tr key={emp.id} className="border-b border-[#F3F4F6] dark:border-[#334155] last:border-0">
+                          <td className="py-2 pr-2">
+                            <div className="flex items-center gap-1.5">
+                              <UserAvatar name={emp.full_name} color={emp.color} size={20} />
+                              <span className="text-[#111827] dark:text-[#F1F5F9] truncate">{emp.full_name}</span>
+                            </div>
+                          </td>
+                          <td className="py-2 px-1 text-center text-[#374151] dark:text-[#D1D5DB]">{emp.total_days}일</td>
+                          <td className="py-2 px-1 text-center text-orange-600 dark:text-orange-400">{emp.used_days}일</td>
+                          <td className={`py-2 px-1 text-center font-medium ${emp.remaining_days <= 0 ? 'text-red-500' : 'text-green-600'}`}>{emp.remaining_days}일</td>
+                          <td className="py-2 pl-1">
+                            <div className="flex items-center gap-1 justify-end">
+                              <Input
+                                type="number" min={0} max={365} value={cur}
+                                onChange={e => setEmpTotalEdits(prev => ({ ...prev, [emp.id]: Number(e.target.value) }))}
+                                className="w-14 h-7 text-xs text-center"
+                              />
+                              <Button size="sm" className="h-7 px-2" disabled={!dirty || empSaving === emp.id} onClick={() => saveEmployeeTotal(emp.id)}>
+                                <Save className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* 대기 취소 요청 */}
+              {approverData.cancel_requests.filter(r => r.status === 'pending').length > 0 && (
+                <div className="mt-4">
+                  <h3 className="text-xs font-semibold text-orange-600 dark:text-orange-400 mb-2 flex items-center gap-1.5">
+                    <Clock className="h-3.5 w-3.5" />
+                    취소 요청 대기
+                  </h3>
+                  <div className="space-y-1.5">
+                    {approverData.cancel_requests
+                      .filter(r => r.status === 'pending')
+                      .map(req => {
+                        const isProcessing = empCancelProcessing === req.id
+                        const title = req.event?.title ?? req.event_title ?? '(휴가)'
+                        const startAt = req.event?.start_at ?? req.event_start_at
+                        const endAt = req.event?.end_at ?? req.event_end_at
+                        const isAllDay = req.event?.is_all_day ?? req.event_is_all_day ?? true
+                        const sd = startAt
+                          ? (isAllDay ? format(parseISO(startAt), 'M월 d일', { locale: ko }) : format(parseISO(startAt), 'M월 d일 HH:mm', { locale: ko }))
+                          : '-'
+                        const ed = endAt
+                          ? (isAllDay ? format(parseISO(endAt), 'M월 d일', { locale: ko }) : format(parseISO(endAt), 'HH:mm'))
+                          : ''
+                        return (
+                          <div key={req.id} className="bg-white dark:bg-[#1E293B] rounded-lg p-2.5 border border-orange-200 dark:border-orange-800 flex flex-wrap items-center gap-2">
+                            <UserAvatar name={req.requester?.full_name ?? ''} color={req.requester?.color ?? '#6B7280'} size={24} />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-medium dark:text-[#F1F5F9]">{req.requester?.full_name}</p>
+                              <p className="text-[11px] text-[#6B7280] dark:text-[#94A3B8]">
+                                {title} · {sd}{ed && sd !== ed && ` ~ ${ed}`}
+                              </p>
+                              {req.reason && (
+                                <p className="text-[11px] text-[#6B7280] dark:text-[#94A3B8] mt-0.5 italic">"{req.reason}"</p>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <Button size="sm" className="bg-green-500 hover:bg-green-600 text-white h-7 px-2 text-xs" disabled={isProcessing} onClick={() => handleEmployeeCancelAction(req.id, 'approve')}>
+                                <CheckCircle className="h-3 w-3 mr-0.5" />승인
+                              </Button>
+                              <Button size="sm" variant="outline" className="text-[#EF4444] border-[#EF4444] hover:bg-[#FEF2F2] h-7 px-2 text-xs" disabled={isProcessing} onClick={() => handleEmployeeCancelAction(req.id, 'reject')}>
+                                <XCircle className="h-3 w-3 mr-0.5" />거부
+                              </Button>
+                            </div>
+                          </div>
+                        )
+                      })}
+                  </div>
+                </div>
+              )}
+
+              {/* 결재 직원 휴가 처리 이력 */}
+              <div className="mt-4">
+                <button
+                  type="button"
+                  onClick={() => setEmpHistoryOpen(o => !o)}
+                  className="w-full flex items-center justify-between text-xs font-semibold text-[#6B7280] dark:text-[#94A3B8] mb-2 hover:text-[#374151] dark:hover:text-[#D1D5DB] transition-colors"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <ClipboardList className="h-3.5 w-3.5" />
+                    휴가 처리 이력
+                    <span className="text-[10px] bg-[#E5E7EB] dark:bg-[#374151] text-[#374151] dark:text-[#D1D5DB] rounded-full px-1.5">
+                      {empHistory.length}건
+                    </span>
+                  </span>
+                  {empHistoryOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                </button>
+                {empHistoryOpen && (
+                  empHistory.length === 0 ? (
+                    <p className="text-[11px] text-[#9CA3AF] dark:text-[#6B7280] bg-[#F9FAFB] dark:bg-[#1E293B]/40 border border-dashed border-[#E5E7EB] dark:border-[#334155] rounded-lg px-3 py-4 text-center">
+                      아직 처리 이력이 없습니다.
+                    </p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {empHistory.map(item => {
+                        const sd = item.event_start_at
+                          ? (item.event_is_all_day ? format(parseISO(item.event_start_at), 'M월 d일', { locale: ko }) : format(parseISO(item.event_start_at), 'M월 d일 HH:mm', { locale: ko }))
+                          : '-'
+                        const ed = item.event_end_at
+                          ? (item.event_is_all_day ? format(parseISO(item.event_end_at), 'M월 d일', { locale: ko }) : format(parseISO(item.event_end_at), 'HH:mm'))
+                          : ''
+                        const happenedLabel = item.happened_at ? format(parseISO(item.happened_at), 'M.d HH:mm', { locale: ko }) : '-'
+                        const k = item.kind === 'grant'
+                          ? { badge: 'text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/40', label: '휴가 승인' }
+                          : item.kind === 'cancel_approved'
+                          ? { badge: 'text-green-700 dark:text-green-400 bg-green-100 dark:bg-green-900/40', label: '취소 승인' }
+                          : { badge: 'text-[#6B7280] dark:text-[#94A3B8] bg-[#F3F4F6] dark:bg-[#374151]', label: '취소 거부' }
+                        return (
+                          <div key={item.id} className="bg-white dark:bg-[#1E293B] rounded-lg px-2.5 py-2 border border-[#E5E7EB] dark:border-[#334155] flex items-center gap-2">
+                            <UserAvatar name={item.requester?.full_name ?? ''} color={item.requester?.color ?? '#6B7280'} size={22} />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[11px] dark:text-[#F1F5F9] truncate">
+                                <span className="font-medium">{item.requester?.full_name}</span>
+                                <span className="text-[#6B7280] dark:text-[#94A3B8]"> · {item.event_title} · {sd}{ed && sd !== ed && ` ~ ${ed}`}</span>
+                              </p>
+                              <p className="text-[10px] text-[#9CA3AF] dark:text-[#6B7280] mt-0.5">
+                                {happenedLabel}{item.reviewer?.full_name && ` · ${item.reviewer.full_name}`}
+                              </p>
+                            </div>
+                            <span className={`inline-flex items-center text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${k.badge}`}>
+                              {k.label}
+                            </span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── 인사관리 탭 (조회만, 편집은 추후) ── */}
+      {activeTab === '인사관리' && (
+        <div className="bg-white dark:bg-[#1E293B] rounded-xl border border-[#E5E7EB] dark:border-[#334155] p-6">
+          <div className="flex items-center gap-2 mb-4">
+            <IdCard className="h-4 w-4 text-[#2563EB]" />
+            <h2 className="text-sm font-semibold text-[#111827] dark:text-[#F1F5F9]">인사 정보</h2>
+            <span className="ml-auto text-[10px] text-[#9CA3AF] dark:text-[#64748B]">조회 전용</span>
+          </div>
+
+          <div className="space-y-3">
+            <InfoRow label="이름" value={profile.full_name} />
+            <InfoRow label="이메일" value={email || '—'} />
+            <InfoRow
+              label="직책"
+              value={ROLE_LABEL[profile.role]}
+              accent={profile.role === 'admin' ? 'blue' : profile.role === 'manager' ? 'green' : undefined}
+            />
+            <InfoRow label="소속 팀" value={profile.team ? (profile.team as any).name : '—'} />
+            <InfoRow label="입사일" value="—" muted />
+            <InfoRow label="사번" value="—" muted />
+            <InfoRow label="생년월일" value="—" muted />
+            <InfoRow label="연락처" value="—" muted />
+            <InfoRow label="비상연락처" value="—" muted />
+            <InfoRow label="주소" value="—" muted />
+          </div>
+
+          <div className="mt-5 rounded-lg bg-[#F9FAFB] dark:bg-[#0F172A] border border-dashed border-[#E5E7EB] dark:border-[#334155] px-4 py-3">
+            <p className="text-[11px] text-[#6B7280] dark:text-[#94A3B8] leading-relaxed">
+              인사 정보 입력·관리는 추후 제공될 예정입니다.
+              현재는 시스템이 보유한 기본 정보만 표시합니다.
+            </p>
+          </div>
         </div>
       )}
 

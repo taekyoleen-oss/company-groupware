@@ -39,7 +39,9 @@ export async function POST(request: NextRequest) {
   return NextResponse.json(data, { status: 201 })
 }
 
-// GET: 대기 중인 취소 요청 목록 (관리자 전용)
+// GET: 권한별 취소 신청 목록
+//   - 관리자: 전체 (대기/이력 모두). 각 행에 requester.approver_id 포함 → UI에서 본인 결재 분 분기
+//   - 일반 사용자(결재자 포함): 본인 결재 직원 건 + 본인의 pending
 export async function GET() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -51,29 +53,50 @@ export async function GET() {
     .eq('id', user.id)
     .single()
 
-  // 일반 사용자: 본인의 대기 중 취소 신청 event_id 목록만 반환
-  if (profile?.role !== 'admin') {
+  const isAdmin = profile?.role === 'admin'
+
+  if (isAdmin) {
+    // 관리자: 전체. requester profile에 approver_id 포함
     const { data, error } = await supabase
       .from('cg_vacation_cancel_requests')
-      .select('id, event_id, status')
-      .eq('requested_by', user.id)
-      .eq('status', 'pending')
+      .select(`
+        *,
+        requester:cg_profiles!requested_by(id, full_name, color, approver_id),
+        reviewer:cg_profiles!reviewed_by(id, full_name, color),
+        event:cg_events(id, title, start_at, end_at, is_all_day)
+      `)
+      .order('created_at', { ascending: false })
+      .limit(200)
+
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json(data ?? [])
   }
 
-  // 관리자: 대기 + 승인 + 거부 모두 반환 (이력 표시용)
-  // UI 측에서 status로 필터링한다. 사이드바·하단탭 배지는 이미 status==='pending' 필터를 거치므로 호환 유지.
+  // 일반 사용자/결재자: 본인 결재 직원 건 + 본인의 pending
+  // (1) 본인이 결재하는 직원 id 목록
+  const { data: myEmployees } = await supabase
+    .from('cg_profiles')
+    .select('id')
+    .eq('approver_id', user.id)
+  const empIds = (myEmployees ?? []).map(e => e.id)
+
+  // (2) 본인 pending + 본인 결재 직원 건을 OR
+  const orFilter = empIds.length > 0
+    ? `requested_by.eq.${user.id},requested_by.in.(${empIds.join(',')})`
+    : `requested_by.eq.${user.id}`
+
   const { data, error } = await supabase
     .from('cg_vacation_cancel_requests')
     .select(`
-      *,
-      requester:cg_profiles!requested_by(id, full_name, color),
+      id, event_id, status, reason, created_at, reviewed_at, requested_by,
+      event_title, event_start_at, event_end_at, event_is_all_day,
+      requester:cg_profiles!requested_by(id, full_name, color, approver_id),
       reviewer:cg_profiles!reviewed_by(id, full_name, color),
       event:cg_events(id, title, start_at, end_at, is_all_day)
     `)
+    .or(orFilter)
     .order('created_at', { ascending: false })
-    .limit(100)
+    .limit(200)
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json(data ?? [])
