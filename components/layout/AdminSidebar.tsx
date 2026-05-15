@@ -1,8 +1,10 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { Settings, Users, Building2, Tag, UserCheck, Sun } from 'lucide-react'
+import { Settings, Users, Building2, Tag, UserCheck, Sun, CheckCircle } from 'lucide-react'
 import { UserAvatar } from '@/components/ui/avatar'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { format, parseISO } from 'date-fns'
 import { ko } from 'date-fns/locale'
 import { createClient } from '@/lib/supabase/client'
@@ -29,6 +31,7 @@ export function AdminSidebar() {
   const [categoryCount, setCategoryCount] = useState(0)
   const [approving, setApproving] = useState<string | null>(null)
   const [processingCancel, setProcessingCancel] = useState<string | null>(null)
+  const [approveComplete, setApproveComplete] = useState(false)
 
   const fetchData = useCallback(async () => {
     const [usersRes, teamsRes, catsRes, cancelRes] = await Promise.all([
@@ -97,13 +100,21 @@ export function AdminSidebar() {
       alert((data as any).error ?? '처리에 실패했습니다.')
       return
     }
-    // 사이드바에서 즉시 제거
-    setCancelReqs(prev => prev.filter(r => r.id !== id))
     if (action === 'approve') {
-      // 관리자 페이지 / 캘린더 등 다른 컴포넌트에 알림
-      window.dispatchEvent(new CustomEvent('vacation-cancel-approved', { detail: { id } }))
+      // 승인 완료 팝업 → 확인 시 fetchData + 이벤트 디스패치
+      setApproveComplete(true)
+    } else {
+      // 거부는 즉시 제거
+      setCancelReqs(prev => prev.filter(r => r.id !== id))
     }
   }
+
+  const handleApproveCompleteClose = useCallback(() => {
+    setApproveComplete(false)
+    fetchData()
+    // 다른 컴포넌트(관리자 페이지, 캘린더 등) 동기화
+    window.dispatchEvent(new CustomEvent('vacation-cancel-approved'))
+  }, [fetchData])
 
   return (
     <aside className="hidden md:flex flex-col w-52 shrink-0 bg-[#F8FAFC] border-l border-[#E5E7EB] p-4 gap-4 overflow-y-auto dark:bg-[#2D3440] dark:border-[#4B5563]">
@@ -237,6 +248,23 @@ export function AdminSidebar() {
         <Settings className="h-3.5 w-3.5" />
         전체 관리자 페이지
       </Link>
+
+      {/* 승인 완료 팝업 — 확인 시 사이드바 갱신 + 다른 컴포넌트 동기화 */}
+      <Dialog
+        open={approveComplete}
+        onOpenChange={open => { if (!open) handleApproveCompleteClose() }}
+      >
+        <DialogContent className="max-w-xs text-center">
+          <div className="flex flex-col items-center gap-3 py-4">
+            <div className="flex items-center justify-center w-16 h-16 rounded-full bg-green-100 dark:bg-green-900/40">
+              <CheckCircle className="h-9 w-9 text-green-500" />
+            </div>
+            <DialogTitle className="text-lg font-bold text-[#111827] dark:text-[#F1F5F9]">승인 완료</DialogTitle>
+            <p className="text-sm text-[#6B7280] dark:text-[#94A3B8]">휴가 취소가 승인되었습니다.</p>
+            <Button className="w-full mt-2" onClick={handleApproveCompleteClose}>확인</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
     </aside>
   )

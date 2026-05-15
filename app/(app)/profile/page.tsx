@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { useToast } from '@/components/ui/toast'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { USER_COLOR_PALETTE } from '@/types/app'
 import { cn } from '@/lib/utils/cn'
 import { format, parseISO } from 'date-fns'
@@ -194,6 +195,7 @@ export default function ProfilePage() {
   const [vacSummary, setVacSummary] = useState<VacSummaryV2 | null>(null)
   const [withdrawing, setWithdrawing] = useState<string | null>(null)
   const [empRequestProcessing, setEmpRequestProcessing] = useState<string | null>(null)
+  const [approveComplete, setApproveComplete] = useState<{ kind: 'cancel' | 'request' } | null>(null)
   const [approverData, setApproverData] = useState<ApproverData | null>(null)
   const [empTotalEdits, setEmpTotalEdits] = useState<Record<string, number>>({})
   const [empSaving, setEmpSaving] = useState<string | null>(null)
@@ -319,8 +321,12 @@ export default function ProfilePage() {
       showToast((data as any).error ?? '처리에 실패했습니다.', 'error')
       return
     }
-    showToast(action === 'approve' ? '취소를 승인했습니다.' : '취소를 거부했습니다.', 'success')
-    fetchApproverData()
+    if (action === 'approve') {
+      setApproveComplete({ kind: 'cancel' })
+    } else {
+      showToast('취소를 거부했습니다.', 'success')
+      fetchApproverData()
+    }
   }
 
   const handleEmployeeRequestAction = async (id: string, action: 'approve' | 'reject') => {
@@ -341,8 +347,12 @@ export default function ProfilePage() {
       showToast((data as any).error ?? '처리에 실패했습니다.', 'error')
       return
     }
-    showToast(action === 'approve' ? '휴가 신청을 승인했습니다.' : '휴가 신청을 거부했습니다.', 'success')
-    fetchApproverData()
+    if (action === 'approve') {
+      setApproveComplete({ kind: 'request' })
+    } else {
+      showToast('휴가 신청을 거부했습니다.', 'success')
+      fetchApproverData()
+    }
   }
 
   const handleWithdrawRequest = async (id: string) => {
@@ -1051,6 +1061,37 @@ export default function ProfilePage() {
           </form>
         </div>
       )}
+
+      {/* 승인 완료 팝업 — 확인 시 fetchApproverData로 목록 갱신 (승인/거부 버튼 사라짐) */}
+      <Dialog
+        open={approveComplete !== null}
+        onOpenChange={open => {
+          if (!open) {
+            setApproveComplete(null)
+            fetchApproverData()
+          }
+        }}
+      >
+        <DialogContent className="max-w-xs text-center">
+          <div className="flex flex-col items-center gap-3 py-4">
+            <div className="flex items-center justify-center w-16 h-16 rounded-full bg-green-100 dark:bg-green-900/40">
+              <CheckCircle className="h-9 w-9 text-green-500" />
+            </div>
+            <DialogTitle className="text-lg font-bold text-[#111827] dark:text-[#F1F5F9]">승인 완료</DialogTitle>
+            <p className="text-sm text-[#6B7280] dark:text-[#94A3B8]">
+              {approveComplete?.kind === 'cancel'
+                ? '휴가 취소가 승인되었습니다.'
+                : '휴가 신청이 승인되었습니다.'}
+            </p>
+            <Button
+              className="w-full mt-2"
+              onClick={() => { setApproveComplete(null); fetchApproverData() }}
+            >
+              확인
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {ToastComponent}
     </div>

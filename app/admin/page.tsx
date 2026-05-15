@@ -143,7 +143,7 @@ export default function AdminPage() {
   const [cancelProcessing, setCancelProcessing] = useState<string | null>(null)
   const [vacationRequests, setVacationRequests] = useState<VacationRequest[]>([])
   const [requestProcessing, setRequestProcessing] = useState<string | null>(null)
-  const [approveSuccessOpen, setApproveSuccessOpen] = useState(false)
+  const [approveComplete, setApproveComplete] = useState<{ kind: 'cancel' | 'request' } | null>(null)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([])
 
@@ -326,8 +326,13 @@ export default function AdminPage() {
       showToast((data as any).error ?? '처리에 실패했습니다.', 'error')
       return
     }
-    showToast(action === 'approve' ? '휴가 신청이 승인되었습니다.' : '휴가 신청이 거부되었습니다.', 'success')
-    fetchAll()
+    if (action === 'approve') {
+      // 승인 완료 팝업 → 확인 시 fetchAll로 목록 갱신
+      setApproveComplete({ kind: 'request' })
+    } else {
+      showToast('휴가 신청이 거부되었습니다.', 'success')
+      fetchAll()
+    }
   }
 
   const handleVacationCancelRequest = async (id: string, action: 'approve' | 'reject') => {
@@ -350,18 +355,13 @@ export default function AdminPage() {
       return
     }
 
-    // 옵티미스틱: 상태만 갱신 → 자동으로 처리 이력 섹션으로 이동
-    setCancelRequests(prev => prev.map(r =>
-      r.id === id
-        ? { ...r, status: action === 'approve' ? 'approved' : 'rejected', reviewed_at: new Date().toISOString() }
-        : r
-    ))
-
     if (action === 'approve') {
-      setApproveSuccessOpen(true)
+      // 승인 완료 팝업 → 확인 시 fetchAll로 목록 갱신
+      setApproveComplete({ kind: 'cancel' })
     } else {
       setHistoryOpen(true)
       showToast('취소 신청이 거부되었습니다. 처리 이력에서 확인하실 수 있습니다.', 'success')
+      fetchAll()
     }
   }
 
@@ -1176,13 +1176,13 @@ export default function AdminPage() {
         </TabsContent>
       </Tabs>
 
-      {/* 승인완료 팝업 — 확인 시 페이지 전체 새로고침 */}
+      {/* 승인 완료 팝업 — 확인 시 fetchAll로 목록 갱신 (승인/거부 버튼 사라짐) */}
       <Dialog
-        open={approveSuccessOpen}
+        open={approveComplete !== null}
         onOpenChange={open => {
           if (!open) {
-            setApproveSuccessOpen(false)
-            window.location.reload()
+            setApproveComplete(null)
+            fetchAll()
           }
         }}
       >
@@ -1192,10 +1192,14 @@ export default function AdminPage() {
               <CheckCircle className="h-9 w-9 text-green-500" />
             </div>
             <DialogTitle className="text-lg font-bold text-[#111827] dark:text-[#F1F5F9]">승인 완료</DialogTitle>
-            <p className="text-sm text-[#6B7280] dark:text-[#94A3B8]">휴가 취소가 승인되었습니다.</p>
+            <p className="text-sm text-[#6B7280] dark:text-[#94A3B8]">
+              {approveComplete?.kind === 'cancel'
+                ? '휴가 취소가 승인되었습니다.'
+                : '휴가 신청이 승인되었습니다.'}
+            </p>
             <Button
               className="w-full mt-2"
-              onClick={() => window.location.reload()}
+              onClick={() => { setApproveComplete(null); fetchAll() }}
             >
               확인
             </Button>
