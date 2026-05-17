@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Check, Plus, Trash2, X, Save, Sun, MapPin, Navigation, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ClipboardList, Settings, Clock, CheckCircle, XCircle, Wifi } from 'lucide-react'
+import { Check, Plus, Trash2, X, Save, Sun, MapPin, Navigation, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ClipboardList, Settings, Clock, CheckCircle, XCircle, Wifi, Download } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
@@ -146,6 +146,14 @@ export default function AdminPage() {
   const [approveComplete, setApproveComplete] = useState<{ kind: 'cancel' | 'request' } | null>(null)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([])
+
+  // 휴가 처리 이력 다운로드
+  const [downloadOpen, setDownloadOpen] = useState(false)
+  const [downloadPeriod, setDownloadPeriod] = useState<'1m' | '3m' | 'custom'>('1m')
+  const [customFrom, setCustomFrom] = useState<string>(() => {
+    const d = new Date(); d.setMonth(d.getMonth() - 1); return toLocalDateStr(d)
+  })
+  const [customTo, setCustomTo] = useState<string>(toLocalDateStr())
 
   // 출석 관리
   const [attendanceDate, setAttendanceDate] = useState<string>(toLocalDateStr())
@@ -397,6 +405,87 @@ export default function AdminPage() {
       const data = await res.json().catch(() => ({}))
       showToast(data.error ?? '저장에 실패했습니다.', 'error')
     }
+  }
+
+  const downloadHistoryCSV = () => {
+    let fromTime: number
+    let toTime: number
+    let periodLabel: string
+
+    if (downloadPeriod === '1m') {
+      const from = new Date(); from.setMonth(from.getMonth() - 1); from.setHours(0, 0, 0, 0)
+      const to = new Date(); to.setHours(23, 59, 59, 999)
+      fromTime = from.getTime(); toTime = to.getTime()
+      periodLabel = '직전1개월'
+    } else if (downloadPeriod === '3m') {
+      const from = new Date(); from.setMonth(from.getMonth() - 3); from.setHours(0, 0, 0, 0)
+      const to = new Date(); to.setHours(23, 59, 59, 999)
+      fromTime = from.getTime(); toTime = to.getTime()
+      periodLabel = '직전3개월'
+    } else {
+      if (!customFrom || !customTo) { showToast('시작일과 종료일을 입력해주세요.', 'error'); return }
+      if (customFrom > customTo) { showToast('시작일이 종료일보다 늦습니다.', 'error'); return }
+      fromTime = new Date(customFrom + 'T00:00:00').getTime()
+      toTime = new Date(customTo + 'T23:59:59.999').getTime()
+      periodLabel = `${customFrom}_${customTo}`
+    }
+
+    const KIND_LABEL: Record<HistoryItem['kind'], string> = {
+      grant: '휴가 승인',
+      cancel_approved: '취소 승인',
+      cancel_rejected: '취소 거부',
+      request_rejected: '신청 거부',
+    }
+
+    const filtered = historyItems.filter(item => {
+      if (!item.happened_at) return false
+      const t = new Date(item.happened_at).getTime()
+      return t >= fromTime && t <= toTime
+    })
+
+    if (filtered.length === 0) {
+      showToast('선택한 기간의 이력이 없습니다.', 'error')
+      return
+    }
+
+    const fmtDt = (iso: string | null, allDay: boolean) => {
+      if (!iso) return ''
+      try { return format(parseISO(iso), allDay ? 'yyyy-MM-dd' : 'yyyy-MM-dd HH:mm') }
+      catch { return '' }
+    }
+
+    const headers = ['처리일시', '구분', '신청자', '휴가명', '시작', '종료', '종일/반차', '결재자', '사유']
+    const rows = filtered.map(item => [
+      item.happened_at ? format(parseISO(item.happened_at), 'yyyy-MM-dd HH:mm') : '',
+      KIND_LABEL[item.kind] ?? item.kind,
+      item.requester?.full_name ?? '',
+      item.event_title ?? '',
+      fmtDt(item.event_start_at, item.event_is_all_day),
+      fmtDt(item.event_end_at, item.event_is_all_day),
+      item.event_is_all_day ? '종일' : '반차',
+      item.reviewer?.full_name ?? '',
+      item.reason ?? '',
+    ])
+
+    const escapeCsv = (v: unknown) => {
+      const s = String(v ?? '')
+      return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+    }
+    const csv = [headers, ...rows].map(r => r.map(escapeCsv).join(',')).join('\r\n')
+
+    // Excel에서 한글 깨짐 방지: UTF-8 BOM 추가
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `휴가처리이력_${periodLabel}_${toLocalDateStr()}.csv`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+
+    setDownloadOpen(false)
+    showToast(`${filtered.length}건을 다운로드했습니다.`, 'success')
   }
 
   const addCategory = async (e: React.FormEvent) => {
@@ -798,22 +887,35 @@ export default function AdminPage() {
 
           {/* 휴가 처리 이력 — 항상 표시, 휴가 등록(승인) + 취소 승인/거부 통합 */}
           <div className="mb-6">
-            <button
-              type="button"
-              onClick={() => setHistoryOpen(o => !o)}
-              className="w-full flex items-center justify-between text-sm font-semibold text-[#6B7280] dark:text-[#94A3B8] mb-2 hover:text-[#374151] dark:hover:text-[#D1D5DB] transition-colors"
-            >
-              <span className="flex items-center gap-1.5">
-                <ClipboardList className="h-4 w-4" />
-                휴가 처리 이력
-                <span className="text-xs bg-[#E5E7EB] dark:bg-[#374151] text-[#374151] dark:text-[#D1D5DB] rounded-full px-1.5">
-                  {historyItems.length}건
+            <div className="flex items-center justify-between mb-2">
+              <button
+                type="button"
+                onClick={() => setHistoryOpen(o => !o)}
+                className="flex-1 flex items-center justify-between text-sm font-semibold text-[#6B7280] dark:text-[#94A3B8] hover:text-[#374151] dark:hover:text-[#D1D5DB] transition-colors"
+              >
+                <span className="flex items-center gap-1.5">
+                  <ClipboardList className="h-4 w-4" />
+                  휴가 처리 이력
+                  <span className="text-xs bg-[#E5E7EB] dark:bg-[#374151] text-[#374151] dark:text-[#D1D5DB] rounded-full px-1.5">
+                    {historyItems.length}건
+                  </span>
                 </span>
-              </span>
-              {historyOpen
-                ? <ChevronUp className="h-4 w-4" />
-                : <ChevronDown className="h-4 w-4" />}
-            </button>
+                {historyOpen
+                  ? <ChevronUp className="h-4 w-4" />
+                  : <ChevronDown className="h-4 w-4" />}
+              </button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="ml-2 h-7 px-2 text-xs"
+                onClick={() => setDownloadOpen(true)}
+                disabled={historyItems.length === 0}
+                title="처리 이력을 CSV로 다운로드"
+              >
+                <Download className="h-3.5 w-3.5 mr-1" />
+                다운로드
+              </Button>
+            </div>
             {historyOpen && (
               historyItems.length === 0 ? (
                 <div className="text-xs text-[#9CA3AF] dark:text-[#6B7280] bg-[#F9FAFB] dark:bg-[#1E293B]/40 border border-dashed border-[#E5E7EB] dark:border-[#334155] rounded-lg px-4 py-6 text-center">
@@ -1203,6 +1305,85 @@ export default function AdminPage() {
             >
               확인
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 휴가 처리 이력 다운로드 다이얼로그 */}
+      <Dialog open={downloadOpen} onOpenChange={open => { if (!open) setDownloadOpen(false) }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Download className="h-4 w-4" />
+              휴가 처리 이력 다운로드
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 pt-1">
+            <p className="text-xs text-[#6B7280] dark:text-[#94A3B8]">
+              다운로드할 기간을 선택하세요. CSV 파일로 저장됩니다.
+            </p>
+
+            <div className="space-y-2">
+              {([
+                { key: '1m', label: '직전 1개월' },
+                { key: '3m', label: '직전 3개월' },
+                { key: 'custom', label: '기간 직접 설정' },
+              ] as const).map(opt => (
+                <label
+                  key={opt.key}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer text-sm transition-colors ${
+                    downloadPeriod === opt.key
+                      ? 'border-[#2563EB] bg-[#EFF6FF] dark:bg-[#1E3A5F] text-[#2563EB] dark:text-[#93C5FD]'
+                      : 'border-[#E5E7EB] dark:border-[#334155] text-[#374151] dark:text-[#D1D5DB] hover:border-[#9CA3AF]'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="download-period"
+                    value={opt.key}
+                    checked={downloadPeriod === opt.key}
+                    onChange={() => setDownloadPeriod(opt.key)}
+                    className="accent-[#2563EB]"
+                  />
+                  <span>{opt.label}</span>
+                </label>
+              ))}
+            </div>
+
+            {downloadPeriod === 'custom' && (
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <div>
+                  <label className="block text-[11px] text-[#6B7280] dark:text-[#94A3B8] mb-1">시작일</label>
+                  <Input
+                    type="date"
+                    value={customFrom}
+                    max={customTo || undefined}
+                    onChange={e => setCustomFrom(e.target.value)}
+                    className="text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-[#6B7280] dark:text-[#94A3B8] mb-1">종료일</label>
+                  <Input
+                    type="date"
+                    value={customTo}
+                    min={customFrom || undefined}
+                    onChange={e => setCustomTo(e.target.value)}
+                    className="text-sm"
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-2 pt-2">
+              <Button variant="outline" className="flex-1" onClick={() => setDownloadOpen(false)}>
+                취소
+              </Button>
+              <Button className="flex-1" onClick={downloadHistoryCSV}>
+                <Download className="h-4 w-4 mr-1" />
+                다운로드
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
