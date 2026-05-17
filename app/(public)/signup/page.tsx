@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Logo } from '@/components/ui/Logo'
 
 export default function SignupPage() {
   const router = useRouter()
@@ -59,7 +60,8 @@ export default function SignupPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#F9FAFB] px-4">
       <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
+        <div className="flex flex-col items-center mb-8">
+          <Logo className="h-12 w-12 mb-2" title="그룹웨어 로고" />
           <h1 className="text-2xl font-bold text-[#2563EB]">그룹웨어</h1>
           <p className="text-[#6B7280] mt-1 text-sm">회원가입 후 관리자 승인을 기다려 주세요</p>
         </div>
