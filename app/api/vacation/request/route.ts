@@ -37,8 +37,13 @@ export async function POST(request: NextRequest) {
 
   if (!me) return NextResponse.json({ error: '프로필을 찾을 수 없습니다.' }, { status: 404 })
 
-  // 자기 결재(자동 승인): 앱관리자이면서 결재자 미지정인 경우만
-  const isSelfApproved = isSuperAdmin(me) && (me as any).approver_id == null
+  // 자기 결재(자동 승인): 결재자 역할(관리자 또는 앱관리자)이면서 외부 결재자 미지정인 경우.
+  //   - 자기 자신을 결재자로 두는 건 DB 제약상 불가하므로 "본인 결재" = approver_id IS NULL.
+  //   - 휴가 신청은 자동 승인되지만, 취소 신청은 항상 앱관리자가 결재해야 한다
+  //     (취소 흐름은 /api/vacation-cancel-requests 에서 별도 처리).
+  const myRole = (me as any).role
+  const isApproverRole = myRole === 'manager' || isSuperAdmin(me)
+  const isSelfApproved = isApproverRole && (me as any).approver_id == null
 
   // ── 자동 승인 (본인이 결재자) ─────────────────────────────────
   if (isSelfApproved) {

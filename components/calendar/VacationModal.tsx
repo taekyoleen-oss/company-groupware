@@ -61,7 +61,8 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
   const [authorName, setAuthorName]         = useState<string | null>(null)
   const [currentUserId, setCurrentUserId]   = useState<string | null>(null)
   const [currentUserName, setCurrentUserName] = useState<string>('')
-  const [isAdmin, setIsAdmin]               = useState(false)
+  const [isAdmin, setIsAdmin]               = useState(false)  // 앱관리자(super_admin) — 타인 휴가 직접 삭제/수정 권한
+  const [isApproverRole, setIsApproverRole] = useState(false)  // 결재자 역할(manager 또는 super_admin) — 자기결재 자동승인 판정용
   const [approverId, setApproverId]         = useState<string | null>(null)
   const [approverName, setApproverName]     = useState<string | null>(null)
   const [eventData, setEventData]           = useState<any>(null)
@@ -73,8 +74,10 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
     fetch('/api/profiles').then(r => r.json()).then((p: any) => {
       setCurrentUserId(p?.id ?? null)
       setCurrentUserName(p?.full_name ?? '')
-      // VacationModal에서 isAdmin은 "자기 결재(자동 승인)" 가능 여부 판단에 쓰인다 → 앱관리자만 true
-      setIsAdmin(p?.is_super_admin === true || (p?.is_super_admin == null && p?.role === 'admin'))
+      const superAdmin = p?.is_super_admin === true || (p?.is_super_admin == null && p?.role === 'admin')
+      setIsAdmin(superAdmin)
+      // 결재자 역할 = 관리자(manager) 또는 앱관리자. 본인이 결재자고 외부 결재자도 없으면 자기결재.
+      setIsApproverRole(superAdmin || p?.role === 'manager')
       setApproverId(p?.approver_id ?? null)
       setApproverName(p?.approver?.full_name ?? null)
     }).catch(() => {})
@@ -143,9 +146,12 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
     }))
   }
 
-  const canEdit = !eventId || isAdmin || createdBy === currentUserId
-  const canDirectDelete = !!eventId && isAdmin
-  const canRequestCancellation = !!eventId && !isAdmin && createdBy === currentUserId
+  const isOwner = createdBy === currentUserId
+  const canEdit = !eventId || isAdmin || isOwner
+  // 직접 삭제는 앱관리자가 "타인의 휴가"를 관리할 때만 허용.
+  // 본인 휴가는 결재자 역할이라도 항상 취소 신청 → 앱관리자 결재를 거친다.
+  const canDirectDelete = !!eventId && isAdmin && !isOwner
+  const canRequestCancellation = !!eventId && isOwner
 
   const isAllDay = vacationType === 'full'
 
@@ -166,8 +172,9 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
     ? vacationSummary.remaining_days + origVacDays - pendingVacDays
     : 0
 
-  // 본인이 결재자(관리자 + approver_id 없음)인 경우 자동 승인
-  const isSelfApproved = isAdmin && approverId == null
+  // 본인이 결재자 역할(관리자 또는 앱관리자) + 외부 결재자 미지정 → 휴가 신청 자동 승인.
+  // (취소는 자동 처리되지 않고 항상 앱관리자가 결재)
+  const isSelfApproved = isApproverRole && approverId == null
 
   const executeSave = async () => {
     setLoading(true)
