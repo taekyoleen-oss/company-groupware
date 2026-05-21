@@ -84,9 +84,10 @@ export default function ApprovalsPage() {
   const [approveDone, setApproveDone] = useState<null | 'cancel' | 'vac'>(null)
   // 활성 탭 — 승인 후 직원 휴가 탭으로 자동 전환
   const [activeTab, setActiveTab] = useState<string>('requests')
-  // 직원 휴가 처리 이력 (결재자 범위)
+  // 직원 휴가 처리 이력 (결재자 범위) — 사장님 팀일 땐 숨김
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([])
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [isPresidentTeam, setIsPresidentTeam] = useState(false)
 
   const fetchAll = useCallback(async () => {
     const [approverRes, historyRes] = await Promise.all([
@@ -102,6 +103,7 @@ export default function ApprovalsPage() {
       setVacEdits(initVac)
       setVacReqs(Array.isArray(data.vacation_requests) ? data.vacation_requests : [])
       setCancelReqs(Array.isArray(data.cancel_requests) ? data.cancel_requests : [])
+      setIsPresidentTeam(data.viewer?.is_president_team === true)
     }
     if (historyRes.ok) {
       const items: HistoryItem[] = await historyRes.json()
@@ -334,7 +336,9 @@ export default function ApprovalsPage() {
             </div>
           )}
 
-          {/* 휴가 처리 이력 — 결재자 범위 (사장님 팀이면 전직원) */}
+          {/* 휴가 처리 이력 — 결재자 범위.
+              사장님 팀은 결재자가 아니므로 (요청대로) 이력 섹션 자체를 숨긴다. */}
+          {!isPresidentTeam && (
           <div className="mt-6">
             <button
               type="button"
@@ -396,6 +400,7 @@ export default function ApprovalsPage() {
               )
             )}
           </div>
+          )}
         </TabsContent>
       </Tabs>
 

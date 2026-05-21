@@ -60,7 +60,14 @@ export async function GET() {
   const approvalScopeIds = (myDirectReports ?? []).map(r => r.id)
 
   if (employeeIds.length === 0) {
-    return NextResponse.json({ employees: [], cancel_requests: [], vacation_requests: [] })
+    return NextResponse.json({
+      employees: [], cancel_requests: [], vacation_requests: [],
+      viewer: {
+        is_super_admin: isSuper,
+        is_president_team: isPresidentTeam,
+        sees_all_employees: seesAllEmployees,
+      },
+    })
   }
 
   // Supabase 의 .in() 은 빈 배열을 허용하지 않으므로 비어있을 땐 sentinel id 사용
@@ -150,5 +157,11 @@ export async function GET() {
     employees: employeeSummaries,
     cancel_requests: cancelReqsRes.data ?? [],
     vacation_requests: vacReqsRes.data ?? [],
+    // 호출자 컨텍스트 — UI 분기에 사용 (예: 사장님 팀이면 처리 이력 숨김)
+    viewer: {
+      is_super_admin: isSuper,
+      is_president_team: isPresidentTeam,
+      sees_all_employees: seesAllEmployees,
+    },
   })
 }
