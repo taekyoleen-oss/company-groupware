@@ -185,6 +185,8 @@ export default function AdminPage() {
   const [vacationRequests, setVacationRequests] = useState<VacationRequest[]>([])
   const [requestProcessing, setRequestProcessing] = useState<string | null>(null)
   const [approveComplete, setApproveComplete] = useState<{ kind: 'cancel' | 'request' } | null>(null)
+  // 탭 컨트롤 — 승인 완료 후 휴가 탭으로 자동 이동시키기 위해 controlled 로 운용
+  const [activeTab, setActiveTab] = useState<string>('users')
   const [historyOpen, setHistoryOpen] = useState(false)
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([])
 
@@ -315,7 +317,9 @@ export default function AdminPage() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'cg_vacation_cancel_requests' }, () => fetchAll())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'cg_vacation_requests' }, () => fetchAll())
       .subscribe()
-    const handler = () => fetchAll()
+    // 다른 컴포넌트(예: AdminSidebar)에서 휴가 취소를 승인하고 확인을 누른 경우에도
+    // 관리자 패널의 활성 탭을 휴가 관리로 전환하고 목록을 갱신한다.
+    const handler = () => { setActiveTab('vacation'); fetchAll() }
     window.addEventListener('vacation-cancel-approved', handler)
     return () => {
       supabase.removeChannel(channel)
@@ -786,7 +790,7 @@ export default function AdminPage() {
         </div>
       )}
 
-      <Tabs defaultValue="users">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="mb-4 flex-wrap">
           <TabsTrigger value="users">
             회원 관리 {pending.length > 0 && <span className="ml-1 text-xs bg-red-500 text-white rounded-full px-1.5">{pending.length}</span>}
@@ -1636,36 +1640,44 @@ export default function AdminPage() {
         </TabsContent>
       </Tabs>
 
-      {/* 승인 완료 팝업 — 확인 시 fetchAll로 목록 갱신 (승인/거부 버튼 사라짐) */}
-      <Dialog
-        open={approveComplete !== null}
-        onOpenChange={open => {
-          if (!open) {
-            setApproveComplete(null)
-            fetchAll()
-          }
-        }}
-      >
-        <DialogContent className="max-w-xs text-center">
-          <div className="flex flex-col items-center gap-3 py-4">
-            <div className="flex items-center justify-center w-16 h-16 rounded-full bg-green-100 dark:bg-green-900/40">
-              <CheckCircle className="h-9 w-9 text-green-500" />
-            </div>
-            <DialogTitle className="text-lg font-bold text-[#111827] dark:text-[#F1F5F9]">승인 완료</DialogTitle>
-            <p className="text-sm text-[#6B7280] dark:text-[#94A3B8]">
-              {approveComplete?.kind === 'cancel'
-                ? '휴가 취소가 승인되었습니다.'
-                : '휴가 신청이 승인되었습니다.'}
-            </p>
-            <Button
-              className="w-full mt-2"
-              onClick={() => { setApproveComplete(null); fetchAll() }}
-            >
-              확인
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* 승인 완료 팝업 — 확인 시
+            1) 대기 목록을 fetchAll 로 다시 불러와 처리된 건이 사라지게 한다
+            2) 부가 다이얼로그(다운로드/이력 토글 등)를 모두 리셋한다
+            3) 휴가 관리 탭으로 자동 전환해 결과를 바로 확인할 수 있게 한다 */}
+      {(() => {
+        const finishApprove = () => {
+          setApproveComplete(null)
+          // 다른 다이얼로그/패널 리셋
+          setDownloadOpen(false)
+          setHistoryOpen(false)
+          // 휴가 관리 탭으로 이동
+          setActiveTab('vacation')
+          fetchAll()
+        }
+        return (
+          <Dialog
+            open={approveComplete !== null}
+            onOpenChange={open => { if (!open) finishApprove() }}
+          >
+            <DialogContent className="max-w-xs text-center">
+              <div className="flex flex-col items-center gap-3 py-4">
+                <div className="flex items-center justify-center w-16 h-16 rounded-full bg-green-100 dark:bg-green-900/40">
+                  <CheckCircle className="h-9 w-9 text-green-500" />
+                </div>
+                <DialogTitle className="text-lg font-bold text-[#111827] dark:text-[#F1F5F9]">승인 완료</DialogTitle>
+                <p className="text-sm text-[#6B7280] dark:text-[#94A3B8]">
+                  {approveComplete?.kind === 'cancel'
+                    ? '휴가 취소가 승인되었습니다.'
+                    : '휴가 신청이 승인되었습니다.'}
+                </p>
+                <Button className="w-full mt-2" onClick={finishApprove}>
+                  확인
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        )
+      })()}
 
       {/* 휴가 처리 이력 다운로드 다이얼로그 */}
       <Dialog open={downloadOpen} onOpenChange={open => { if (!open) setDownloadOpen(false) }}>
