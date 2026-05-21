@@ -186,12 +186,10 @@ export default function AdminPage() {
   const [requestProcessing, setRequestProcessing] = useState<string | null>(null)
   const [approveComplete, setApproveComplete] = useState<{ kind: 'cancel' | 'request' } | null>(null)
   const [historyOpen, setHistoryOpen] = useState(false)
-  const [historyCancelOpen, setHistoryCancelOpen] = useState(false)
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([])
 
-  // 휴가 처리 이력 다운로드 (어떤 카테고리를 받을지 함께 추적)
+  // 휴가 처리 이력 다운로드 — 승인/취소를 한 파일로 함께 받음
   const [downloadOpen, setDownloadOpen] = useState(false)
-  const [downloadCategory, setDownloadCategory] = useState<'approval' | 'cancel'>('approval')
   const [downloadPeriod, setDownloadPeriod] = useState<'1m' | '3m' | 'custom'>('1m')
   const [customFrom, setCustomFrom] = useState<string>(() => {
     const d = new Date(); d.setMonth(d.getMonth() - 1); return toLocalDateStr(d)
@@ -524,17 +522,11 @@ export default function AdminPage() {
       request_rejected: '신청 거부',
     }
 
-    // 카테고리: 승인 이력 = grant + request_rejected (= 신청 결재)
-    //          취소 이력 = cancel_approved + cancel_rejected (= 취소 결재)
-    const categoryKinds: Record<typeof downloadCategory, HistoryItem['kind'][]> = {
-      approval: ['grant', 'request_rejected'],
-      cancel:   ['cancel_approved', 'cancel_rejected'],
-    }
-    const allowedKinds = new Set(categoryKinds[downloadCategory])
-
+    // 승인/취소 4종을 모두 포함해 한 파일로 다운로드.
+    // 시간 컬럼은 "승인 시간" / "취소 시간" 두 컬럼으로 나누어,
+    // 같은 휴가가 승인됐다가 취소된 경우 두 시점이 명확히 구분되게 한다.
     const filtered = historyItems.filter(item => {
       if (!item.happened_at) return false
-      if (!allowedKinds.has(item.kind)) return false
       const t = new Date(item.happened_at).getTime()
       return t >= fromTime && t <= toTime
     })
@@ -550,21 +542,26 @@ export default function AdminPage() {
       catch { return '' }
     }
 
-    // 처리일시 컬럼명을 카테고리별로 구분 — 사용자가 승인 시간 vs 취소 시간을 명확히 구분할 수 있게
-    const happenedColumn = downloadCategory === 'approval' ? '승인 시간' : '취소 시간'
-
-    const headers = [happenedColumn, '구분', '신청자', '휴가명', '시작', '종료', '종일/반차', '결재자', '사유']
-    const rows = filtered.map(item => [
-      item.happened_at ? format(parseISO(item.happened_at), 'yyyy-MM-dd HH:mm') : '',
-      KIND_LABEL[item.kind] ?? item.kind,
-      item.requester?.full_name ?? '',
-      item.event_title ?? '',
-      fmtDt(item.event_start_at, item.event_is_all_day),
-      fmtDt(item.event_end_at, item.event_is_all_day),
-      item.event_is_all_day ? '종일' : '반차',
-      item.reviewer?.full_name ?? '',
-      item.reason ?? '',
-    ])
+    // 같은 행에 승인 시간과 취소 시간을 각각 별도 컬럼으로 표시.
+    // grant/request_rejected → '승인 시간' 컬럼만 채움.
+    // cancel_approved/cancel_rejected → '취소 시간' 컬럼만 채움.
+    const headers = ['구분', '신청자', '휴가명', '시작', '종료', '종일/반차', '승인 시간', '취소 시간', '결재자', '사유']
+    const rows = filtered.map(item => {
+      const happenedFmt = item.happened_at ? format(parseISO(item.happened_at), 'yyyy-MM-dd HH:mm') : ''
+      const isCancelKind = item.kind === 'cancel_approved' || item.kind === 'cancel_rejected'
+      return [
+        KIND_LABEL[item.kind] ?? item.kind,
+        item.requester?.full_name ?? '',
+        item.event_title ?? '',
+        fmtDt(item.event_start_at, item.event_is_all_day),
+        fmtDt(item.event_end_at, item.event_is_all_day),
+        item.event_is_all_day ? '종일' : '반차',
+        isCancelKind ? '' : happenedFmt,
+        isCancelKind ? happenedFmt : '',
+        item.reviewer?.full_name ?? '',
+        item.reason ?? '',
+      ]
+    })
 
     const escapeCsv = (v: unknown) => {
       const s = String(v ?? '')
@@ -577,8 +574,7 @@ export default function AdminPage() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    const fileLabel = downloadCategory === 'approval' ? '휴가승인이력' : '휴가취소이력'
-    a.download = `${fileLabel}_${periodLabel}_${toLocalDateStr()}.csv`
+    a.download = `휴가처리이력_${periodLabel}_${toLocalDateStr()}.csv`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -1183,157 +1179,103 @@ export default function AdminPage() {
             </div>
           )}
 
-          {/* 휴가 처리 이력 — 승인 이력(휴가 등록/거부)과 취소 이력(취소 승인/거부)으로 분리.
-              각 섹션은 자체 토글·카운트·다운로드 버튼을 가진다. */}
-          {(() => {
-            const approvalItems = historyItems.filter(i => i.kind === 'grant' || i.kind === 'request_rejected')
-            const cancelItems   = historyItems.filter(i => i.kind === 'cancel_approved' || i.kind === 'cancel_rejected')
-
-            const renderRow = (item: HistoryItem) => {
-              const startDate = item.event_start_at
-                ? (item.event_is_all_day
-                    ? format(parseISO(item.event_start_at), 'M월 d일', { locale: ko })
-                    : format(parseISO(item.event_start_at), 'M월 d일 HH:mm', { locale: ko }))
-                : '(일정 정보 없음)'
-              const endDate = item.event_end_at
-                ? (item.event_is_all_day
-                    ? format(parseISO(item.event_end_at), 'M월 d일', { locale: ko })
-                    : format(parseISO(item.event_end_at), 'HH:mm'))
-                : ''
-              const happenedLabel = item.happened_at
-                ? format(parseISO(item.happened_at), 'yyyy.MM.dd HH:mm', { locale: ko })
-                : '-'
-              // 카테고리에 맞춘 시간 레이블 — 승인 이력은 "승인 시간", 취소 이력은 "취소 시간"
-              const timeLabel = (item.kind === 'grant' || item.kind === 'request_rejected') ? '승인 시간' : '취소 시간'
-              const kindStyle = item.kind === 'grant'
-                ? { border: 'border-blue-200 dark:border-blue-800', badge: 'text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/40', label: '휴가 승인', icon: <CheckCircle className="h-3 w-3" /> }
-                : item.kind === 'cancel_approved'
-                ? { border: 'border-green-200 dark:border-green-800', badge: 'text-green-700 dark:text-green-400 bg-green-100 dark:bg-green-900/40', label: '취소 승인', icon: <CheckCircle className="h-3 w-3" /> }
-                : item.kind === 'cancel_rejected'
-                ? { border: 'border-[#E5E7EB] dark:border-[#334155]', badge: 'text-[#6B7280] dark:text-[#94A3B8] bg-[#F3F4F6] dark:bg-[#374151]', label: '취소 거부', icon: <XCircle className="h-3 w-3" /> }
-                : { border: 'border-red-200 dark:border-red-800', badge: 'text-red-700 dark:text-red-300 bg-red-100 dark:bg-red-900/40', label: '신청 거부', icon: <XCircle className="h-3 w-3" /> }
-              return (
-                <div key={item.id} className={`bg-white dark:bg-[#1E293B] rounded-lg p-3 border ${kindStyle.border}`}>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <UserAvatar name={item.requester?.full_name ?? ''} color={item.requester?.color ?? '#6B7280'} size={32} />
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm dark:text-[#F1F5F9]">{item.requester?.full_name}</p>
-                      <p className="text-xs text-[#6B7280] dark:text-[#94A3B8]">
-                        {item.event_title} · {startDate}
-                        {endDate && startDate !== endDate && ` ~ ${endDate}`}
-                        {!item.event_is_all_day && <span className="ml-1 text-orange-500">반차</span>}
-                      </p>
-                      {item.reason && (
-                        <p className="text-xs text-[#6B7280] dark:text-[#94A3B8] mt-0.5 italic">&quot;{item.reason}&quot;</p>
-                      )}
-                      <p className="text-[11px] text-[#9CA3AF] dark:text-[#6B7280] mt-1">
-                        <span className="text-[#6B7280] dark:text-[#94A3B8] font-medium">{timeLabel}:</span> {happenedLabel}
-                        {item.reviewer?.full_name && ` · ${item.reviewer.full_name}`}
-                      </p>
-                    </div>
-                    <div className="shrink-0">
-                      <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${kindStyle.badge}`}>
-                        {kindStyle.icon}
-                        {kindStyle.label}
-                      </span>
-                    </div>
-                  </div>
+          {/* 휴가 처리 이력 — 승인/취소 4종(휴가 승인, 신청 거부, 취소 승인, 취소 거부)을 통합 표시.
+              각 row의 시간 레이블은 "승인 시간" / "취소 시간"으로 구분되어 동일 휴가가
+              승인됐다가 취소된 경우 두 시점이 명확히 보인다. */}
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-2">
+              <button
+                type="button"
+                onClick={() => setHistoryOpen(o => !o)}
+                className="flex-1 flex items-center justify-between text-sm font-semibold text-[#6B7280] dark:text-[#94A3B8] hover:text-[#374151] dark:hover:text-[#D1D5DB] transition-colors"
+              >
+                <span className="flex items-center gap-1.5">
+                  <ClipboardList className="h-4 w-4" />
+                  휴가 처리 이력
+                  <span className="text-xs bg-[#E5E7EB] dark:bg-[#374151] text-[#374151] dark:text-[#D1D5DB] rounded-full px-1.5">
+                    {historyItems.length}건
+                  </span>
+                </span>
+                {historyOpen
+                  ? <ChevronUp className="h-4 w-4" />
+                  : <ChevronDown className="h-4 w-4" />}
+              </button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="ml-2 h-7 px-2 text-xs"
+                onClick={() => setDownloadOpen(true)}
+                disabled={historyItems.length === 0}
+                title="처리 이력을 CSV로 다운로드 (승인·취소 모두 포함)"
+              >
+                <Download className="h-3.5 w-3.5 mr-1" />
+                다운로드
+              </Button>
+            </div>
+            {historyOpen && (
+              historyItems.length === 0 ? (
+                <div className="text-xs text-[#9CA3AF] dark:text-[#6B7280] bg-[#F9FAFB] dark:bg-[#1E293B]/40 border border-dashed border-[#E5E7EB] dark:border-[#334155] rounded-lg px-4 py-6 text-center">
+                  아직 처리 이력이 없습니다.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {historyItems.map(item => {
+                    const startDate = item.event_start_at
+                      ? (item.event_is_all_day
+                          ? format(parseISO(item.event_start_at), 'M월 d일', { locale: ko })
+                          : format(parseISO(item.event_start_at), 'M월 d일 HH:mm', { locale: ko }))
+                      : '(일정 정보 없음)'
+                    const endDate = item.event_end_at
+                      ? (item.event_is_all_day
+                          ? format(parseISO(item.event_end_at), 'M월 d일', { locale: ko })
+                          : format(parseISO(item.event_end_at), 'HH:mm'))
+                      : ''
+                    const happenedLabel = item.happened_at
+                      ? format(parseISO(item.happened_at), 'yyyy.MM.dd HH:mm', { locale: ko })
+                      : '-'
+                    // 시간 레이블 구분: 신청 결재(승인/거부) → "승인 시간",
+                    //                  취소 결재(승인/거부) → "취소 시간"
+                    const timeLabel = (item.kind === 'grant' || item.kind === 'request_rejected') ? '승인 시간' : '취소 시간'
+                    const kindStyle = item.kind === 'grant'
+                      ? { border: 'border-blue-200 dark:border-blue-800', badge: 'text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/40', label: '휴가 승인', icon: <CheckCircle className="h-3 w-3" /> }
+                      : item.kind === 'cancel_approved'
+                      ? { border: 'border-green-200 dark:border-green-800', badge: 'text-green-700 dark:text-green-400 bg-green-100 dark:bg-green-900/40', label: '취소 승인', icon: <CheckCircle className="h-3 w-3" /> }
+                      : item.kind === 'cancel_rejected'
+                      ? { border: 'border-[#E5E7EB] dark:border-[#334155]', badge: 'text-[#6B7280] dark:text-[#94A3B8] bg-[#F3F4F6] dark:bg-[#374151]', label: '취소 거부', icon: <XCircle className="h-3 w-3" /> }
+                      : { border: 'border-red-200 dark:border-red-800', badge: 'text-red-700 dark:text-red-300 bg-red-100 dark:bg-red-900/40', label: '신청 거부', icon: <XCircle className="h-3 w-3" /> }
+                    return (
+                      <div key={item.id} className={`bg-white dark:bg-[#1E293B] rounded-lg p-3 border ${kindStyle.border}`}>
+                        <div className="flex flex-wrap items-center gap-3">
+                          <UserAvatar name={item.requester?.full_name ?? ''} color={item.requester?.color ?? '#6B7280'} size={32} />
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-sm dark:text-[#F1F5F9]">{item.requester?.full_name}</p>
+                            <p className="text-xs text-[#6B7280] dark:text-[#94A3B8]">
+                              {item.event_title} · {startDate}
+                              {endDate && startDate !== endDate && ` ~ ${endDate}`}
+                              {!item.event_is_all_day && <span className="ml-1 text-orange-500">반차</span>}
+                            </p>
+                            {item.reason && (
+                              <p className="text-xs text-[#6B7280] dark:text-[#94A3B8] mt-0.5 italic">&quot;{item.reason}&quot;</p>
+                            )}
+                            <p className="text-[11px] text-[#9CA3AF] dark:text-[#6B7280] mt-1">
+                              <span className="text-[#6B7280] dark:text-[#94A3B8] font-medium">{timeLabel}:</span> {happenedLabel}
+                              {item.reviewer?.full_name && ` · ${item.reviewer.full_name}`}
+                            </p>
+                          </div>
+                          <div className="shrink-0">
+                            <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${kindStyle.badge}`}>
+                              {kindStyle.icon}
+                              {kindStyle.label}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
               )
-            }
-
-            return (
-              <>
-                {/* 승인 이력 (휴가 등록 + 신청 거부) */}
-                <div className="mb-6">
-                  <div className="flex items-center justify-between mb-2">
-                    <button
-                      type="button"
-                      onClick={() => setHistoryOpen(o => !o)}
-                      className="flex-1 flex items-center justify-between text-sm font-semibold text-[#6B7280] dark:text-[#94A3B8] hover:text-[#374151] dark:hover:text-[#D1D5DB] transition-colors"
-                    >
-                      <span className="flex items-center gap-1.5">
-                        <CheckCircle className="h-4 w-4 text-blue-500" />
-                        휴가 승인 이력
-                        <span className="text-xs bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 rounded-full px-1.5">
-                          {approvalItems.length}건
-                        </span>
-                      </span>
-                      {historyOpen
-                        ? <ChevronUp className="h-4 w-4" />
-                        : <ChevronDown className="h-4 w-4" />}
-                    </button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="ml-2 h-7 px-2 text-xs"
-                      onClick={() => { setDownloadCategory('approval'); setDownloadOpen(true) }}
-                      disabled={approvalItems.length === 0}
-                      title="승인 이력을 CSV로 다운로드"
-                    >
-                      <Download className="h-3.5 w-3.5 mr-1" />
-                      다운로드
-                    </Button>
-                  </div>
-                  {historyOpen && (
-                    approvalItems.length === 0 ? (
-                      <div className="text-xs text-[#9CA3AF] dark:text-[#6B7280] bg-[#F9FAFB] dark:bg-[#1E293B]/40 border border-dashed border-[#E5E7EB] dark:border-[#334155] rounded-lg px-4 py-6 text-center">
-                        아직 승인 이력이 없습니다.
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {approvalItems.map(renderRow)}
-                      </div>
-                    )
-                  )}
-                </div>
-
-                {/* 취소 이력 (취소 승인 + 취소 거부) */}
-                <div className="mb-6">
-                  <div className="flex items-center justify-between mb-2">
-                    <button
-                      type="button"
-                      onClick={() => setHistoryCancelOpen(o => !o)}
-                      className="flex-1 flex items-center justify-between text-sm font-semibold text-[#6B7280] dark:text-[#94A3B8] hover:text-[#374151] dark:hover:text-[#D1D5DB] transition-colors"
-                    >
-                      <span className="flex items-center gap-1.5">
-                        <XCircle className="h-4 w-4 text-orange-500" />
-                        휴가 취소 이력
-                        <span className="text-xs bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300 rounded-full px-1.5">
-                          {cancelItems.length}건
-                        </span>
-                      </span>
-                      {historyCancelOpen
-                        ? <ChevronUp className="h-4 w-4" />
-                        : <ChevronDown className="h-4 w-4" />}
-                    </button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="ml-2 h-7 px-2 text-xs"
-                      onClick={() => { setDownloadCategory('cancel'); setDownloadOpen(true) }}
-                      disabled={cancelItems.length === 0}
-                      title="취소 이력을 CSV로 다운로드"
-                    >
-                      <Download className="h-3.5 w-3.5 mr-1" />
-                      다운로드
-                    </Button>
-                  </div>
-                  {historyCancelOpen && (
-                    cancelItems.length === 0 ? (
-                      <div className="text-xs text-[#9CA3AF] dark:text-[#6B7280] bg-[#F9FAFB] dark:bg-[#1E293B]/40 border border-dashed border-[#E5E7EB] dark:border-[#334155] rounded-lg px-4 py-6 text-center">
-                        아직 취소 이력이 없습니다.
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {cancelItems.map(renderRow)}
-                      </div>
-                    )
-                  )}
-                </div>
-              </>
-            )
-          })()}
+            )}
+          </div>
 
           <div className="mb-3 flex items-center gap-2 text-sm text-[#6B7280] dark:text-[#94A3B8]">
             <Sun className="h-4 w-4 text-orange-500" />
@@ -1731,15 +1673,13 @@ export default function AdminPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Download className="h-4 w-4" />
-              {downloadCategory === 'approval' ? '휴가 승인 이력 다운로드' : '휴가 취소 이력 다운로드'}
+              휴가 처리 이력 다운로드
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3 pt-1">
             <p className="text-xs text-[#6B7280] dark:text-[#94A3B8]">
-              {downloadCategory === 'approval'
-                ? '휴가 승인(또는 신청 거부) 이력을 다운로드합니다.'
-                : '휴가 취소 승인(또는 취소 거부) 이력을 다운로드합니다.'}
-              {' '}기간을 선택하세요. CSV 파일로 저장됩니다.
+              선택한 기간 안의 휴가 승인·취소 이력이 한 CSV 파일로 저장됩니다.
+              각 행에는 &quot;승인 시간&quot;과 &quot;취소 시간&quot; 컬럼이 따로 표시됩니다.
             </p>
 
             <div className="space-y-2">
