@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 
 // PATCH: 취소 신청 승인 또는 거부
 //   - 관리자: 본인이 결재자(approver_id == null)인 직원만 처리
@@ -104,7 +104,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       }
 
       if (cancelReq.event_id) {
-        const { error: deleteError } = await supabase
+        const admin = await createAdminClient()
+        const { error: deleteError } = await admin
           .from('cg_events')
           .delete()
           .eq('id', cancelReq.event_id)

@@ -96,6 +96,17 @@ interface AttendanceRecord {
   method: string | null
 }
 
+interface AttendanceHistoryItem {
+  id: string
+  user_id: string
+  date: string
+  checked_in_at: string
+  method: 'gps' | 'office_login'
+  full_name: string
+  color: string
+  team_name: string | null
+}
+
 interface CompanySettings {
   address: string
   latitude: number | null
@@ -111,6 +122,7 @@ interface UserEdit {
   role: string
   team_id: string
   status: string
+  approver_id: string // 'self' = 본인 결재 (NULL 저장)
   dirty: boolean
 }
 
@@ -155,10 +167,20 @@ export default function AdminPage() {
   })
   const [customTo, setCustomTo] = useState<string>(toLocalDateStr())
 
-  // 출석 관리
+  // 출근 관리
   const [attendanceDate, setAttendanceDate] = useState<string>(toLocalDateStr())
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([])
   const [attendanceLoading, setAttendanceLoading] = useState(false)
+
+  // 출근 이력
+  const [attendanceHistory, setAttendanceHistory] = useState<AttendanceHistoryItem[]>([])
+  const [attendanceHistoryOpen, setAttendanceHistoryOpen] = useState(false)
+  const [attendanceDownloadOpen, setAttendanceDownloadOpen] = useState(false)
+  const [attDownloadPeriod, setAttDownloadPeriod] = useState<'1m' | '3m' | 'custom'>('1m')
+  const [attCustomFrom, setAttCustomFrom] = useState<string>(() => {
+    const d = new Date(); d.setMonth(d.getMonth() - 1); return toLocalDateStr(d)
+  })
+  const [attCustomTo, setAttCustomTo] = useState<string>(toLocalDateStr())
 
   // 회사 설정
   const [settings, setSettings] = useState<CompanySettings>({ address: '', latitude: null, longitude: null, radius_meters: 200, attendance_method: 'gps', office_ips: '' })
@@ -167,18 +189,26 @@ export default function AdminPage() {
   const [gpsLoading, setGpsLoading] = useState(false)
 
   const fetchAll = useCallback(async () => {
-    const [usersRes, teamsRes, catsRes, vacRes, cancelRes, historyRes, vacReqRes] = await Promise.all([
+    const [usersRes, teamsRes, catsRes, vacRes, cancelRes, historyRes, vacReqRes, attHistRes] = await Promise.all([
       fetch('/api/admin/users'), fetch('/api/admin/teams'), fetch('/api/admin/categories'),
       fetch('/api/admin/vacation'), fetch('/api/vacation-cancel-requests'),
       fetch('/api/vacation-history'), fetch('/api/vacation/requests'),
+      fetch('/api/admin/attendance/history'),
     ])
     if (vacReqRes.ok) setVacationRequests(await vacReqRes.json())
+    if (attHistRes.ok) setAttendanceHistory(await attHistRes.json())
     if (usersRes.ok) {
       const data: ProfileWithTeam[] = await usersRes.json()
       setUsers(data)
       const initial: Record<string, UserEdit> = {}
       data.forEach(u => {
-        initial[u.id] = { role: u.role, team_id: u.team_id ?? 'none', status: u.status, dirty: false }
+        initial[u.id] = {
+          role: u.role === 'manager' ? 'member' : u.role,
+          team_id: u.team_id ?? 'none',
+          status: u.status,
+          approver_id: u.approver_id ?? 'self',
+          dirty: false,
+        }
       })
       setEdits(initial)
     }
@@ -265,6 +295,7 @@ export default function AdminPage() {
         role: edit.role,
         team_id: edit.team_id === 'none' ? null : edit.team_id,
         status: edit.status,
+        approver_id: edit.approver_id === 'self' ? null : edit.approver_id,
       }),
     })
     setSaving(null)
@@ -488,6 +519,73 @@ export default function AdminPage() {
     showToast(`${filtered.length}건을 다운로드했습니다.`, 'success')
   }
 
+  const downloadAttendanceCSV = () => {
+    let fromTime: number
+    let toTime: number
+    let periodLabel: string
+
+    if (attDownloadPeriod === '1m') {
+      const from = new Date(); from.setMonth(from.getMonth() - 1); from.setHours(0, 0, 0, 0)
+      const to = new Date(); to.setHours(23, 59, 59, 999)
+      fromTime = from.getTime(); toTime = to.getTime()
+      periodLabel = '직전1개월'
+    } else if (attDownloadPeriod === '3m') {
+      const from = new Date(); from.setMonth(from.getMonth() - 3); from.setHours(0, 0, 0, 0)
+      const to = new Date(); to.setHours(23, 59, 59, 999)
+      fromTime = from.getTime(); toTime = to.getTime()
+      periodLabel = '직전3개월'
+    } else {
+      if (!attCustomFrom || !attCustomTo) { showToast('시작일과 종료일을 입력해주세요.', 'error'); return }
+      if (attCustomFrom > attCustomTo) { showToast('시작일이 종료일보다 늦습니다.', 'error'); return }
+      fromTime = new Date(attCustomFrom + 'T00:00:00').getTime()
+      toTime = new Date(attCustomTo + 'T23:59:59.999').getTime()
+      periodLabel = `${attCustomFrom}_${attCustomTo}`
+    }
+
+    const filtered = attendanceHistory.filter(item => {
+      const t = new Date(item.checked_in_at).getTime()
+      return t >= fromTime && t <= toTime
+    })
+
+    if (filtered.length === 0) {
+      showToast('선택한 기간의 이력이 없습니다.', 'error')
+      return
+    }
+
+    const METHOD_LABEL: Record<AttendanceHistoryItem['method'], string> = {
+      gps: 'GPS',
+      office_login: '사무실 PC',
+    }
+
+    const headers = ['일자', '이름', '팀', '출근 시각', '방식']
+    const rows = filtered.map(item => [
+      item.date,
+      item.full_name,
+      item.team_name ?? '',
+      format(parseISO(item.checked_in_at), 'yyyy-MM-dd HH:mm'),
+      METHOD_LABEL[item.method] ?? item.method,
+    ])
+
+    const escapeCsv = (v: unknown) => {
+      const s = String(v ?? '')
+      return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+    }
+    const csv = [headers, ...rows].map(r => r.map(escapeCsv).join(',')).join('\r\n')
+
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `출근이력_${periodLabel}_${toLocalDateStr()}.csv`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+
+    setAttendanceDownloadOpen(false)
+    showToast(`${filtered.length}건을 다운로드했습니다.`, 'success')
+  }
+
   const addCategory = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newCat.name) return
@@ -583,7 +681,7 @@ export default function AdminPage() {
             회원 관리 {pending.length > 0 && <span className="ml-1 text-xs bg-red-500 text-white rounded-full px-1.5">{pending.length}</span>}
           </TabsTrigger>
           <TabsTrigger value="attendance">
-            <ClipboardList className="h-3.5 w-3.5 mr-1" />출석 관리
+            <ClipboardList className="h-3.5 w-3.5 mr-1" />출근 관리
           </TabsTrigger>
           <TabsTrigger value="vacation">
             휴가 관리
@@ -626,6 +724,8 @@ export default function AdminPage() {
             {active.map(user => {
               const edit = edits[user.id]
               if (!edit) return null
+              // 결재자 후보: 활성 관리자 - 본인 제외
+              const adminCandidates = active.filter(u => u.id !== user.id && (edits[u.id]?.role ?? u.role) === 'admin')
               return (
                 <div key={user.id} className="bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded-lg p-3 flex flex-wrap items-center gap-3">
                   <UserAvatar name={user.full_name} color={user.color} size={32} />
@@ -638,10 +738,9 @@ export default function AdminPage() {
                   </div>
                   <Badge variant={edit.status === 'active' ? 'success' : 'danger'}>{STATUS_LABEL[edit.status as keyof typeof STATUS_LABEL]}</Badge>
                   <Select value={edit.role} onValueChange={v => setEdit(user.id, { role: v })}>
-                    <SelectTrigger className="w-20 h-8 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="w-24 h-8 text-xs"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="member">팀원</SelectItem>
-                      <SelectItem value="manager">팀장</SelectItem>
+                      <SelectItem value="member">실무자</SelectItem>
                       <SelectItem value="admin">관리자</SelectItem>
                     </SelectContent>
                   </Select>
@@ -652,6 +751,18 @@ export default function AdminPage() {
                       {teams.map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-[#6B7280] dark:text-[#94A3B8]">결재자</span>
+                    <Select value={edit.approver_id} onValueChange={v => setEdit(user.id, { approver_id: v })}>
+                      <SelectTrigger className="h-8 text-xs min-w-[7rem]"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="self">본인 결재</SelectItem>
+                        {adminCandidates.map(a => (
+                          <SelectItem key={a.id} value={a.id}>{a.full_name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                   <Button
                     size="sm"
                     variant={edit.status === 'active' ? 'secondary' : 'default'}
@@ -669,7 +780,7 @@ export default function AdminPage() {
           </div>
         </TabsContent>
 
-        {/* ── 출석 관리 ─────────────────────────────────────── */}
+        {/* ── 출근 관리 ─────────────────────────────────────── */}
         <TabsContent value="attendance">
           {/* 날짜 네비게이터 */}
           <div className="flex items-center gap-2 mb-4">
@@ -698,7 +809,7 @@ export default function AdminPage() {
               </Button>
             )}
             <span className="ml-auto text-sm text-[#6B7280] dark:text-[#94A3B8]">
-              출석 <span className="font-semibold text-green-600">{attendedCount}</span>명
+              출근 <span className="font-semibold text-green-600">{attendedCount}</span>명
               {' / '}전체 <span className="font-semibold">{attendanceRecords.length}</span>명
             </span>
           </div>
@@ -717,7 +828,7 @@ export default function AdminPage() {
                     <div className="flex items-center gap-1.5">
                       <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
                       <span className="text-sm font-semibold text-green-600 dark:text-green-400">
-                        출석
+                        출근
                       </span>
                       <span className="text-xs text-[#6B7280] dark:text-[#94A3B8]">
                         {format(parseISO(r.checked_in_at), 'HH:mm', { locale: ko })}
@@ -731,7 +842,7 @@ export default function AdminPage() {
                   ) : (
                     <div className="flex items-center gap-1.5">
                       <span className="w-2 h-2 rounded-full bg-[#D1D5DB] dark:bg-[#4B5563] shrink-0" />
-                      <span className="text-sm text-[#9CA3AF] dark:text-[#6B7280]">미출석</span>
+                      <span className="text-sm text-[#9CA3AF] dark:text-[#6B7280]">미출근</span>
                     </div>
                   )}
                 </div>
@@ -741,6 +852,73 @@ export default function AdminPage() {
               )}
             </div>
           )}
+
+          {/* ── 출근 이력 ─────────────────────────────────────── */}
+          <div className="mt-6">
+            <div className="flex items-center justify-between mb-2">
+              <button
+                type="button"
+                onClick={() => setAttendanceHistoryOpen(o => !o)}
+                className="flex-1 flex items-center justify-between text-sm font-semibold text-[#6B7280] dark:text-[#94A3B8] hover:text-[#374151] dark:hover:text-[#D1D5DB] transition-colors"
+              >
+                <span className="flex items-center gap-1.5">
+                  <ClipboardList className="h-4 w-4" />
+                  출근 이력
+                  <span className="text-xs bg-[#E5E7EB] dark:bg-[#374151] text-[#374151] dark:text-[#D1D5DB] rounded-full px-1.5">
+                    {attendanceHistory.length}건
+                  </span>
+                </span>
+                {attendanceHistoryOpen
+                  ? <ChevronUp className="h-4 w-4" />
+                  : <ChevronDown className="h-4 w-4" />}
+              </button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="ml-2 h-7 px-2 text-xs"
+                onClick={() => setAttendanceDownloadOpen(true)}
+                disabled={attendanceHistory.length === 0}
+                title="출근 이력을 CSV로 다운로드"
+              >
+                <Download className="h-3.5 w-3.5 mr-1" />
+                다운로드
+              </Button>
+            </div>
+            {attendanceHistoryOpen && (
+              attendanceHistory.length === 0 ? (
+                <div className="text-xs text-[#9CA3AF] dark:text-[#6B7280] bg-[#F9FAFB] dark:bg-[#1E293B]/40 border border-dashed border-[#E5E7EB] dark:border-[#334155] rounded-lg px-4 py-6 text-center">
+                  출근 이력이 없습니다.
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-[480px] overflow-y-auto pr-1">
+                  {attendanceHistory.map(item => (
+                    <div key={item.id} className="bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded-lg px-3 py-2 flex items-center gap-3">
+                      <UserAvatar name={item.full_name} color={item.color} size={28} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium dark:text-[#F1F5F9]">{item.full_name}</p>
+                        <p className="text-[11px] text-[#6B7280] dark:text-[#94A3B8]">
+                          {item.team_name ?? '팀 없음'}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs font-medium text-[#374151] dark:text-[#D1D5DB]">
+                          {format(parseISO(item.date), 'yyyy-MM-dd')}
+                        </p>
+                        <p className="text-[11px] text-[#6B7280] dark:text-[#94A3B8]">
+                          {format(parseISO(item.checked_in_at), 'HH:mm', { locale: ko })}
+                        </p>
+                      </div>
+                      {item.method === 'office_login' ? (
+                        <span className="text-[10px] bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300 rounded px-1.5 py-0.5 shrink-0">🖥️ 사무실</span>
+                      ) : (
+                        <span className="text-[10px] bg-green-100 dark:bg-green-900/40 text-green-600 dark:text-green-300 rounded px-1.5 py-0.5 shrink-0">📍 GPS</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )
+            )}
+          </div>
         </TabsContent>
 
         {/* ── 휴가 관리 ─────────────────────────────────────── */}
@@ -1135,11 +1313,11 @@ export default function AdminPage() {
         <TabsContent value="settings">
           <form onSubmit={saveSettings} className="space-y-4 max-w-md">
 
-            {/* 출석 체크 방식 선택 */}
+            {/* 출근 체크 방식 선택 */}
             <div className="bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded-xl p-5 space-y-3">
               <div className="flex items-center gap-2 mb-1">
                 <Settings className="h-4 w-4 text-[#2563EB]" />
-                <h2 className="text-sm font-semibold text-[#111827] dark:text-[#F1F5F9]">출석 체크 방식</h2>
+                <h2 className="text-sm font-semibold text-[#111827] dark:text-[#F1F5F9]">출근 체크 방식</h2>
               </div>
               <div className="flex gap-3">
                 {(['gps', 'ip'] as const).map(method => (
@@ -1168,7 +1346,7 @@ export default function AdminPage() {
                   <h2 className="text-sm font-semibold text-[#111827] dark:text-[#F1F5F9]">회사 위치 설정</h2>
                 </div>
                 <p className="text-xs text-[#6B7280] dark:text-[#94A3B8]">
-                  GPS 출석 체크 기준 위치입니다. 주소와 좌표를 입력하거나 현재 위치를 사용하세요.
+                  GPS 출근 체크 기준 위치입니다. 주소와 좌표를 입력하거나 현재 위치를 사용하세요.
                 </p>
 
                 <div>
@@ -1215,7 +1393,7 @@ export default function AdminPage() {
                 </Button>
 
                 <div>
-                  <label className="block text-sm font-medium mb-1">출석 인정 반경 (미터)</label>
+                  <label className="block text-sm font-medium mb-1">출근 인정 반경 (미터)</label>
                   <Input
                     type="number"
                     min={50}
@@ -1224,7 +1402,7 @@ export default function AdminPage() {
                     onChange={e => { setSettings(s => ({ ...s, radius_meters: Number(e.target.value) })); setSettingsDirty(true) }}
                   />
                   <p className="text-xs text-[#6B7280] dark:text-[#94A3B8] mt-1">
-                    회사 위치로부터 이 반경 내에서 출석 체크가 가능합니다. (기본: 200m)
+                    회사 위치로부터 이 반경 내에서 출근 체크가 가능합니다. (기본: 200m)
                   </p>
                 </div>
 
@@ -1245,7 +1423,7 @@ export default function AdminPage() {
                   <h2 className="text-sm font-semibold text-[#111827] dark:text-[#F1F5F9]">허용 IP 주소 설정</h2>
                 </div>
                 <p className="text-xs text-[#6B7280] dark:text-[#94A3B8]">
-                  사무실 네트워크 IP를 쉼표로 구분하여 입력하세요. 이 IP에서만 출석 체크가 가능합니다.
+                  사무실 네트워크 IP를 쉼표로 구분하여 입력하세요. 이 IP에서만 출근 체크가 가능합니다.
                 </p>
                 <div>
                   <label className="block text-sm font-medium mb-1">허용 IP 목록</label>
@@ -1380,6 +1558,85 @@ export default function AdminPage() {
                 취소
               </Button>
               <Button className="flex-1" onClick={downloadHistoryCSV}>
+                <Download className="h-4 w-4 mr-1" />
+                다운로드
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 출근 이력 다운로드 다이얼로그 */}
+      <Dialog open={attendanceDownloadOpen} onOpenChange={open => { if (!open) setAttendanceDownloadOpen(false) }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Download className="h-4 w-4" />
+              출근 이력 다운로드
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 pt-1">
+            <p className="text-xs text-[#6B7280] dark:text-[#94A3B8]">
+              다운로드할 기간을 선택하세요. CSV 파일로 저장됩니다.
+            </p>
+
+            <div className="space-y-2">
+              {([
+                { key: '1m', label: '직전 1개월' },
+                { key: '3m', label: '직전 3개월' },
+                { key: 'custom', label: '기간 직접 설정' },
+              ] as const).map(opt => (
+                <label
+                  key={opt.key}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer text-sm transition-colors ${
+                    attDownloadPeriod === opt.key
+                      ? 'border-[#2563EB] bg-[#EFF6FF] dark:bg-[#1E3A5F] text-[#2563EB] dark:text-[#93C5FD]'
+                      : 'border-[#E5E7EB] dark:border-[#334155] text-[#374151] dark:text-[#D1D5DB] hover:border-[#9CA3AF]'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="att-download-period"
+                    value={opt.key}
+                    checked={attDownloadPeriod === opt.key}
+                    onChange={() => setAttDownloadPeriod(opt.key)}
+                    className="accent-[#2563EB]"
+                  />
+                  <span>{opt.label}</span>
+                </label>
+              ))}
+            </div>
+
+            {attDownloadPeriod === 'custom' && (
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <div>
+                  <label className="block text-[11px] text-[#6B7280] dark:text-[#94A3B8] mb-1">시작일</label>
+                  <Input
+                    type="date"
+                    value={attCustomFrom}
+                    max={attCustomTo || undefined}
+                    onChange={e => setAttCustomFrom(e.target.value)}
+                    className="text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-[#6B7280] dark:text-[#94A3B8] mb-1">종료일</label>
+                  <Input
+                    type="date"
+                    value={attCustomTo}
+                    min={attCustomFrom || undefined}
+                    onChange={e => setAttCustomTo(e.target.value)}
+                    className="text-sm"
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-2 pt-2">
+              <Button variant="outline" className="flex-1" onClick={() => setAttendanceDownloadOpen(false)}>
+                취소
+              </Button>
+              <Button className="flex-1" onClick={downloadAttendanceCSV}>
                 <Download className="h-4 w-4 mr-1" />
                 다운로드
               </Button>

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 
 // PATCH: 휴가 신청 승인/거부
 //   - 관리자: 대상 신청의 approver_id가 NULL일 때만 처리
@@ -60,8 +60,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const reviewedAt = new Date().toISOString()
 
     if (action === 'approve') {
-      // 1) cg_events 생성
-      const { data: event, error: eventErr } = await supabase
+      // 1) cg_events 생성 — 결재자가 신청자 명의로 휴가 일정을 만들기 위해 admin client 사용 (RLS 우회)
+      const admin = await createAdminClient()
+      const { data: event, error: eventErr } = await admin
         .from('cg_events')
         .insert({
           title: r.title,

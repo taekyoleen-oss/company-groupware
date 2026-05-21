@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
     const allowedIps = (settings.office_ips ?? '')
       .split(',').map((s: string) => s.trim()).filter(Boolean)
     if (!allowedIps.includes(ip)) {
-      return NextResponse.json({ error: '사무실 네트워크에서만 출석 체크가 가능합니다.' }, { status: 403 })
+      return NextResponse.json({ error: '사무실 네트워크에서만 출근 체크가 가능합니다.' }, { status: 403 })
     }
   }
 
@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
 
   if (existing) {
     return NextResponse.json(
-      { error: '이미 출석 확인이 완료되었습니다.', checked_in_at: existing.checked_in_at },
+      { error: '이미 출근 확인이 완료되었습니다.', checked_in_at: existing.checked_in_at },
       { status: 409 }
     )
   }

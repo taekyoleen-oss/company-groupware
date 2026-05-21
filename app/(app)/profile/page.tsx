@@ -20,7 +20,7 @@ import type { ProfileWithTeam, Team } from '@/types/app'
 
 const ROLE_LABEL = { admin: '관리자', manager: '팀장', member: '팀원' }
 
-type TabKey = '설정' | '출석' | '휴가' | '인사관리' | '비밀번호'
+type TabKey = '설정' | '출근' | '휴가' | '인사관리' | '비밀번호'
 
 interface VacHistory {
   id: string
@@ -175,7 +175,7 @@ function InfoRow({
 
 const TABS: { key: TabKey; icon: React.ReactNode; label: string }[] = [
   { key: '설정',      icon: <Settings className="h-3.5 w-3.5" />,      label: '설정' },
-  { key: '출석',      icon: <CheckCircle2 className="h-3.5 w-3.5" />, label: '출석' },
+  { key: '출근',      icon: <CheckCircle2 className="h-3.5 w-3.5" />, label: '출근' },
   { key: '휴가',      icon: <Sun className="h-3.5 w-3.5" />,           label: '휴가' },
   { key: '인사관리',  icon: <IdCard className="h-3.5 w-3.5" />,        label: '인사관리' },
   { key: '비밀번호',  icon: <Lock className="h-3.5 w-3.5" />,          label: '비밀번호' },
@@ -380,12 +380,12 @@ export default function ProfilePage() {
     const data = await res.json()
     if (res.ok) {
       setTodayAttendance({ checked_in_at: data.checked_in_at, method: data.method })
-      showToast('출석이 확인되었습니다.', 'success')
+      showToast('출근이 확인되었습니다.', 'success')
     } else if (res.status === 409) {
       setTodayAttendance({ checked_in_at: data.checked_in_at, method: data.method })
-      showToast('이미 출석 처리되었습니다.', 'success')
+      showToast('이미 출근 처리되었습니다.', 'success')
     } else {
-      showToast(data.error ?? '출석 확인에 실패했습니다.', 'error')
+      showToast(data.error ?? '출근 확인에 실패했습니다.', 'error')
     }
     setCheckingIn(false)
   }
@@ -529,8 +529,8 @@ export default function ProfilePage() {
         </div>
       )}
 
-      {/* ── 출석 탭 ── */}
-      {activeTab === '출석' && (
+      {/* ── 출근 탭 ── */}
+      {activeTab === '출근' && (
         <div className="bg-white dark:bg-[#1E293B] rounded-xl border border-[#E5E7EB] dark:border-[#334155] p-6">
           {companySettings === null ? (
             <p className="text-sm text-[#6B7280] dark:text-[#94A3B8] text-center py-4">불러오는 중...</p>
@@ -541,7 +541,7 @@ export default function ProfilePage() {
                   ? <Wifi className="h-4 w-4 text-blue-500" />
                   : <MapPin className="h-4 w-4 text-blue-500" />
                 }
-                <h2 className="text-sm font-semibold text-[#111827] dark:text-[#F1F5F9]">오늘 출석 확인</h2>
+                <h2 className="text-sm font-semibold text-[#111827] dark:text-[#F1F5F9]">오늘 출근 확인</h2>
                 <span className="ml-auto text-xs text-[#9CA3AF] dark:text-[#64748B]">
                   {getLocalDateStr().replace(/-/g, '.')}
                 </span>
@@ -551,7 +551,7 @@ export default function ProfilePage() {
                 <div className="flex items-center gap-3 rounded-lg bg-green-50 dark:bg-green-950/30 px-4 py-3">
                   <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400 shrink-0" />
                   <div>
-                    <p className="text-sm font-medium text-green-700 dark:text-green-300">출석 완료</p>
+                    <p className="text-sm font-medium text-green-700 dark:text-green-300">출근 완료</p>
                     <p className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1 mt-0.5">
                       <Clock className="h-3 w-3" />
                       {todayAttendance?.method === 'office_login'
@@ -580,7 +580,7 @@ export default function ProfilePage() {
                   )}
                   {ipStatus === 'idle' && (
                     <p className="text-sm text-[#6B7280] dark:text-[#94A3B8] text-center py-2">
-                      출석 확인 버튼을 눌러 네트워크를 확인하세요.
+                      출근 확인 버튼을 눌러 네트워크를 확인하세요.
                     </p>
                   )}
                   <div className="flex gap-2">
@@ -588,7 +588,7 @@ export default function ProfilePage() {
                       <Wifi className="h-3.5 w-3.5 mr-1" />재확인
                     </Button>
                     <Button type="button" className="flex-1" disabled={ipStatus !== 'allowed' || checkingIn} onClick={handleCheckIn}>
-                      <CheckCircle2 className="h-4 w-4 mr-1.5" />{checkingIn ? '처리 중...' : '출석 확인'}
+                      <CheckCircle2 className="h-4 w-4 mr-1.5" />{checkingIn ? '처리 중...' : '출근 확인'}
                     </Button>
                   </div>
                 </div>
@@ -609,7 +609,7 @@ export default function ProfilePage() {
                   )}
                   {gpsStatus === 'idle' && (
                     <p className="text-sm text-[#6B7280] dark:text-[#94A3B8] text-center py-2">
-                      위치 확인 버튼을 눌러 출석 가능 여부를 확인하세요.
+                      위치 확인 버튼을 눌러 출근 가능 여부를 확인하세요.
                     </p>
                   )}
                   {(gpsStatus === 'near' || gpsStatus === 'far') && distanceMeters !== null && (
@@ -623,7 +623,7 @@ export default function ProfilePage() {
                       <span>
                         회사까지 {distanceMeters.toLocaleString()}m
                         {gpsStatus === 'near'
-                          ? ' — 출석 가능 범위입니다.'
+                          ? ' — 출근 가능 범위입니다.'
                           : ` — 반경 ${companySettings.radius_meters}m 이내로 이동하세요.`}
                       </span>
                     </div>
@@ -635,7 +635,7 @@ export default function ProfilePage() {
                       <Navigation className="h-3.5 w-3.5 mr-1" />위치 재확인
                     </Button>
                     <Button type="button" className="flex-1" disabled={gpsStatus !== 'near' || checkingIn} onClick={handleCheckIn}>
-                      <CheckCircle2 className="h-4 w-4 mr-1.5" />{checkingIn ? '처리 중...' : '출석 확인'}
+                      <CheckCircle2 className="h-4 w-4 mr-1.5" />{checkingIn ? '처리 중...' : '출근 확인'}
                     </Button>
                   </div>
                 </div>
