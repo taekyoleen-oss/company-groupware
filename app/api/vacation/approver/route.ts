@@ -12,6 +12,9 @@ function calcDays(startAt: string, endAt: string, isAllDay: boolean): number {
 }
 
 // GET: 본인이 결재자인 직원들의 휴가 현황 + 대기 취소요청 + 대기 신청건
+//   - 일반 결재자(manager): 본인이 결재자로 지정된 직원만
+//   - 사장님 팀(team.name='사장님') 소속 사용자: 전체 활성 직원
+//   - 앱관리자(super_admin): 전체 활성 직원
 export async function GET() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -19,20 +22,50 @@ export async function GET() {
 
   const currentYear = new Date().getFullYear()
 
-  const { data: employees, error: empErr } = await supabase
+  // 호출자 프로필 + 팀명 조회 (사장님 팀 / super_admin 여부 판정용)
+  const { data: meProfile } = await supabase
+    .from('cg_profiles')
+    .select('id, is_super_admin, team:cg_teams(name)')
+    .eq('id', user.id)
+    .single()
+
+  const isSuper = (meProfile as any)?.is_super_admin === true
+  const isPresidentTeam = ((meProfile as any)?.team?.name ?? '') === '사장님'
+  const seesAllEmployees = isSuper || isPresidentTeam
+
+  // employees 쿼리: 사장님 팀/super 면 전 직원, 그 외엔 본인 결재자인 직원
+  let empQuery = supabase
     .from('cg_profiles')
     .select('id, full_name, color, team_id, role, status')
-    .eq('approver_id', user.id)
     .neq('status', 'pending')
+    .neq('id', user.id) // 본인 제외
     .order('full_name')
+
+  if (!seesAllEmployees) {
+    empQuery = empQuery.eq('approver_id', user.id)
+  }
+
+  const { data: employees, error: empErr } = await empQuery
 
   if (empErr) return NextResponse.json({ error: empErr.message }, { status: 500 })
 
   const employeeIds = (employees ?? []).map(e => e.id)
 
+  // 결재 가능한 요청의 범위 — 본인이 결재자(approver_id=me)로 지정된 직원들
+  // 사장님/super 도 본인이 직접 결재자인 직원만 결재 가능. 전직원은 "표시"만.
+  const { data: myDirectReports } = await supabase
+    .from('cg_profiles')
+    .select('id')
+    .eq('approver_id', user.id)
+  const approvalScopeIds = (myDirectReports ?? []).map(r => r.id)
+
   if (employeeIds.length === 0) {
     return NextResponse.json({ employees: [], cancel_requests: [], vacation_requests: [] })
   }
+
+  // Supabase 의 .in() 은 빈 배열을 허용하지 않으므로 비어있을 땐 sentinel id 사용
+  const SAFE_EMPTY = ['00000000-0000-0000-0000-000000000000']
+  const approvalScopeFilter = approvalScopeIds.length > 0 ? approvalScopeIds : SAFE_EMPTY
 
   const [allocsRes, eventsRes, pendingsRes, cancelReqsRes, vacReqsRes] = await Promise.all([
     supabase
@@ -54,6 +87,7 @@ export async function GET() {
       .eq('status', 'pending')
       .gte('start_at', `${currentYear - 1}-12-22T00:00:00.000Z`)
       .lte('start_at', `${currentYear}-12-31T23:59:59.999Z`),
+    // 취소 신청: 본인이 결재할 수 있는 직원의 건만 표시
     supabase
       .from('cg_vacation_cancel_requests')
       .select(`
@@ -62,8 +96,9 @@ export async function GET() {
         reviewer:cg_profiles!reviewed_by(id, full_name, color),
         event:cg_events(id, title, start_at, end_at, is_all_day)
       `)
-      .in('requested_by', employeeIds)
+      .in('requested_by', approvalScopeFilter)
       .order('created_at', { ascending: false }),
+    // 휴가 신청: approver_id 가 본인인 것만
     supabase
       .from('cg_vacation_requests')
       .select(`

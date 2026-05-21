@@ -193,6 +193,8 @@ export default function AdminPage() {
   // 휴가 처리 이력 다운로드 — 승인/취소를 한 파일로 함께 받음
   const [downloadOpen, setDownloadOpen] = useState(false)
   const [downloadPeriod, setDownloadPeriod] = useState<'1m' | '3m' | 'custom'>('1m')
+  // 본인 결재(자기결재 자동 승인) 포함 여부 — 기본 포함
+  const [includeSelfApproved, setIncludeSelfApproved] = useState(true)
   const [customFrom, setCustomFrom] = useState<string>(() => {
     const d = new Date(); d.setMonth(d.getMonth() - 1); return toLocalDateStr(d)
   })
@@ -529,10 +531,13 @@ export default function AdminPage() {
     // 승인/취소 4종을 모두 포함해 한 파일로 다운로드.
     // 시간 컬럼은 "승인 시간" / "취소 시간" 두 컬럼으로 나누어,
     // 같은 휴가가 승인됐다가 취소된 경우 두 시점이 명확히 구분되게 한다.
+    // 본인 결재 자동 승인분(reviewer 가 없는 grant) 은 체크박스로 포함 여부 제어.
     const filtered = historyItems.filter(item => {
       if (!item.happened_at) return false
       const t = new Date(item.happened_at).getTime()
-      return t >= fromTime && t <= toTime
+      if (t < fromTime || t > toTime) return false
+      if (!includeSelfApproved && item.kind === 'grant' && !item.reviewer) return false
+      return true
     })
 
     if (filtered.length === 0) {
@@ -1745,6 +1750,18 @@ export default function AdminPage() {
                 </div>
               </div>
             )}
+
+            {/* 본인 결재(자기결재 자동 승인) 포함 여부 — 결재자/앱관리자가 본인 휴가를
+                자동 승인한 건은 reviewer 가 없다. 기본은 포함. */}
+            <label className="flex items-center gap-2 pt-1 cursor-pointer text-sm text-[#374151] dark:text-[#D1D5DB]">
+              <input
+                type="checkbox"
+                checked={includeSelfApproved}
+                onChange={e => setIncludeSelfApproved(e.target.checked)}
+                className="h-4 w-4 accent-[#2563EB]"
+              />
+              <span>본인 결재(자기 결재 자동 승인) 포함</span>
+            </label>
 
             <div className="flex gap-2 pt-2">
               <Button variant="outline" className="flex-1" onClick={() => setDownloadOpen(false)}>

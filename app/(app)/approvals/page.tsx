@@ -2,11 +2,10 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Check, X, Save, Sun, CheckCircle, ClipboardCheck } from 'lucide-react'
+import { Check, X, Save, Sun, CheckCircle, XCircle, ClipboardCheck, ChevronDown, ChevronUp, ClipboardList } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { Badge } from '@/components/ui/badge'
 import { UserAvatar } from '@/components/ui/avatar'
 import { useToast } from '@/components/ui/toast'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -58,6 +57,19 @@ interface CancelReq {
   event: { id: string; title: string; start_at: string; end_at: string; is_all_day: boolean } | null
 }
 
+interface HistoryItem {
+  id: string
+  kind: 'grant' | 'cancel_approved' | 'cancel_rejected' | 'request_rejected'
+  happened_at: string
+  requester: { id: string; full_name: string; color: string } | null
+  event_title: string
+  event_start_at: string | null
+  event_end_at: string | null
+  event_is_all_day: boolean
+  reviewer: { id: string; full_name: string; color: string } | null
+  reason: string | null
+}
+
 // 결재자(관리자) 전용 페이지.
 // /admin 은 앱관리자 전용이고, 이 페이지는 본인이 결재자로 지정된 직원만 다룬다.
 export default function ApprovalsPage() {
@@ -70,18 +82,31 @@ export default function ApprovalsPage() {
   const [vacEdits, setVacEdits] = useState<Record<string, number>>({})
   const [vacSaving, setVacSaving] = useState<string | null>(null)
   const [approveDone, setApproveDone] = useState<null | 'cancel' | 'vac'>(null)
+  // 활성 탭 — 승인 후 직원 휴가 탭으로 자동 전환
+  const [activeTab, setActiveTab] = useState<string>('requests')
+  // 직원 휴가 처리 이력 (결재자 범위)
+  const [historyItems, setHistoryItems] = useState<HistoryItem[]>([])
+  const [historyOpen, setHistoryOpen] = useState(false)
 
   const fetchAll = useCallback(async () => {
-    const res = await fetch('/api/vacation/approver')
-    if (!res.ok) return
-    const data = await res.json()
-    const emps: EmpSummary[] = Array.isArray(data.employees) ? data.employees : []
-    setEmployees(emps)
-    const initVac: Record<string, number> = {}
-    emps.forEach(e => { initVac[e.id] = e.total_days })
-    setVacEdits(initVac)
-    setVacReqs(Array.isArray(data.vacation_requests) ? data.vacation_requests : [])
-    setCancelReqs(Array.isArray(data.cancel_requests) ? data.cancel_requests : [])
+    const [approverRes, historyRes] = await Promise.all([
+      fetch('/api/vacation/approver'),
+      fetch('/api/vacation-history'),
+    ])
+    if (approverRes.ok) {
+      const data = await approverRes.json()
+      const emps: EmpSummary[] = Array.isArray(data.employees) ? data.employees : []
+      setEmployees(emps)
+      const initVac: Record<string, number> = {}
+      emps.forEach(e => { initVac[e.id] = e.total_days })
+      setVacEdits(initVac)
+      setVacReqs(Array.isArray(data.vacation_requests) ? data.vacation_requests : [])
+      setCancelReqs(Array.isArray(data.cancel_requests) ? data.cancel_requests : [])
+    }
+    if (historyRes.ok) {
+      const items: HistoryItem[] = await historyRes.json()
+      setHistoryItems(Array.isArray(items) ? items : [])
+    }
   }, [])
 
   useEffect(() => { fetchAll() }, [fetchAll])
@@ -197,7 +222,7 @@ export default function ApprovalsPage() {
         </div>
       )}
 
-      <Tabs defaultValue="requests">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="mb-4 flex-wrap">
           <TabsTrigger value="requests">
             신청 결재 {pendingVac.length > 0 && <span className="ml-1 text-xs bg-orange-500 text-white rounded-full px-1.5">{pendingVac.length}</span>}
@@ -205,7 +230,7 @@ export default function ApprovalsPage() {
           <TabsTrigger value="cancels">
             취소 결재 {pendingCancel.length > 0 && <span className="ml-1 text-xs bg-orange-500 text-white rounded-full px-1.5">{pendingCancel.length}</span>}
           </TabsTrigger>
-          <TabsTrigger value="employees">내 결재 직원 ({employees.length})</TabsTrigger>
+          <TabsTrigger value="employees">직원 휴가 ({employees.length})</TabsTrigger>
         </TabsList>
 
         {/* 휴가 신청 결재 */}
@@ -272,10 +297,11 @@ export default function ApprovalsPage() {
           )}
         </TabsContent>
 
-        {/* 내 결재 직원 */}
+        {/* 직원 휴가 — 본인이 결재자인 직원 목록 + 휴가 잔여/총휴가 편집 + 처리 이력
+            (사장님 팀 / 앱관리자는 전직원이 표시됨) */}
         <TabsContent value="employees">
           {employees.length === 0 ? (
-            <p className="text-sm text-[#9CA3AF] text-center py-8">결재 지정된 직원이 없습니다. 앱관리자에게 결재자 지정을 요청하세요.</p>
+            <p className="text-sm text-[#9CA3AF] text-center py-8">표시할 직원이 없습니다. 앱관리자에게 결재자 지정을 요청하세요.</p>
           ) : (
             <div className="space-y-2">
               {employees.map(e => (
@@ -307,25 +333,100 @@ export default function ApprovalsPage() {
               ))}
             </div>
           )}
+
+          {/* 휴가 처리 이력 — 결재자 범위 (사장님 팀이면 전직원) */}
+          <div className="mt-6">
+            <button
+              type="button"
+              onClick={() => setHistoryOpen(o => !o)}
+              className="w-full flex items-center justify-between text-sm font-semibold text-[#6B7280] dark:text-[#94A3B8] hover:text-[#374151] dark:hover:text-[#D1D5DB] transition-colors mb-2"
+            >
+              <span className="flex items-center gap-1.5">
+                <ClipboardList className="h-4 w-4" />
+                휴가 처리 이력
+                <span className="text-xs bg-[#E5E7EB] dark:bg-[#374151] text-[#374151] dark:text-[#D1D5DB] rounded-full px-1.5">
+                  {historyItems.length}건
+                </span>
+              </span>
+              {historyOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </button>
+            {historyOpen && (
+              historyItems.length === 0 ? (
+                <p className="text-xs text-[#9CA3AF] dark:text-[#6B7280] bg-[#F9FAFB] dark:bg-[#1E293B]/40 border border-dashed border-[#E5E7EB] dark:border-[#334155] rounded-lg px-4 py-6 text-center">
+                  아직 처리 이력이 없습니다.
+                </p>
+              ) : (
+                <div className="space-y-1.5">
+                  {historyItems.map(item => {
+                    const sd = item.event_start_at
+                      ? (item.event_is_all_day ? format(parseISO(item.event_start_at), 'M월 d일', { locale: ko }) : format(parseISO(item.event_start_at), 'M월 d일 HH:mm', { locale: ko }))
+                      : '-'
+                    const ed = item.event_end_at
+                      ? (item.event_is_all_day ? format(parseISO(item.event_end_at), 'M월 d일', { locale: ko }) : format(parseISO(item.event_end_at), 'HH:mm'))
+                      : ''
+                    const happenedLabel = item.happened_at ? format(parseISO(item.happened_at), 'yyyy.M.d HH:mm', { locale: ko }) : '-'
+                    const timeLabel = (item.kind === 'grant' || item.kind === 'request_rejected') ? '승인 시간' : '취소 시간'
+                    const k = item.kind === 'grant'
+                      ? { badge: 'text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/40', label: '휴가 승인', icon: <CheckCircle className="h-3 w-3" /> }
+                      : item.kind === 'cancel_approved'
+                      ? { badge: 'text-green-700 dark:text-green-400 bg-green-100 dark:bg-green-900/40', label: '취소 승인', icon: <CheckCircle className="h-3 w-3" /> }
+                      : item.kind === 'cancel_rejected'
+                      ? { badge: 'text-[#6B7280] dark:text-[#94A3B8] bg-[#F3F4F6] dark:bg-[#374151]', label: '취소 거부', icon: <XCircle className="h-3 w-3" /> }
+                      : { badge: 'text-red-700 dark:text-red-300 bg-red-100 dark:bg-red-900/40', label: '신청 거부', icon: <XCircle className="h-3 w-3" /> }
+                    return (
+                      <div key={item.id} className="bg-white dark:bg-[#1E293B] rounded-lg px-3 py-2 border border-[#E5E7EB] dark:border-[#334155] flex flex-wrap items-center gap-2">
+                        <UserAvatar name={item.requester?.full_name ?? ''} color={item.requester?.color ?? '#6B7280'} size={24} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs dark:text-[#F1F5F9] truncate">
+                            <span className="font-medium">{item.requester?.full_name}</span>
+                            <span className="text-[#6B7280] dark:text-[#94A3B8]"> · {item.event_title} · {sd}{ed && sd !== ed && ` ~ ${ed}`}</span>
+                          </p>
+                          <p className="text-[10px] text-[#9CA3AF] dark:text-[#6B7280] mt-0.5">
+                            <span className="font-medium">{timeLabel}:</span> {happenedLabel}
+                            {item.reviewer?.full_name && ` · ${item.reviewer.full_name}`}
+                          </p>
+                        </div>
+                        <span className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${k.badge}`}>
+                          {k.icon}{k.label}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            )}
+          </div>
         </TabsContent>
       </Tabs>
 
-      <Dialog open={approveDone !== null} onOpenChange={open => { if (!open) { setApproveDone(null); fetchAll(); window.dispatchEvent(new CustomEvent('vacation-cancel-approved')) } }}>
-        <DialogContent className="max-w-xs text-center">
-          <DialogHeader>
-            <div className="flex flex-col items-center gap-3 py-4">
-              <div className="flex items-center justify-center w-16 h-16 rounded-full bg-green-100 dark:bg-green-900/40">
-                <CheckCircle className="h-9 w-9 text-green-500" />
-              </div>
-              <DialogTitle className="text-lg font-bold text-[#111827] dark:text-[#F1F5F9]">승인 완료</DialogTitle>
-              <p className="text-sm text-[#6B7280] dark:text-[#94A3B8]">
-                {approveDone === 'cancel' ? '휴가 취소가 승인되었습니다.' : '휴가 신청이 승인되었습니다.'}
-              </p>
-              <Button className="w-full mt-2" onClick={() => { setApproveDone(null); fetchAll(); window.dispatchEvent(new CustomEvent('vacation-cancel-approved')) }}>확인</Button>
-            </div>
-          </DialogHeader>
-        </DialogContent>
-      </Dialog>
+      {(() => {
+        const finishApprove = () => {
+          setApproveDone(null)
+          setHistoryOpen(false)
+          // 결과 확인을 위해 직원 휴가 탭으로 전환
+          setActiveTab('employees')
+          fetchAll()
+          window.dispatchEvent(new CustomEvent('vacation-cancel-approved'))
+        }
+        return (
+          <Dialog open={approveDone !== null} onOpenChange={open => { if (!open) finishApprove() }}>
+            <DialogContent className="max-w-xs text-center">
+              <DialogHeader>
+                <div className="flex flex-col items-center gap-3 py-4">
+                  <div className="flex items-center justify-center w-16 h-16 rounded-full bg-green-100 dark:bg-green-900/40">
+                    <CheckCircle className="h-9 w-9 text-green-500" />
+                  </div>
+                  <DialogTitle className="text-lg font-bold text-[#111827] dark:text-[#F1F5F9]">승인 완료</DialogTitle>
+                  <p className="text-sm text-[#6B7280] dark:text-[#94A3B8]">
+                    {approveDone === 'cancel' ? '휴가 취소가 승인되었습니다.' : '휴가 신청이 승인되었습니다.'}
+                  </p>
+                  <Button className="w-full mt-2" onClick={finishApprove}>확인</Button>
+                </div>
+              </DialogHeader>
+            </DialogContent>
+          </Dialog>
+        )
+      })()}
 
       {ToastComponent}
     </div>
