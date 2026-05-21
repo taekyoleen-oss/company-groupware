@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { isSuperAdmin } from '@/lib/auth/roles'
 
 // PATCH: 휴가 관련 직원 속성 변경
-//   - total_days: 관리자(본인이 결재) 또는 본인이 결재자인 결재자
-//   - approver_id: 관리자만
+//   - total_days: 앱관리자(대상의 approver=null) 또는 본인이 결재자인 결재자
+//   - approver_id: 앱관리자만
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ userId: string }> }
@@ -15,13 +16,13 @@ export async function PATCH(
 
   const { data: me } = await supabase
     .from('cg_profiles')
-    .select('id, role')
+    .select('id, role, is_super_admin')
     .eq('id', user.id)
     .single()
 
   if (!me) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
-  const isAdmin = me.role === 'admin'
+  const isAdmin = isSuperAdmin(me)
 
   // 대상 직원 정보 (결재자 확인용)
   const { data: target, error: targetErr } = await supabase
@@ -40,10 +41,10 @@ export async function PATCH(
   const body = await request.json().catch(() => ({}))
   const { total_days, approver_id } = body as { total_days?: unknown; approver_id?: unknown }
 
-  // 1) approver_id 변경: 관리자만
+  // 1) approver_id 변경: 앱관리자만
   if (approver_id !== undefined) {
     if (!isAdmin) {
-      return NextResponse.json({ error: '결재자 지정은 관리자만 가능합니다.' }, { status: 403 })
+      return NextResponse.json({ error: '결재자 지정은 앱관리자만 가능합니다.' }, { status: 403 })
     }
     let newApprover: string | null = null
     if (approver_id !== null) {

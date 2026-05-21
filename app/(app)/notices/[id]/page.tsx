@@ -26,8 +26,9 @@ export default async function NoticeDetailPage({ params }: { params: Promise<{ i
   const notice = noticeData as any
   let isAdmin = false
   if (user) {
-    const { data: profile } = await supabase.from('cg_profiles').select('role').eq('id', user.id).single()
-    isAdmin = profile?.role === 'admin'
+    const { data: profile } = await supabase.from('cg_profiles').select('role, is_super_admin').eq('id', user.id).single()
+    isAdmin = (profile as any)?.is_super_admin === true
+      || ((profile as any)?.is_super_admin == null && profile?.role === 'admin')
   }
 
   const canEdit = isAdmin || (user?.id === notice.created_by)

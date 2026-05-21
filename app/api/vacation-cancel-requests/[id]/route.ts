@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { isSuperAdmin } from '@/lib/auth/roles'
 
 // PATCH: 취소 신청 승인 또는 거부
 //   - 관리자: 본인이 결재자(approver_id == null)인 직원만 처리
@@ -13,12 +14,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
     const { data: me } = await supabase
       .from('cg_profiles')
-      .select('id, role, full_name')
+      .select('id, role, is_super_admin, full_name')
       .eq('id', user.id)
       .single()
     if (!me) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
-    const isAdmin = (me as any).role === 'admin'
+    const isAdmin = isSuperAdmin(me)
 
     const body = await request.json().catch(() => ({}))
     const action = (body as any).action

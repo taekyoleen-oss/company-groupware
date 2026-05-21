@@ -18,7 +18,15 @@ import { format, parseISO } from 'date-fns'
 import { ko } from 'date-fns/locale'
 import type { ProfileWithTeam, Team } from '@/types/app'
 
-const ROLE_LABEL = { admin: '관리자', manager: '팀장', member: '팀원' }
+const ROLE_LABEL: Record<string, string> = { admin: '앱관리자', manager: '관리자', member: '실무자' }
+
+function displayRoleLabel(p: { role?: string | null; is_super_admin?: boolean | null }): string {
+  if ((p as any).is_super_admin) return '앱관리자'
+  if (p.role === 'manager') return '관리자'
+  if (p.role === 'admin') return '앱관리자'
+  if (p.role === 'member') return '실무자'
+  return ''
+}
 
 type TabKey = '설정' | '출근' | '휴가' | '인사관리' | '비밀번호'
 
@@ -204,6 +212,7 @@ export default function ProfilePage() {
   const [empHistory, setEmpHistory] = useState<VacHistoryItem[]>([])
   const [gpsStatus, setGpsStatus] = useState<GpsStatus>('idle')
   const [ipStatus, setIpStatus] = useState<IpStatus>('idle')
+  const [currentIp, setCurrentIp] = useState<string | null>(null)
   const [distanceMeters, setDistanceMeters] = useState<number | null>(null)
   const [todayAttendance, setTodayAttendance] = useState<{ checked_in_at: string; method?: string } | null>(null)
   const [companySettings, setCompanySettings] = useState<CompanySettings | null>(null)
@@ -230,8 +239,12 @@ export default function ProfilePage() {
     try {
       const res = await fetch('/api/attendance/ip-check')
       const data = await res.json()
+      setCurrentIp(data.ip ?? null)
       setIpStatus(data.allowed ? 'allowed' : 'denied')
-    } catch { setIpStatus('denied') }
+    } catch {
+      setCurrentIp(null)
+      setIpStatus('denied')
+    }
   }
 
   const fetchApproverData = async () => {
@@ -385,7 +398,12 @@ export default function ProfilePage() {
       setTodayAttendance({ checked_in_at: data.checked_in_at, method: data.method })
       showToast('이미 출근 처리되었습니다.', 'success')
     } else {
-      showToast(data.error ?? '출근 확인에 실패했습니다.', 'error')
+      if (data.current_ip) setCurrentIp(data.current_ip)
+      if (res.status === 403) setIpStatus('denied')
+      const msg = data.current_ip
+        ? `${data.error ?? '출근 확인에 실패했습니다.'} (현재 IP: ${data.current_ip})`
+        : (data.error ?? '출근 확인에 실패했습니다.')
+      showToast(msg, 'error')
     }
     setCheckingIn(false)
   }
@@ -462,7 +480,7 @@ export default function ProfilePage() {
         <div className="min-w-0">
           <p className="font-semibold text-[#111827] dark:text-[#F1F5F9] truncate">{form.full_name || profile.full_name}</p>
           <p className="text-xs text-[#6B7280] dark:text-[#94A3B8]">
-            {ROLE_LABEL[profile.role]}
+            {displayRoleLabel(profile as any)}
             {profile.team ? ` · ${(profile.team as any).name}` : ''}
           </p>
           <p className="text-xs text-[#9CA3AF] dark:text-[#64748B] truncate">{email}</p>
@@ -574,8 +592,17 @@ export default function ProfilePage() {
                     </div>
                   )}
                   {ipStatus === 'denied' && (
-                    <div className="rounded-lg bg-[#F9FAFB] dark:bg-[#0F172A] px-4 py-2.5 text-sm flex items-center gap-2 text-[#6B7280] dark:text-[#94A3B8]">
-                      <Wifi className="h-4 w-4 shrink-0" />현재 사무실 네트워크에 연결되어 있지 않습니다.
+                    <div className="rounded-lg bg-[#F9FAFB] dark:bg-[#0F172A] px-4 py-2.5 text-sm flex items-start gap-2 text-[#6B7280] dark:text-[#94A3B8]">
+                      <Wifi className="h-4 w-4 shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <p>사무실 네트워크가 아닙니다.</p>
+                        {currentIp && (
+                          <p className="text-[11px] mt-0.5 font-mono text-[#9CA3AF] dark:text-[#64748B]">
+                            현재 IP: {currentIp}
+                          </p>
+                        )}
+                        <p className="text-[11px] mt-0.5">사무실에서 접속 중인데 이 화면이 보이면 관리자에게 현재 IP 등록을 요청하세요.</p>
+                      </div>
                     </div>
                   )}
                   {ipStatus === 'idle' && (
@@ -1000,8 +1027,8 @@ export default function ProfilePage() {
             <InfoRow label="이메일" value={email || '—'} />
             <InfoRow
               label="직책"
-              value={ROLE_LABEL[profile.role]}
-              accent={profile.role === 'admin' ? 'blue' : profile.role === 'manager' ? 'green' : undefined}
+              value={displayRoleLabel(profile as any)}
+              accent={(profile as any).is_super_admin || profile.role === 'admin' ? 'blue' : profile.role === 'manager' ? 'green' : undefined}
             />
             <InfoRow label="소속 팀" value={profile.team ? (profile.team as any).name : '—'} />
             <InfoRow label="입사일" value="—" muted />

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { isSuperAdmin } from '@/lib/auth/roles'
 
 // GET: 통합 휴가 처리 이력
 //   - 휴가 등록(grant): cg_events.is_vacation = true
@@ -18,12 +19,12 @@ export async function GET() {
 
   const { data: me } = await supabase
     .from('cg_profiles')
-    .select('id, role')
+    .select('id, role, is_super_admin')
     .eq('id', user.id)
     .single()
   if (!me) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
-  const isAdmin = (me as any).role === 'admin'
+  const isAdmin = isSuperAdmin(me)
 
   let allowedRequesterIds: string[] | null = null
   if (!isAdmin) {

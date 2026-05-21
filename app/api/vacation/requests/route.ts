@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { isSuperAdmin } from '@/lib/auth/roles'
 
 // GET: 휴가 신청 목록 (역할별)
-//   - 관리자: 전체 (requester.approver_id 함께 반환 → UI에서 본인 결재 분 분기)
-//   - 결재자(일반): 본인 결재 직원 건 + 본인 신청 건
-//   - 그 외: 본인 신청 건만
+//   - 앱관리자(super_admin): 전체 (requester.approver_id 함께 반환 → UI에서 본인 결재 분 분기)
+//   - 결재자(관리자/manager): 본인 결재 직원 건 + 본인 신청 건
+//   - 그 외(실무자): 본인 신청 건만
 export async function GET() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -12,11 +13,11 @@ export async function GET() {
 
   const { data: me } = await supabase
     .from('cg_profiles')
-    .select('id, role')
+    .select('id, role, is_super_admin')
     .eq('id', user.id)
     .single()
 
-  const isAdmin = (me as any)?.role === 'admin'
+  const isAdmin = isSuperAdmin(me)
 
   const selectExpr = `
     *,

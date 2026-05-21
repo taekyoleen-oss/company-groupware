@@ -73,7 +73,8 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
     fetch('/api/profiles').then(r => r.json()).then((p: any) => {
       setCurrentUserId(p?.id ?? null)
       setCurrentUserName(p?.full_name ?? '')
-      setIsAdmin(p?.role === 'admin')
+      // VacationModal에서 isAdmin은 "자기 결재(자동 승인)" 가능 여부 판단에 쓰인다 → 앱관리자만 true
+      setIsAdmin(p?.is_super_admin === true || (p?.is_super_admin == null && p?.role === 'admin'))
       setApproverId(p?.approver_id ?? null)
       setApproverName(p?.approver?.full_name ?? null)
     }).catch(() => {})

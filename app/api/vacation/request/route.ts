@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { isSuperAdmin } from '@/lib/auth/roles'
 
 // POST: 휴가 신청
-//   - 본인이 결재자(admin AND approver_id IS NULL)인 경우 → cg_events 즉시 생성 (자동 승인)
-//   - 그 외 → cg_vacation_requests 에 pending 으로 저장 + 결재자에게 메시지 발송
+//   - 앱관리자(super_admin) 본인 신청: 즉시 cg_events 생성 (자기 결재)
+//   - 그 외 → cg_vacation_requests pending 으로 저장 + 결재자(또는 앱관리자)에게 메시지 발송
 //
 // Request body
 //   { title, description, start_at, end_at, is_all_day }
@@ -30,13 +31,14 @@ export async function POST(request: NextRequest) {
 
   const { data: me } = await supabase
     .from('cg_profiles')
-    .select('id, role, approver_id, full_name, team_id')
+    .select('id, role, is_super_admin, approver_id, full_name, team_id')
     .eq('id', user.id)
     .single()
 
   if (!me) return NextResponse.json({ error: '프로필을 찾을 수 없습니다.' }, { status: 404 })
 
-  const isSelfApproved = (me as any).role === 'admin' && (me as any).approver_id == null
+  // 자기 결재(자동 승인): 앱관리자이면서 결재자 미지정인 경우만
+  const isSelfApproved = isSuperAdmin(me) && (me as any).approver_id == null
 
   // ── 자동 승인 (본인이 결재자) ─────────────────────────────────
   if (isSelfApproved) {
@@ -102,11 +104,11 @@ export async function POST(request: NextRequest) {
       content,
     })
   } else {
-    // approver 미지정 → 모든 활성 관리자에게 알림
+    // approver 미지정 → 모든 활성 앱관리자에게 알림
     const { data: admins } = await supabase
       .from('cg_profiles')
       .select('id, full_name')
-      .eq('role', 'admin')
+      .eq('is_super_admin', true)
       .eq('status', 'active')
 
     if (admins && admins.length > 0) {

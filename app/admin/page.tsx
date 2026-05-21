@@ -15,12 +15,33 @@ import { format, parseISO } from 'date-fns'
 import { ko } from 'date-fns/locale'
 import type { ProfileWithTeam, Team, EventCategory } from '@/types/app'
 
+// 드롭다운에서 다루는 역할 값
+//  - 'member'      → 실무자
+//  - 'manager'     → 관리자(결재자)
+//  - 'super_admin' → 앱관리자 (DB 저장 시 role='admin' + is_super_admin=true)
+type RoleSelectValue = 'member' | 'manager' | 'super_admin'
+
+function toRoleSelectValue(p: { role?: string | null; is_super_admin?: boolean | null }): RoleSelectValue {
+  if (p.is_super_admin) return 'super_admin'
+  if (p.role === 'manager') return 'manager'
+  // 레거시 role='admin' & super=false 인 경우는 super_admin 으로 표시 (저장 시 is_super_admin=true)
+  if (p.role === 'admin') return 'super_admin'
+  return 'member'
+}
+
+function roleValueToPayload(v: RoleSelectValue): { role: 'admin' | 'manager' | 'member'; is_super_admin: boolean } {
+  if (v === 'super_admin') return { role: 'admin', is_super_admin: true }
+  if (v === 'manager')     return { role: 'manager', is_super_admin: false }
+  return { role: 'member', is_super_admin: false }
+}
+
 interface VacationUser {
   id: string
   full_name: string
   color: string
   team_id: string | null
   role: string
+  is_super_admin?: boolean
   status: string
   approver_id: string | null
   approver_name: string | null
@@ -116,10 +137,18 @@ interface CompanySettings {
   office_ips: string
 }
 
+interface OfficeNetwork {
+  id: string
+  cidr: string
+  label: string | null
+  last_matched_at: string | null
+  created_at: string
+}
+
 const STATUS_LABEL = { pending: '대기', active: '활성', inactive: '비활성' }
 
 interface UserEdit {
-  role: string
+  role: RoleSelectValue
   team_id: string
   status: string
   approver_id: string // 'self' = 본인 결재 (NULL 저장)
@@ -188,6 +217,14 @@ export default function AdminPage() {
   const [settingsSaving, setSettingsSaving] = useState(false)
   const [gpsLoading, setGpsLoading] = useState(false)
 
+  // 사무실 네트워크(IP/CIDR) 목록
+  const [networks, setNetworks] = useState<OfficeNetwork[]>([])
+  const [networkLabelEdits, setNetworkLabelEdits] = useState<Record<string, string>>({})
+  const [newNetworkCidr, setNewNetworkCidr] = useState('')
+  const [newNetworkLabel, setNewNetworkLabel] = useState('')
+  const [networkSaving, setNetworkSaving] = useState<string | null>(null)
+  const [networkAdding, setNetworkAdding] = useState(false)
+
   const fetchAll = useCallback(async () => {
     const [usersRes, teamsRes, catsRes, vacRes, cancelRes, historyRes, vacReqRes, attHistRes] = await Promise.all([
       fetch('/api/admin/users'), fetch('/api/admin/teams'), fetch('/api/admin/categories'),
@@ -203,7 +240,7 @@ export default function AdminPage() {
       const initial: Record<string, UserEdit> = {}
       data.forEach(u => {
         initial[u.id] = {
-          role: u.role === 'manager' ? 'member' : u.role,
+          role: toRoleSelectValue(u as any),
           team_id: u.team_id ?? 'none',
           status: u.status,
           approver_id: u.approver_id ?? 'self',
@@ -254,9 +291,21 @@ export default function AdminPage() {
     }
   }, [])
 
+  const fetchNetworks = useCallback(async () => {
+    const res = await fetch('/api/admin/office-networks')
+    if (res.ok) {
+      const data: OfficeNetwork[] = await res.json()
+      setNetworks(data)
+      const labels: Record<string, string> = {}
+      data.forEach(n => { labels[n.id] = n.label ?? '' })
+      setNetworkLabelEdits(labels)
+    }
+  }, [])
+
   useEffect(() => { fetchAll() }, [fetchAll])
   useEffect(() => { fetchAttendance(attendanceDate) }, [fetchAttendance, attendanceDate])
   useEffect(() => { fetchSettings() }, [fetchSettings])
+  useEffect(() => { fetchNetworks() }, [fetchNetworks])
 
   // 휴가 취소 요청 / 신청 변경 / 사이드바에서 승인 → 자동 새로고침
   useEffect(() => {
@@ -288,11 +337,13 @@ export default function AdminPage() {
     const edit = edits[id]
     if (!edit) return
     setSaving(id)
+    const { role, is_super_admin } = roleValueToPayload(edit.role)
     const res = await fetch(`/api/admin/users/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        role: edit.role,
+        role,
+        is_super_admin,
         team_id: edit.team_id === 'none' ? null : edit.team_id,
         status: edit.status,
         approver_id: edit.approver_id === 'self' ? null : edit.approver_id,
@@ -300,7 +351,10 @@ export default function AdminPage() {
     })
     setSaving(null)
     if (res.ok) { showToast('저장되었습니다.', 'success'); fetchAll() }
-    else showToast('저장에 실패했습니다.', 'error')
+    else {
+      const data = await res.json().catch(() => ({}))
+      showToast((data as any).error ?? '저장에 실패했습니다.', 'error')
+    }
   }
 
   const approveUser = async (id: string) => {
@@ -625,17 +679,63 @@ export default function AdminPage() {
     )
   }
 
-  const fillCurrentIp = async () => {
-    const res = await fetch('/api/attendance/ip-check')
-    if (!res.ok) { showToast('IP를 가져올 수 없습니다.', 'error'); return }
-    const { ip } = await res.json()
-    setSettings(s => {
-      const existing = s.office_ips.split(',').map((x: string) => x.trim()).filter(Boolean)
-      if (existing.includes(ip)) { showToast('이미 등록된 IP입니다.', 'error'); return s }
-      return { ...s, office_ips: [...existing, ip].join(', ') }
+  const addNetwork = async (cidr: string, label: string | null) => {
+    setNetworkAdding(true)
+    const res = await fetch('/api/admin/office-networks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cidr, label }),
     })
-    setSettingsDirty(true)
-    showToast(`${ip} 가 추가되었습니다.`, 'success')
+    setNetworkAdding(false)
+    if (res.ok) {
+      showToast('등록되었습니다.', 'success')
+      fetchNetworks()
+      return true
+    } else {
+      const data = await res.json().catch(() => ({}))
+      showToast(data.error ?? '등록에 실패했습니다.', 'error')
+      return false
+    }
+  }
+
+  const addCurrentIpAsNetwork = async () => {
+    const res = await fetch('/api/admin/my-ip')
+    if (!res.ok) { showToast('현재 IP를 가져올 수 없습니다.', 'error'); return }
+    const { ip } = await res.json()
+    if (!ip) { showToast('IP를 확인할 수 없습니다.', 'error'); return }
+    const cidr = `${ip}/32`
+    if (networks.some(n => n.cidr === cidr)) {
+      showToast('이미 등록된 IP입니다.', 'error')
+      return
+    }
+    await addNetwork(cidr, '본사')
+  }
+
+  const addNetworkManual = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const cidr = newNetworkCidr.trim()
+    if (!cidr) return
+    const ok = await addNetwork(cidr, newNetworkLabel.trim() || null)
+    if (ok) { setNewNetworkCidr(''); setNewNetworkLabel('') }
+  }
+
+  const saveNetworkLabel = async (id: string) => {
+    const label = networkLabelEdits[id] ?? ''
+    setNetworkSaving(id)
+    const res = await fetch(`/api/admin/office-networks/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label }),
+    })
+    setNetworkSaving(null)
+    if (res.ok) { showToast('라벨이 저장되었습니다.', 'success'); fetchNetworks() }
+    else { showToast('저장에 실패했습니다.', 'error') }
+  }
+
+  const deleteNetwork = async (id: string) => {
+    const res = await fetch(`/api/admin/office-networks/${id}`, { method: 'DELETE' })
+    if (res.ok) { showToast('삭제되었습니다.', 'success'); fetchNetworks() }
+    else { showToast('삭제에 실패했습니다.', 'error') }
   }
 
   const pending = users.filter(u => u.status === 'pending')
@@ -724,8 +824,12 @@ export default function AdminPage() {
             {active.map(user => {
               const edit = edits[user.id]
               if (!edit) return null
-              // 결재자 후보: 활성 관리자 - 본인 제외
-              const adminCandidates = active.filter(u => u.id !== user.id && (edits[u.id]?.role ?? u.role) === 'admin')
+              // 결재자 후보: 활성 관리자(manager) 또는 앱관리자, 본인 제외
+              const adminCandidates = active.filter(u => {
+                if (u.id === user.id) return false
+                const r = edits[u.id]?.role ?? toRoleSelectValue(u as any)
+                return r === 'manager' || r === 'super_admin'
+              })
               return (
                 <div key={user.id} className="bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded-lg p-3 flex flex-wrap items-center gap-3">
                   <UserAvatar name={user.full_name} color={user.color} size={32} />
@@ -737,11 +841,12 @@ export default function AdminPage() {
                     </div>
                   </div>
                   <Badge variant={edit.status === 'active' ? 'success' : 'danger'}>{STATUS_LABEL[edit.status as keyof typeof STATUS_LABEL]}</Badge>
-                  <Select value={edit.role} onValueChange={v => setEdit(user.id, { role: v })}>
-                    <SelectTrigger className="w-24 h-8 text-xs"><SelectValue /></SelectTrigger>
+                  <Select value={edit.role} onValueChange={v => setEdit(user.id, { role: v as RoleSelectValue })}>
+                    <SelectTrigger className="w-28 h-8 text-xs"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="member">실무자</SelectItem>
-                      <SelectItem value="admin">관리자</SelectItem>
+                      <SelectItem value="manager">관리자</SelectItem>
+                      <SelectItem value="super_admin">앱관리자</SelectItem>
                     </SelectContent>
                   </Select>
                   <Select value={edit.team_id} onValueChange={v => setEdit(user.id, { team_id: v })}>
@@ -1198,9 +1303,9 @@ export default function AdminPage() {
                       >
                         <SelectTrigger className="h-8 text-xs min-w-[8rem]"><SelectValue /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="admin">관리자(본인)</SelectItem>
+                          <SelectItem value="admin">앱관리자(본인)</SelectItem>
                           {vacationUsers
-                            .filter(other => other.id !== u.id && other.status === 'active')
+                            .filter(other => other.id !== u.id && other.status === 'active' && (other.role === 'manager' || other.is_super_admin))
                             .map(other => (
                               <SelectItem key={other.id} value={other.id}>{other.full_name}</SelectItem>
                             ))}
@@ -1415,36 +1520,95 @@ export default function AdminPage() {
               </div>
             )}
 
-            {/* IP 설정 */}
+            {/* IP 설정 — cg_office_networks 행 단위 관리 */}
             {settings.attendance_method === 'ip' && (
               <div className="bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded-xl p-5 space-y-4">
                 <div className="flex items-center gap-2 mb-1">
                   <Wifi className="h-4 w-4 text-[#2563EB]" />
-                  <h2 className="text-sm font-semibold text-[#111827] dark:text-[#F1F5F9]">허용 IP 주소 설정</h2>
+                  <h2 className="text-sm font-semibold text-[#111827] dark:text-[#F1F5F9]">허용 IP 주소</h2>
                 </div>
                 <p className="text-xs text-[#6B7280] dark:text-[#94A3B8]">
-                  사무실 네트워크 IP를 쉼표로 구분하여 입력하세요. 이 IP에서만 출근 체크가 가능합니다.
+                  사무실에서 외부로 보이는 공인 IP를 등록하세요. 단일 IP는 자동으로 /32로 처리되며, /24 등 CIDR도 지원합니다.
                 </p>
-                <div>
-                  <label className="block text-sm font-medium mb-1">허용 IP 목록</label>
-                  <Input
-                    value={settings.office_ips}
-                    onChange={e => { setSettings(s => ({ ...s, office_ips: e.target.value })); setSettingsDirty(true) }}
-                    placeholder="예: 192.168.1.1, 10.0.0.1"
-                  />
-                  <p className="text-xs text-[#6B7280] dark:text-[#94A3B8] mt-1">
-                    쉼표(,)로 구분하세요.
-                  </p>
-                </div>
-                <Button type="button" variant="outline" className="w-full" onClick={fillCurrentIp}>
+
+                <Button type="button" variant="outline" className="w-full" onClick={addCurrentIpAsNetwork} disabled={networkAdding}>
                   <Wifi className="h-4 w-4 mr-2" />
-                  현재 내 IP 자동 추가
+                  현재 내 IP 자동 등록
                 </Button>
-                {settings.office_ips && (
-                  <div className="rounded-lg bg-[#EFF6FF] dark:bg-[#1E3A5F] border border-[#BFDBFE] dark:border-[#2563EB] px-3 py-2 text-xs text-[#2563EB] dark:text-[#93C5FD]">
-                    허용 IP: {settings.office_ips}
+
+                {/* 수동 추가 폼 */}
+                <div onClick={e => e.stopPropagation()} className="flex flex-wrap gap-2 items-end pt-1">
+                  <div className="flex-1 min-w-[8rem]">
+                    <label className="block text-[11px] text-[#6B7280] dark:text-[#94A3B8] mb-1">IP / CIDR</label>
+                    <Input
+                      value={newNetworkCidr}
+                      onChange={e => setNewNetworkCidr(e.target.value)}
+                      placeholder="예: 211.219.53.239 또는 203.0.113.0/24"
+                      className="text-sm"
+                    />
                   </div>
-                )}
+                  <div className="flex-1 min-w-[6rem]">
+                    <label className="block text-[11px] text-[#6B7280] dark:text-[#94A3B8] mb-1">라벨</label>
+                    <Input
+                      value={newNetworkLabel}
+                      onChange={e => setNewNetworkLabel(e.target.value)}
+                      placeholder="예: 본사"
+                      className="text-sm"
+                    />
+                  </div>
+                  <Button type="button" size="sm" onClick={addNetworkManual} disabled={networkAdding || !newNetworkCidr.trim()}>
+                    <Plus className="h-4 w-4 mr-1" />추가
+                  </Button>
+                </div>
+
+                {/* 등록 목록 */}
+                <div className="space-y-2 pt-1">
+                  {networks.length === 0 ? (
+                    <div className="rounded-lg bg-[#F9FAFB] dark:bg-[#0F172A] border border-dashed border-[#E5E7EB] dark:border-[#334155] px-3 py-4 text-center text-xs text-[#9CA3AF] dark:text-[#6B7280]">
+                      등록된 IP가 없습니다. 위에서 추가해 주세요.
+                    </div>
+                  ) : networks.map(n => {
+                    const labelEdit = networkLabelEdits[n.id] ?? ''
+                    const labelDirty = labelEdit !== (n.label ?? '')
+                    const lastMatch = n.last_matched_at
+                      ? format(parseISO(n.last_matched_at), 'yyyy.MM.dd HH:mm', { locale: ko })
+                      : '—'
+                    return (
+                      <div key={n.id} className="bg-[#F9FAFB] dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-[#334155] rounded-lg px-3 py-2.5 flex flex-wrap items-center gap-2">
+                        <div className="flex-1 min-w-[8rem]">
+                          <p className="font-mono text-xs font-medium text-[#111827] dark:text-[#F1F5F9]">{n.cidr}</p>
+                          <p className="text-[10px] text-[#9CA3AF] dark:text-[#6B7280] mt-0.5">
+                            최근 매칭: {lastMatch}
+                          </p>
+                        </div>
+                        <Input
+                          value={labelEdit}
+                          onChange={e => setNetworkLabelEdits(prev => ({ ...prev, [n.id]: e.target.value }))}
+                          placeholder="라벨"
+                          className="h-7 text-xs w-24"
+                        />
+                        <Button
+                          size="sm"
+                          className="h-7 px-2"
+                          disabled={!labelDirty || networkSaving === n.id}
+                          onClick={() => saveNetworkLabel(n.id)}
+                          title="라벨 저장"
+                        >
+                          <Save className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="danger"
+                          className="h-7 px-2"
+                          onClick={() => deleteNetwork(n.id)}
+                          title="삭제"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
             )}
 

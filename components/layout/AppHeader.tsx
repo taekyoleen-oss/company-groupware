@@ -1,13 +1,14 @@
 'use client'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Calendar, FileText, CheckSquare, LogOut, Settings } from 'lucide-react'
+import { Calendar, FileText, CheckSquare, LogOut, Settings, ClipboardCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { UserAvatar } from '@/components/ui/avatar'
 import { Logo } from '@/components/ui/Logo'
 import { ThemeToggle } from '@/components/ui/theme-toggle'
 import { NotificationPanel } from '@/components/messages/NotificationPanel'
 import type { ProfileWithTeam } from '@/types/app'
+import { isSuperAdmin } from '@/lib/auth/roles'
 
 interface AppHeaderProps {
   profile: ProfileWithTeam
@@ -49,7 +50,7 @@ export function AppHeader({ profile }: AppHeaderProps) {
               {label}
             </Link>
           ))}
-          {profile.role === 'admin' && (
+          {isSuperAdmin(profile) && (
             <Link
               href="/admin"
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
@@ -59,7 +60,20 @@ export function AppHeader({ profile }: AppHeaderProps) {
               }`}
             >
               <Settings className="h-4 w-4" />
-              관리자
+              앱관리자
+            </Link>
+          )}
+          {!isSuperAdmin(profile) && profile.role === 'manager' && (
+            <Link
+              href="/approvals"
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                pathname.startsWith('/approvals')
+                  ? 'bg-[#EFF6FF] text-[#2563EB] dark:bg-[#1E3A5F] dark:text-[#93C5FD]'
+                  : 'text-[#6B7280] hover:text-[#111827] hover:bg-[#F9FAFB] dark:text-[#94A3B8] dark:hover:text-[#F1F5F9] dark:hover:bg-[#4B5563]'
+              }`}
+            >
+              <ClipboardCheck className="h-4 w-4" />
+              결재함
             </Link>
           )}
         </nav>

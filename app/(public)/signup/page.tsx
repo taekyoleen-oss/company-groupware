@@ -45,11 +45,14 @@ export default function SignupPage() {
 
     const { data: profile } = await supabase
       .from('cg_profiles')
-      .select('role, status')
+      .select('role, status, is_super_admin')
       .eq('id', data.user!.id)
       .single()
 
-    if (profile?.role === 'admin') {
+    const superAdmin = (profile as any)?.is_super_admin === true
+      || ((profile as any)?.is_super_admin == null && profile?.role === 'admin')
+
+    if (superAdmin || profile?.status === 'active') {
       router.push('/calendar')
     } else {
       router.push('/pending')

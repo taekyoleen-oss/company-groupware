@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { isSuperAdmin } from '@/lib/auth/roles'
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -19,12 +20,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { data: profile } = await supabase.from('cg_profiles').select('role').eq('id', user.id).single()
+  const { data: profile } = await supabase.from('cg_profiles').select('role, is_super_admin').eq('id', user.id).single()
   const { data: event } = await supabase.from('cg_events').select('created_by, is_vacation').eq('id', id).single()
   if (!event) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   const isOwner = event.created_by === user.id
-  const isAdmin = profile?.role === 'admin'
+  const isAdmin = isSuperAdmin(profile)
   if (!isOwner && !isAdmin) return NextResponse.json({ error: '수정 권한이 없습니다.' }, { status: 403 })
 
   // 휴가 이벤트는 수정 불가 (Admin 포함 — 취소 신청으로만 처리)
@@ -49,12 +50,12 @@ export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id:
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { data: profile } = await supabase.from('cg_profiles').select('role').eq('id', user.id).single()
+  const { data: profile } = await supabase.from('cg_profiles').select('role, is_super_admin').eq('id', user.id).single()
   const { data: event } = await supabase.from('cg_events').select('created_by').eq('id', id).single()
   if (!event) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   const isOwner = event.created_by === user.id
-  const isAdmin = profile?.role === 'admin'
+  const isAdmin = isSuperAdmin(profile)
   if (!isOwner && !isAdmin) return NextResponse.json({ error: '삭제 권한이 없습니다.' }, { status: 403 })
 
   const { error } = await supabase.from('cg_events').delete().eq('id', id)

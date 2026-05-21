@@ -49,7 +49,7 @@ export function EventModal({ isOpen, onClose, initialDate, eventId, onSuccess }:
     fetch('/api/admin/categories').then(r => r.json()).then(setCategories).catch(() => {})
     fetch('/api/profiles').then(r => r.json()).then((p: any) => {
       setCurrentUserId(p?.id ?? null)
-      setIsAdmin(p?.role === 'admin')
+      setIsAdmin(p?.is_super_admin === true || (p?.is_super_admin == null && p?.role === 'admin'))
     }).catch(() => {})
   }, [])
 

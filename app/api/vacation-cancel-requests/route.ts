@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { isSuperAdmin } from '@/lib/auth/roles'
 
 // POST: 휴가 취소 신청 생성
 export async function POST(request: NextRequest) {
@@ -36,6 +37,49 @@ export async function POST(request: NextRequest) {
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  // 결재자/앱관리자 알림
+  const { data: me } = await supabase
+    .from('cg_profiles')
+    .select('full_name, approver_id')
+    .eq('id', user.id)
+    .single()
+  const requesterName = (me as any)?.full_name ?? '알 수 없음'
+  const approverId = (me as any)?.approver_id as string | null
+  const content = `[휴가 취소 결재 요청] ${requesterName} 님이 휴가 취소를 신청했습니다.`
+
+  if (approverId) {
+    const { data: approver } = await supabase
+      .from('cg_profiles')
+      .select('full_name')
+      .eq('id', approverId)
+      .single()
+    await (supabase as any).from('cg_messages').insert({
+      sender_id:      user.id,
+      sender_name:    requesterName,
+      recipient_id:   approverId,
+      recipient_name: (approver as any)?.full_name ?? null,
+      content,
+    })
+  } else {
+    const { data: admins } = await supabase
+      .from('cg_profiles')
+      .select('id, full_name')
+      .eq('is_super_admin', true)
+      .eq('status', 'active')
+
+    if (admins && admins.length > 0) {
+      const rows = admins.map(a => ({
+        sender_id:      user.id,
+        sender_name:    requesterName,
+        recipient_id:   a.id,
+        recipient_name: a.full_name,
+        content,
+      }))
+      await (supabase as any).from('cg_messages').insert(rows)
+    }
+  }
+
   return NextResponse.json(data, { status: 201 })
 }
 
@@ -49,11 +93,11 @@ export async function GET() {
 
   const { data: profile } = await supabase
     .from('cg_profiles')
-    .select('role')
+    .select('role, is_super_admin')
     .eq('id', user.id)
     .single()
 
-  const isAdmin = profile?.role === 'admin'
+  const isAdmin = isSuperAdmin(profile)
 
   if (isAdmin) {
     // 관리자: 전체. requester profile에 approver_id 포함

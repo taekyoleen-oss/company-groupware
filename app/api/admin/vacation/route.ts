@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { isSuperAdmin } from '@/lib/auth/roles'
 
 function toKSTDate(isoStr: string): string {
   return new Date(new Date(isoStr).getTime() + 9 * 3600000).toISOString().slice(0, 10)
@@ -19,18 +20,18 @@ export async function GET() {
 
   const { data: profile } = await supabase
     .from('cg_profiles')
-    .select('role')
+    .select('role, is_super_admin')
     .eq('id', user.id)
     .single()
 
-  if (profile?.role !== 'admin') return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!isSuperAdmin(profile)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const currentYear = new Date().getFullYear()
 
   const [usersRes, allocRes, eventsRes, pendingRes] = await Promise.all([
     supabase
       .from('cg_profiles')
-      .select('id, full_name, color, team_id, role, status, approver_id')
+      .select('id, full_name, color, team_id, role, is_super_admin, status, approver_id')
       .neq('status', 'pending')
       .order('full_name'),
     supabase
@@ -83,6 +84,7 @@ export async function GET() {
       color: u.color,
       team_id: u.team_id,
       role: u.role,
+      is_super_admin: (u as any).is_super_admin ?? false,
       status: u.status,
       approver_id: u.approver_id,
       approver_name: u.approver_id ? (nameMap[u.approver_id] ?? null) : null,

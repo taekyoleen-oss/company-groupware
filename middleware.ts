@@ -33,7 +33,7 @@ export async function middleware(request: NextRequest) {
 
   const { data: profile } = await supabase
     .from('cg_profiles')
-    .select('status, role')
+    .select('status, role, is_super_admin')
     .eq('id', user.id)
     .single()
 
@@ -46,7 +46,15 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
-  if (ADMIN_PATHS.some(p => pathname.startsWith(p)) && profile.role !== 'admin') {
+  // /admin 은 앱관리자(super admin) 전용
+  const isSuperAdmin = (profile as any).is_super_admin === true
+    || ((profile as any).is_super_admin == null && profile.role === 'admin')
+  if (ADMIN_PATHS.some(p => pathname.startsWith(p)) && !isSuperAdmin) {
+    return NextResponse.redirect(new URL('/calendar', request.url))
+  }
+
+  // /approvals 는 결재자(manager) 또는 앱관리자 전용
+  if (pathname.startsWith('/approvals') && !(isSuperAdmin || profile.role === 'manager')) {
     return NextResponse.redirect(new URL('/calendar', request.url))
   }
 

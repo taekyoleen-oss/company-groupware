@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { isSuperAdmin } from '@/lib/auth/roles'
 
 function isValidCidr(cidr: string): boolean {
   const parts = cidr.includes('/') ? cidr.split('/') : [cidr, '32']
@@ -20,8 +21,8 @@ export async function GET() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { data: profile } = await supabase.from('cg_profiles').select('role').eq('id', user.id).single()
-  if (profile?.role !== 'admin') return NextResponse.json({ error: 'Admin only' }, { status: 403 })
+  const { data: profile } = await supabase.from('cg_profiles').select('role, is_super_admin').eq('id', user.id).single()
+  if (!isSuperAdmin(profile)) return NextResponse.json({ error: 'Admin only' }, { status: 403 })
 
   const { data, error } = await supabase
     .from('cg_office_networks')
@@ -37,8 +38,8 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { data: profile } = await supabase.from('cg_profiles').select('role').eq('id', user.id).single()
-  if (profile?.role !== 'admin') return NextResponse.json({ error: 'Admin only' }, { status: 403 })
+  const { data: profile } = await supabase.from('cg_profiles').select('role, is_super_admin').eq('id', user.id).single()
+  if (!isSuperAdmin(profile)) return NextResponse.json({ error: 'Admin only' }, { status: 403 })
 
   const { cidr, label } = await request.json()
   if (!cidr || !isValidCidr(cidr.trim())) {

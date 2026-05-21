@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { isSuperAdmin } from '@/lib/auth/roles'
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -19,18 +20,19 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { data: profile } = await supabase.from('cg_profiles').select('role').eq('id', user.id).single()
+  const { data: profile } = await supabase.from('cg_profiles').select('role, is_super_admin').eq('id', user.id).single()
   const { data: notice } = await supabase.from('cg_notices').select('created_by, visibility, team_id').eq('id', id).single()
   if (!notice) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   const isOwner = notice.created_by === user.id
-  const isAdmin = profile?.role === 'admin'
+  const isAdmin = isSuperAdmin(profile)
   if (!isOwner && !isAdmin) return NextResponse.json({ error: '수정 권한이 없습니다.' }, { status: 403 })
 
   const body = await request.json()
 
   if (body.is_pinned !== undefined) {
-    if (!['manager', 'admin'].includes(profile?.role ?? '')) {
+    // 핀 고정: 결재자(manager) 이상
+    if (!(isAdmin || profile?.role === 'manager')) {
       return NextResponse.json({ error: '권한 없음' }, { status: 403 })
     }
     if (body.is_pinned === true) {
@@ -63,12 +65,12 @@ export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id:
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { data: profile } = await supabase.from('cg_profiles').select('role').eq('id', user.id).single()
+  const { data: profile } = await supabase.from('cg_profiles').select('role, is_super_admin').eq('id', user.id).single()
   const { data: notice } = await supabase.from('cg_notices').select('created_by').eq('id', id).single()
   if (!notice) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   const isOwner = notice.created_by === user.id
-  const isAdmin = profile?.role === 'admin'
+  const isAdmin = isSuperAdmin(profile)
   if (!isOwner && !isAdmin) return NextResponse.json({ error: '삭제 권한이 없습니다.' }, { status: 403 })
 
   const { error } = await supabase.from('cg_notices').delete().eq('id', id)

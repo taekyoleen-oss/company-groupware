@@ -122,7 +122,8 @@ function CalendarContent() {
       .then(r => r.json())
       .then((p: any) => {
         setCurrentUserId(p?.id ?? null)
-        setIsAdminUser(p?.role === 'admin')
+        // 앱관리자: is_super_admin=true. role='admin' fallback도 허용 (마이그레이션 전 안전)
+        setIsAdminUser(p?.is_super_admin === true || (p?.is_super_admin == null && p?.role === 'admin'))
       })
       .catch(() => {})
   }, [])

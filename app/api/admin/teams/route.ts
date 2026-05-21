@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { isSuperAdmin } from '@/lib/auth/roles'
 
 async function checkAdmin(supabase: Awaited<ReturnType<typeof createClient>>, userId: string) {
-  const { data } = await supabase.from('cg_profiles').select('role').eq('id', userId).single()
-  return data?.role === 'admin'
+  const { data } = await supabase.from('cg_profiles').select('role, is_super_admin').eq('id', userId).single()
+  return isSuperAdmin(data)
 }
 
 export async function GET() {

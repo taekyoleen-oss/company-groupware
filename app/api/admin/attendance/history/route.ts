@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { isSuperAdmin } from '@/lib/auth/roles'
 
 // GET: 출근(체크인) 이력 — 관리자 전용
 //   - 옵션: ?from=YYYY-MM-DD&to=YYYY-MM-DD  (없으면 전체)
@@ -9,8 +10,8 @@ export async function GET(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { data: me } = await supabase.from('cg_profiles').select('role').eq('id', user.id).single()
-  if (me?.role !== 'admin') return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const { data: me } = await supabase.from('cg_profiles').select('role, is_super_admin').eq('id', user.id).single()
+  if (!isSuperAdmin(me)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const { searchParams } = new URL(request.url)
   const from = searchParams.get('from')

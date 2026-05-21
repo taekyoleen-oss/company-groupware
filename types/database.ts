@@ -19,6 +19,7 @@ export interface Database {
           status: 'pending' | 'active' | 'inactive'
           color: string
           approver_id: string | null
+          is_super_admin: boolean
           created_at: string
         }
         Insert: {
@@ -30,6 +31,7 @@ export interface Database {
           status?: 'pending' | 'active' | 'inactive'
           color?: string
           approver_id?: string | null
+          is_super_admin?: boolean
           created_at?: string
         }
         Update: {
@@ -41,6 +43,7 @@ export interface Database {
           status?: 'pending' | 'active' | 'inactive'
           color?: string
           approver_id?: string | null
+          is_super_admin?: boolean
           created_at?: string
         }
         Relationships: [
@@ -489,6 +492,7 @@ export interface Database {
           id: string
           cidr: string
           label: string | null
+          last_matched_at: string | null
           created_by: string | null
           created_at: string
         }
@@ -496,6 +500,7 @@ export interface Database {
           id?: string
           cidr: string
           label?: string | null
+          last_matched_at?: string | null
           created_by?: string | null
           created_at?: string
         }
@@ -503,6 +508,7 @@ export interface Database {
           id?: string
           cidr?: string
           label?: string | null
+          last_matched_at?: string | null
           created_by?: string | null
           created_at?: string
         }

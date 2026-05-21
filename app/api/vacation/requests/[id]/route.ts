@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { isSuperAdmin } from '@/lib/auth/roles'
 
 // PATCH: 휴가 신청 승인/거부
-//   - 관리자: 대상 신청의 approver_id가 NULL일 때만 처리
-//   - 결재자(일반): approver_id가 본인일 때만 처리
+//   - 앱관리자(super_admin): 대상 신청의 approver_id가 NULL일 때 처리 (관리자/실무자 공용 폴백)
+//   - 결재자(관리자/manager): approver_id가 본인일 때만 처리
 //   - 승인 → cg_events 생성 + request.status='approved' + event_id 저장 + 신청자 알림
 //   - 거부 → request.status='rejected' + reject_reason 저장 + 신청자 알림
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -15,12 +16,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
     const { data: me } = await supabase
       .from('cg_profiles')
-      .select('id, role, full_name')
+      .select('id, role, is_super_admin, full_name')
       .eq('id', user.id)
       .single()
     if (!me) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
-    const isAdmin = (me as any).role === 'admin'
+    const isAdmin = isSuperAdmin(me)
 
     const body = await request.json().catch(() => ({}))
     const action = (body as any).action
