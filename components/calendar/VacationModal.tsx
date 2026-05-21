@@ -358,7 +358,7 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
               <div className="rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-3">
                 <p className="text-sm text-amber-800 dark:text-amber-200 leading-relaxed">
                   본인이 결재자이므로 <strong>즉시 등록</strong>됩니다.
-                  등록한 휴가를 취소하는 경우 별도 절차 없이 삭제할 수 있습니다.
+                  등록한 휴가를 취소하는 경우 <strong>앱관리자가 승인</strong>해야 삭제할 수 있습니다.
                 </p>
               </div>
             ) : (
