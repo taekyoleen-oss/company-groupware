@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   X, Eye, EyeOff, KeyRound, Sun, CalendarDays,
-  MapPin, CheckCircle2, Navigation, Clock, Wifi, Settings, Lock,
+  CheckCircle2, Clock, Wifi, Settings, Lock, Monitor,
   IdCard, Users, Save, CheckCircle, XCircle, ClipboardList, ChevronDown, ChevronUp,
 } from 'lucide-react'
 import { UserAvatar } from '@/components/ui/avatar'
@@ -132,21 +132,18 @@ interface CompanySettings {
   longitude: number | null
   radius_meters: number
   attendance_method: 'gps' | 'ip'
+  require_device_approval: boolean
 }
 
-type GpsStatus = 'idle' | 'checking' | 'near' | 'far' | 'error' | 'no_setting'
+interface DeviceStatus {
+  id: string
+  device_label: string | null
+  status: 'pending' | 'approved' | 'rejected'
+  requested_at: string
+  decided_at: string | null
+}
+
 type IpStatus = 'idle' | 'checking' | 'allowed' | 'denied'
-
-function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371000
-  const toRad = (deg: number) => (deg * Math.PI) / 180
-  const dLat = toRad(lat2 - lat1)
-  const dLon = toRad(lon2 - lon1)
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-}
 
 function getLocalDateStr(): string {
   const now = new Date()
@@ -210,29 +207,15 @@ export default function ProfilePage() {
   const [empCancelProcessing, setEmpCancelProcessing] = useState<string | null>(null)
   const [empHistoryOpen, setEmpHistoryOpen] = useState(false)
   const [empHistory, setEmpHistory] = useState<VacHistoryItem[]>([])
-  const [gpsStatus, setGpsStatus] = useState<GpsStatus>('idle')
   const [ipStatus, setIpStatus] = useState<IpStatus>('idle')
   const [currentIp, setCurrentIp] = useState<string | null>(null)
-  const [distanceMeters, setDistanceMeters] = useState<number | null>(null)
   const [todayAttendance, setTodayAttendance] = useState<{ checked_in_at: string; method?: string } | null>(null)
   const [companySettings, setCompanySettings] = useState<CompanySettings | null>(null)
   const [checkingIn, setCheckingIn] = useState(false)
+  const [device, setDevice] = useState<DeviceStatus | null>(null)
+  const [requireDeviceApproval, setRequireDeviceApproval] = useState(false)
+  const [deviceRegistering, setDeviceRegistering] = useState(false)
   const { showToast, ToastComponent } = useToast()
-
-  const checkGps = (settings: CompanySettings) => {
-    if (!settings.latitude || !settings.longitude) { setGpsStatus('no_setting'); return }
-    if (!navigator.geolocation) { setGpsStatus('error'); return }
-    setGpsStatus('checking')
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const dist = haversineMeters(pos.coords.latitude, pos.coords.longitude, settings.latitude!, settings.longitude!)
-        setDistanceMeters(Math.round(dist))
-        setGpsStatus(dist <= settings.radius_meters ? 'near' : 'far')
-      },
-      () => setGpsStatus('error'),
-      { timeout: 10000, maximumAge: 30000 }
-    )
-  }
 
   const checkIp = async () => {
     setIpStatus('checking')
@@ -241,9 +224,31 @@ export default function ProfilePage() {
       const data = await res.json()
       setCurrentIp(data.ip ?? null)
       setIpStatus(data.allowed ? 'allowed' : 'denied')
+      setRequireDeviceApproval(!!data.require_device_approval)
+      setDevice(data.device ?? null)
     } catch {
       setCurrentIp(null)
       setIpStatus('denied')
+    }
+  }
+
+  const requestDeviceRegistration = async () => {
+    setDeviceRegistering(true)
+    const label = window.prompt('이 PC를 어떤 이름으로 등록할까요? (예: 회의실 PC, 내 자리 PC)') ?? ''
+    if (label === '') { setDeviceRegistering(false); return }
+    const res = await fetch('/api/attendance/device-register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_label: label }),
+    })
+    setDeviceRegistering(false)
+    if (res.ok) {
+      const data = await res.json()
+      setDevice(data)
+      showToast('PC 등록 요청을 보냈습니다. 관리자 승인을 기다려 주세요.', 'success')
+    } else {
+      const data = await res.json().catch(() => ({}))
+      showToast(data.error ?? 'PC 등록 요청에 실패했습니다.', 'error')
     }
   }
 
@@ -290,14 +295,7 @@ export default function ProfilePage() {
       if (vacData && typeof vacData.total_days === 'number') setVacSummary(vacData)
       setCompanySettings(settingsData)
       setTodayAttendance(attendanceData)
-      if (settingsData) {
-        if (settingsData.attendance_method === 'ip') {
-          if (!attendanceData) checkIp()
-        } else {
-          if (!settingsData.latitude || !settingsData.longitude) setGpsStatus('no_setting')
-          else if (!attendanceData) checkGps(settingsData)
-        }
-      }
+      if (settingsData && !attendanceData) checkIp()
     })
     fetchApproverData()
   }, [])
@@ -555,10 +553,7 @@ export default function ProfilePage() {
           ) : (
             <>
               <div className="flex items-center gap-2 mb-4">
-                {companySettings.attendance_method === 'ip'
-                  ? <Wifi className="h-4 w-4 text-blue-500" />
-                  : <MapPin className="h-4 w-4 text-blue-500" />
-                }
+                <Wifi className="h-4 w-4 text-blue-500" />
                 <h2 className="text-sm font-semibold text-[#111827] dark:text-[#F1F5F9]">오늘 출근 확인</h2>
                 <span className="ml-auto text-xs text-[#9CA3AF] dark:text-[#64748B]">
                   {getLocalDateStr().replace(/-/g, '.')}
@@ -572,14 +567,11 @@ export default function ProfilePage() {
                     <p className="text-sm font-medium text-green-700 dark:text-green-300">출근 완료</p>
                     <p className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1 mt-0.5">
                       <Clock className="h-3 w-3" />
-                      {todayAttendance?.method === 'office_login'
-                        ? `🖥️ 사무실 PC 로그인 출근 ${checkedInTime}`
-                        : `📍 GPS 출근 ${checkedInTime}`
-                      }
+                      🖥️ 사무실 PC 출근 {checkedInTime}
                     </p>
                   </div>
                 </div>
-              ) : companySettings.attendance_method === 'ip' ? (
+              ) : (
                 <div className="space-y-3">
                   {ipStatus === 'checking' && (
                     <p className="text-sm text-[#6B7280] dark:text-[#94A3B8] text-center py-2 animate-pulse">
@@ -610,61 +602,71 @@ export default function ProfilePage() {
                       출근 확인 버튼을 눌러 네트워크를 확인하세요.
                     </p>
                   )}
+
+                  {/* PC 등록 안내 — 사무실 IP일 때만 노출 */}
+                  {ipStatus === 'allowed' && (
+                    <div className="rounded-lg border border-[#E5E7EB] dark:border-[#334155] bg-[#F9FAFB] dark:bg-[#0F172A] px-3 py-2.5 text-xs space-y-1.5">
+                      <div className="flex items-center gap-1.5">
+                        <Monitor className="h-3.5 w-3.5 text-[#6B7280] dark:text-[#94A3B8]" />
+                        <span className="font-medium text-[#374151] dark:text-[#D1D5DB]">이 PC 등록 상태</span>
+                      </div>
+                      {device === null && (
+                        <>
+                          <p className="text-[11px] text-[#6B7280] dark:text-[#94A3B8] leading-relaxed">
+                            이 PC는 아직 등록되어 있지 않습니다.
+                            {requireDeviceApproval && ' 관리자 승인 필수 모드에서는 등록된 PC에서만 출근 체크가 가능합니다.'}
+                          </p>
+                          <Button type="button" size="sm" variant="outline" className="w-full h-7 text-xs" onClick={requestDeviceRegistration} disabled={deviceRegistering}>
+                            <Monitor className="h-3 w-3 mr-1" />
+                            {deviceRegistering ? '요청 중...' : 'PC 등록 요청'}
+                          </Button>
+                        </>
+                      )}
+                      {device?.status === 'pending' && (
+                        <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                          승인 대기 중{device.device_label ? ` · ${device.device_label}` : ''}
+                        </p>
+                      )}
+                      {device?.status === 'approved' && (
+                        <p className="text-[11px] text-green-600 dark:text-green-400">
+                          ✅ 등록 완료{device.device_label ? ` · ${device.device_label}` : ''}
+                        </p>
+                      )}
+                      {device?.status === 'rejected' && (
+                        <>
+                          <p className="text-[11px] text-red-600 dark:text-red-400">
+                            등록이 거절되었습니다. 다시 요청할 수 있습니다.
+                          </p>
+                          <Button type="button" size="sm" variant="outline" className="w-full h-7 text-xs" onClick={requestDeviceRegistration} disabled={deviceRegistering}>
+                            <Monitor className="h-3 w-3 mr-1" />다시 요청
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  )}
+
                   <div className="flex gap-2">
                     <Button type="button" variant="outline" size="sm" className="flex-none" onClick={checkIp} disabled={ipStatus === 'checking'}>
                       <Wifi className="h-3.5 w-3.5 mr-1" />재확인
                     </Button>
-                    <Button type="button" className="flex-1" disabled={ipStatus !== 'allowed' || checkingIn} onClick={handleCheckIn}>
+                    <Button
+                      type="button"
+                      className="flex-1"
+                      disabled={
+                        ipStatus !== 'allowed' ||
+                        checkingIn ||
+                        (requireDeviceApproval && device?.status !== 'approved')
+                      }
+                      onClick={handleCheckIn}
+                    >
                       <CheckCircle2 className="h-4 w-4 mr-1.5" />{checkingIn ? '처리 중...' : '출근 확인'}
                     </Button>
                   </div>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {gpsStatus === 'no_setting' && (
-                    <p className="text-sm text-[#6B7280] dark:text-[#94A3B8] text-center py-2">
-                      관리자가 회사 위치를 아직 설정하지 않았습니다.
+                  {requireDeviceApproval && device?.status !== 'approved' && ipStatus === 'allowed' && (
+                    <p className="text-[11px] text-[#9CA3AF] dark:text-[#64748B] text-center">
+                      관리자 승인된 PC에서만 출근 체크가 가능합니다.
                     </p>
                   )}
-                  {gpsStatus === 'checking' && (
-                    <p className="text-sm text-[#6B7280] dark:text-[#94A3B8] text-center py-2 animate-pulse">위치 확인 중...</p>
-                  )}
-                  {gpsStatus === 'error' && (
-                    <p className="text-sm text-red-500 dark:text-red-400 text-center py-2">
-                      위치 정보를 가져올 수 없습니다. 브라우저 위치 권한을 허용해 주세요.
-                    </p>
-                  )}
-                  {gpsStatus === 'idle' && (
-                    <p className="text-sm text-[#6B7280] dark:text-[#94A3B8] text-center py-2">
-                      위치 확인 버튼을 눌러 출근 가능 여부를 확인하세요.
-                    </p>
-                  )}
-                  {(gpsStatus === 'near' || gpsStatus === 'far') && distanceMeters !== null && (
-                    <div className={cn(
-                      'rounded-lg px-4 py-2.5 text-sm flex items-center gap-2',
-                      gpsStatus === 'near'
-                        ? 'bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-300'
-                        : 'bg-[#F9FAFB] dark:bg-[#0F172A] text-[#6B7280] dark:text-[#94A3B8]'
-                    )}>
-                      <Navigation className="h-4 w-4 shrink-0" />
-                      <span>
-                        회사까지 {distanceMeters.toLocaleString()}m
-                        {gpsStatus === 'near'
-                          ? ' — 출근 가능 범위입니다.'
-                          : ` — 반경 ${companySettings.radius_meters}m 이내로 이동하세요.`}
-                      </span>
-                    </div>
-                  )}
-                  <div className="flex gap-2">
-                    <Button type="button" variant="outline" size="sm" className="flex-none"
-                      onClick={() => companySettings && checkGps(companySettings)}
-                      disabled={gpsStatus === 'checking'}>
-                      <Navigation className="h-3.5 w-3.5 mr-1" />위치 재확인
-                    </Button>
-                    <Button type="button" className="flex-1" disabled={gpsStatus !== 'near' || checkingIn} onClick={handleCheckIn}>
-                      <CheckCircle2 className="h-4 w-4 mr-1.5" />{checkingIn ? '처리 중...' : '출근 확인'}
-                    </Button>
-                  </div>
                 </div>
               )}
             </>

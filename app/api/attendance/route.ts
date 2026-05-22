@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { getClientIp } from '@/lib/utils/ip'
+import { getClientIp, ipMatchesCidr } from '@/lib/utils/cidr'
 
 export async function GET(request: NextRequest) {
   const supabase = await createClient()
@@ -34,16 +34,63 @@ export async function POST(request: NextRequest) {
 
   const { data: settings } = await supabase
     .from('cg_company_settings')
-    .select('attendance_method, office_ips')
+    .select('attendance_method, require_device_approval')
     .single()
 
+  const clientIp = getClientIp(request)
+  const userAgent = request.headers.get('user-agent') ?? 'unknown'
+
   if (settings?.attendance_method === 'ip') {
-    const ip = getClientIp(request)
-    const allowedIps = (settings.office_ips ?? '')
-      .split(',').map((s: string) => s.trim()).filter(Boolean)
-    if (!allowedIps.includes(ip)) {
-      return NextResponse.json({ error: '사무실 네트워크에서만 출근 체크가 가능합니다.' }, { status: 403 })
+    const { data: networks } = await supabase
+      .from('cg_office_networks')
+      .select('id, cidr')
+
+    const matched = clientIp
+      ? (networks ?? []).find(n => ipMatchesCidr(clientIp, n.cidr))
+      : null
+
+    if (!matched) {
+      return NextResponse.json(
+        { error: '사무실 네트워크에서만 출근 체크가 가능합니다.', current_ip: clientIp },
+        { status: 403 }
+      )
     }
+
+    // 승인 필수 모드: 이 PC(브라우저)가 approved 인지 확인
+    if (settings?.require_device_approval) {
+      const { data: device } = await supabase
+        .from('cg_office_devices')
+        .select('id, status')
+        .eq('user_id', user.id)
+        .eq('user_agent', userAgent)
+        .maybeSingle()
+
+      if (!device || device.status !== 'approved') {
+        return NextResponse.json(
+          {
+            error: device
+              ? (device.status === 'pending'
+                  ? '이 PC는 아직 관리자 승인 대기 중입니다.'
+                  : '이 PC는 등록이 거부되었습니다.')
+              : '이 PC는 등록되어 있지 않습니다. 먼저 PC 등록을 요청하세요.',
+            device_status: device?.status ?? 'unregistered',
+          },
+          { status: 403 }
+        )
+      }
+
+      // 승인된 디바이스 — last_used_at 갱신 (best-effort)
+      await supabase
+        .from('cg_office_devices')
+        .update({ last_used_at: new Date().toISOString(), last_ip: clientIp })
+        .eq('id', device.id)
+    }
+
+    // 매칭된 네트워크의 최근 매칭 일시 갱신 (best-effort)
+    await supabase
+      .from('cg_office_networks')
+      .update({ last_matched_at: new Date().toISOString() })
+      .eq('id', matched.id)
   }
 
   const { data: existing } = await supabase

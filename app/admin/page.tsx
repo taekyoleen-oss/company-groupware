@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Check, Plus, Trash2, X, Save, Sun, MapPin, Navigation, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ClipboardList, Settings, Clock, CheckCircle, XCircle, Wifi, Download } from 'lucide-react'
+import { Check, Plus, Trash2, X, Save, Sun, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ClipboardList, Settings, Clock, CheckCircle, XCircle, Wifi, Download, ShieldCheck, ShieldAlert, Monitor } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
@@ -135,6 +135,21 @@ interface CompanySettings {
   radius_meters: number
   attendance_method: 'gps' | 'ip'
   office_ips: string
+  require_device_approval: boolean
+}
+
+interface OfficeDevice {
+  id: string
+  user_id: string
+  user_agent: string
+  last_ip: string | null
+  device_label: string | null
+  status: 'pending' | 'approved' | 'rejected'
+  requested_at: string
+  decided_at: string | null
+  last_used_at: string | null
+  user: { id: string; full_name: string; color: string } | null
+  decider: { id: string; full_name: string } | null
 }
 
 interface OfficeNetwork {
@@ -216,10 +231,9 @@ export default function AdminPage() {
   const [attCustomTo, setAttCustomTo] = useState<string>(toLocalDateStr())
 
   // 회사 설정
-  const [settings, setSettings] = useState<CompanySettings>({ address: '', latitude: null, longitude: null, radius_meters: 200, attendance_method: 'gps', office_ips: '' })
+  const [settings, setSettings] = useState<CompanySettings>({ address: '', latitude: null, longitude: null, radius_meters: 200, attendance_method: 'ip', office_ips: '', require_device_approval: false })
   const [settingsDirty, setSettingsDirty] = useState(false)
   const [settingsSaving, setSettingsSaving] = useState(false)
-  const [gpsLoading, setGpsLoading] = useState(false)
 
   // 사무실 네트워크(IP/CIDR) 목록
   const [networks, setNetworks] = useState<OfficeNetwork[]>([])
@@ -228,6 +242,11 @@ export default function AdminPage() {
   const [newNetworkLabel, setNewNetworkLabel] = useState('')
   const [networkSaving, setNetworkSaving] = useState<string | null>(null)
   const [networkAdding, setNetworkAdding] = useState(false)
+
+  // 등록된 PC(디바이스) 목록
+  const [devices, setDevices] = useState<OfficeDevice[]>([])
+  const [deviceProcessing, setDeviceProcessing] = useState<string | null>(null)
+  const [deviceLabelEdits, setDeviceLabelEdits] = useState<Record<string, string>>({})
 
   const fetchAll = useCallback(async () => {
     const [usersRes, teamsRes, catsRes, vacRes, cancelRes, historyRes, vacReqRes, attHistRes] = await Promise.all([
@@ -291,7 +310,23 @@ export default function AdminPage() {
     const res = await fetch('/api/admin/settings')
     if (res.ok) {
       const data = await res.json()
-      setSettings({ ...data, office_ips: data.office_ips ?? '' })
+      setSettings({
+        ...data,
+        office_ips: data.office_ips ?? '',
+        attendance_method: 'ip',
+        require_device_approval: data.require_device_approval ?? false,
+      })
+    }
+  }, [])
+
+  const fetchDevices = useCallback(async () => {
+    const res = await fetch('/api/admin/office-devices')
+    if (res.ok) {
+      const data: OfficeDevice[] = await res.json()
+      setDevices(data)
+      const labels: Record<string, string> = {}
+      data.forEach(d => { labels[d.id] = d.device_label ?? '' })
+      setDeviceLabelEdits(labels)
     }
   }, [])
 
@@ -310,6 +345,42 @@ export default function AdminPage() {
   useEffect(() => { fetchAttendance(attendanceDate) }, [fetchAttendance, attendanceDate])
   useEffect(() => { fetchSettings() }, [fetchSettings])
   useEffect(() => { fetchNetworks() }, [fetchNetworks])
+  useEffect(() => { fetchDevices() }, [fetchDevices])
+
+  // 디바이스 승인/거절/삭제 핸들러
+  const handleDeviceAction = async (id: string, action: 'approve' | 'reject') => {
+    setDeviceProcessing(id)
+    const res = await fetch(`/api/admin/office-devices/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action }),
+    })
+    setDeviceProcessing(null)
+    if (res.ok) { showToast(action === 'approve' ? '승인되었습니다.' : '거절되었습니다.', 'success'); fetchDevices() }
+    else { showToast('처리에 실패했습니다.', 'error') }
+  }
+
+  const handleDeviceLabelSave = async (id: string) => {
+    const label = deviceLabelEdits[id] ?? ''
+    setDeviceProcessing(id)
+    const res = await fetch(`/api/admin/office-devices/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_label: label }),
+    })
+    setDeviceProcessing(null)
+    if (res.ok) { showToast('라벨이 저장되었습니다.', 'success'); fetchDevices() }
+    else { showToast('저장에 실패했습니다.', 'error') }
+  }
+
+  const handleDeviceDelete = async (id: string) => {
+    if (!window.confirm('이 PC 등록을 삭제하시겠습니까?')) return
+    setDeviceProcessing(id)
+    const res = await fetch(`/api/admin/office-devices/${id}`, { method: 'DELETE' })
+    setDeviceProcessing(null)
+    if (res.ok) { showToast('삭제되었습니다.', 'success'); fetchDevices() }
+    else { showToast('삭제에 실패했습니다.', 'error') }
+  }
 
   // 휴가 취소 요청 / 신청 변경 / 사이드바에서 승인 → 자동 새로고침
   useEffect(() => {
@@ -682,21 +753,6 @@ export default function AdminPage() {
     setSettingsSaving(false)
     if (res.ok) { showToast('설정이 저장되었습니다.', 'success'); setSettingsDirty(false) }
     else showToast('저장에 실패했습니다.', 'error')
-  }
-
-  const useCurrentGPS = () => {
-    if (!navigator.geolocation) { showToast('이 브라우저는 GPS를 지원하지 않습니다.', 'error'); return }
-    setGpsLoading(true)
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setSettings(s => ({ ...s, latitude: pos.coords.latitude, longitude: pos.coords.longitude }))
-        setSettingsDirty(true)
-        setGpsLoading(false)
-        showToast('현재 위치가 입력되었습니다.', 'success')
-      },
-      () => { showToast('위치 정보를 가져올 수 없습니다.', 'error'); setGpsLoading(false) },
-      { enableHighAccuracy: true, timeout: 10000 }
-    )
   }
 
   const addNetwork = async (cidr: string, label: string | null) => {
@@ -1443,111 +1499,29 @@ export default function AdminPage() {
         <TabsContent value="settings">
           <form onSubmit={saveSettings} className="space-y-4 max-w-md">
 
-            {/* 출근 체크 방식 선택 */}
+            {/* PC 승인 정책 */}
             <div className="bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded-xl p-5 space-y-3">
               <div className="flex items-center gap-2 mb-1">
-                <Settings className="h-4 w-4 text-[#2563EB]" />
-                <h2 className="text-sm font-semibold text-[#111827] dark:text-[#F1F5F9]">출근 체크 방식</h2>
+                <ShieldCheck className="h-4 w-4 text-[#2563EB]" />
+                <h2 className="text-sm font-semibold text-[#111827] dark:text-[#F1F5F9]">PC 승인 정책</h2>
               </div>
-              <div className="flex gap-3">
-                {(['gps', 'ip'] as const).map(method => (
-                  <button
-                    key={method}
-                    type="button"
-                    onClick={() => { setSettings(s => ({ ...s, attendance_method: method })); setSettingsDirty(true) }}
-                    className={`flex-1 flex items-center justify-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors ${
-                      settings.attendance_method === method
-                        ? 'border-[#2563EB] bg-[#EFF6FF] dark:bg-[#1E3A5F] text-[#2563EB] dark:text-[#93C5FD]'
-                        : 'border-[#E5E7EB] dark:border-[#334155] text-[#6B7280] dark:text-[#94A3B8] hover:border-[#9CA3AF]'
-                    }`}
-                  >
-                    {method === 'gps' ? <Navigation className="h-4 w-4" /> : <Wifi className="h-4 w-4" />}
-                    {method === 'gps' ? 'GPS 위치' : '사무실 IP'}
-                  </button>
-                ))}
-              </div>
+              <p className="text-xs text-[#6B7280] dark:text-[#94A3B8] leading-relaxed">
+                <strong>승인 필수</strong>로 설정하면 사무실 IP에 있어도 관리자가 승인한 PC에서만 출근 체크가 가능합니다.
+                미설정 시에는 IP 매칭만으로 출근 체크가 동작하며, PC 등록은 관리 목적의 기록으로만 사용됩니다.
+              </p>
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={settings.require_device_approval}
+                  onChange={e => { setSettings(s => ({ ...s, require_device_approval: e.target.checked })); setSettingsDirty(true) }}
+                  className="h-4 w-4 accent-[#2563EB]"
+                />
+                <span className="text-sm text-[#111827] dark:text-[#F1F5F9]">승인된 PC만 출근 체크 허용</span>
+              </label>
             </div>
 
-            {/* GPS 설정 */}
-            {settings.attendance_method === 'gps' && (
-              <div className="bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded-xl p-5 space-y-4">
-                <div className="flex items-center gap-2 mb-1">
-                  <MapPin className="h-4 w-4 text-[#2563EB]" />
-                  <h2 className="text-sm font-semibold text-[#111827] dark:text-[#F1F5F9]">회사 위치 설정</h2>
-                </div>
-                <p className="text-xs text-[#6B7280] dark:text-[#94A3B8]">
-                  GPS 출근 체크 기준 위치입니다. 주소와 좌표를 입력하거나 현재 위치를 사용하세요.
-                </p>
-
-                <div>
-                  <label className="block text-sm font-medium mb-1">회사 주소</label>
-                  <Input
-                    value={settings.address}
-                    onChange={e => { setSettings(s => ({ ...s, address: e.target.value })); setSettingsDirty(true) }}
-                    placeholder="예: 서울시 강남구 테헤란로 123"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-sm font-medium mb-1">위도 (Latitude)</label>
-                    <Input
-                      type="number"
-                      step="any"
-                      value={settings.latitude ?? ''}
-                      onChange={e => { setSettings(s => ({ ...s, latitude: e.target.value ? Number(e.target.value) : null })); setSettingsDirty(true) }}
-                      placeholder="37.123456"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">경도 (Longitude)</label>
-                    <Input
-                      type="number"
-                      step="any"
-                      value={settings.longitude ?? ''}
-                      onChange={e => { setSettings(s => ({ ...s, longitude: e.target.value ? Number(e.target.value) : null })); setSettingsDirty(true) }}
-                      placeholder="127.123456"
-                    />
-                  </div>
-                </div>
-
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full"
-                  onClick={useCurrentGPS}
-                  disabled={gpsLoading}
-                >
-                  <Navigation className="h-4 w-4 mr-2" />
-                  {gpsLoading ? 'GPS 확인 중...' : '현재 위치로 자동 입력'}
-                </Button>
-
-                <div>
-                  <label className="block text-sm font-medium mb-1">출근 인정 반경 (미터)</label>
-                  <Input
-                    type="number"
-                    min={50}
-                    max={5000}
-                    value={settings.radius_meters}
-                    onChange={e => { setSettings(s => ({ ...s, radius_meters: Number(e.target.value) })); setSettingsDirty(true) }}
-                  />
-                  <p className="text-xs text-[#6B7280] dark:text-[#94A3B8] mt-1">
-                    회사 위치로부터 이 반경 내에서 출근 체크가 가능합니다. (기본: 200m)
-                  </p>
-                </div>
-
-                {settings.latitude && settings.longitude && (
-                  <div className="rounded-lg bg-[#EFF6FF] dark:bg-[#1E3A5F] border border-[#BFDBFE] dark:border-[#2563EB] px-3 py-2 text-xs text-[#2563EB] dark:text-[#93C5FD]">
-                    위치 설정됨: {settings.latitude.toFixed(6)}, {settings.longitude.toFixed(6)}
-                    {' · '}반경 {settings.radius_meters}m
-                  </div>
-                )}
-              </div>
-            )}
-
             {/* IP 설정 — cg_office_networks 행 단위 관리 */}
-            {settings.attendance_method === 'ip' && (
-              <div className="bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded-xl p-5 space-y-4">
+            <div className="bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded-xl p-5 space-y-4">
                 <div className="flex items-center gap-2 mb-1">
                   <Wifi className="h-4 w-4 text-[#2563EB]" />
                   <h2 className="text-sm font-semibold text-[#111827] dark:text-[#F1F5F9]">허용 IP 주소</h2>
@@ -1635,13 +1609,131 @@ export default function AdminPage() {
                   })}
                 </div>
               </div>
-            )}
 
             <Button type="submit" className="w-full max-w-md" disabled={!settingsDirty || settingsSaving}>
               <Save className="h-4 w-4 mr-2" />
               {settingsSaving ? '저장 중...' : '설정 저장'}
             </Button>
           </form>
+
+          {/* 등록된 PC 리스트 — 사무실 IP 설정 아래 */}
+          <div className="mt-6 max-w-md bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded-xl p-5 space-y-4">
+            <div className="flex items-center gap-2 mb-1">
+              <Monitor className="h-4 w-4 text-[#2563EB]" />
+              <h2 className="text-sm font-semibold text-[#111827] dark:text-[#F1F5F9]">등록된 PC</h2>
+              {devices.filter(d => d.status === 'pending').length > 0 && (
+                <Badge variant="outline" className="ml-1 text-[10px] border-amber-400 text-amber-600 dark:text-amber-400">
+                  대기 {devices.filter(d => d.status === 'pending').length}건
+                </Badge>
+              )}
+            </div>
+            <p className="text-xs text-[#6B7280] dark:text-[#94A3B8] leading-relaxed">
+              사무실 IP에서 직원이 등록 요청한 PC 목록입니다. 승인된 PC만 신뢰됩니다.
+            </p>
+
+            {devices.length === 0 ? (
+              <div className="rounded-lg bg-[#F9FAFB] dark:bg-[#0F172A] border border-dashed border-[#E5E7EB] dark:border-[#334155] px-3 py-4 text-center text-xs text-[#9CA3AF] dark:text-[#6B7280]">
+                등록 요청된 PC가 없습니다.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {devices.map(d => {
+                  const labelEdit = deviceLabelEdits[d.id] ?? ''
+                  const labelDirty = labelEdit !== (d.device_label ?? '')
+                  const lastUsed = d.last_used_at
+                    ? format(parseISO(d.last_used_at), 'yyyy.MM.dd HH:mm', { locale: ko })
+                    : '—'
+                  const requestedAt = format(parseISO(d.requested_at), 'yyyy.MM.dd HH:mm', { locale: ko })
+                  const statusBadge =
+                    d.status === 'approved' ? { cls: 'bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-300', label: '승인' }
+                    : d.status === 'pending' ? { cls: 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300', label: '대기' }
+                    : { cls: 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300', label: '거절' }
+                  return (
+                    <div key={d.id} className="bg-[#F9FAFB] dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-[#334155] rounded-lg px-3 py-2.5 space-y-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <UserAvatar name={d.user?.full_name ?? '알 수 없음'} color={d.user?.color ?? '#9CA3AF'} size={28} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-[#111827] dark:text-[#F1F5F9] truncate">
+                            {d.user?.full_name ?? '알 수 없음'}
+                          </p>
+                          <p className="text-[10px] text-[#9CA3AF] dark:text-[#64748B]">
+                            요청: {requestedAt} · 최근 사용: {lastUsed}
+                          </p>
+                        </div>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full ${statusBadge.cls}`}>
+                          {statusBadge.label}
+                        </span>
+                      </div>
+
+                      <div className="text-[10px] font-mono text-[#6B7280] dark:text-[#94A3B8] break-all leading-snug">
+                        UA: {d.user_agent.slice(0, 90)}{d.user_agent.length > 90 ? '…' : ''}
+                      </div>
+                      {d.last_ip && (
+                        <div className="text-[10px] font-mono text-[#9CA3AF] dark:text-[#64748B]">
+                          IP: {d.last_ip}
+                        </div>
+                      )}
+
+                      <div className="flex flex-wrap gap-1.5 items-center">
+                        <Input
+                          value={labelEdit}
+                          onChange={e => setDeviceLabelEdits(prev => ({ ...prev, [d.id]: e.target.value }))}
+                          placeholder="PC 라벨"
+                          className="h-7 text-xs flex-1 min-w-[6rem]"
+                        />
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-7 px-2"
+                          disabled={!labelDirty || deviceProcessing === d.id}
+                          onClick={() => handleDeviceLabelSave(d.id)}
+                          title="라벨 저장"
+                        >
+                          <Save className="h-3 w-3" />
+                        </Button>
+                        {d.status !== 'approved' && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="h-7 px-2 bg-green-600 hover:bg-green-700"
+                            disabled={deviceProcessing === d.id}
+                            onClick={() => handleDeviceAction(d.id, 'approve')}
+                            title="승인"
+                          >
+                            <Check className="h-3 w-3" />
+                          </Button>
+                        )}
+                        {d.status !== 'rejected' && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-7 px-2 text-amber-600 border-amber-300"
+                            disabled={deviceProcessing === d.id}
+                            onClick={() => handleDeviceAction(d.id, 'reject')}
+                            title="거절"
+                          >
+                            <ShieldAlert className="h-3 w-3" />
+                          </Button>
+                        )}
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="danger"
+                          className="h-7 px-2"
+                          disabled={deviceProcessing === d.id}
+                          onClick={() => handleDeviceDelete(d.id)}
+                          title="삭제"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
         </TabsContent>
       </Tabs>
 

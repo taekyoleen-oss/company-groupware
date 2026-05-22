@@ -21,10 +21,48 @@ export async function POST(request: NextRequest) {
   // 등록된 사무실 IP 목록 조회
   const { data: networks } = await supabase
     .from('cg_office_networks')
-    .select('cidr')
+    .select('id, cidr')
 
-  const matched = (networks ?? []).some(n => ipMatchesCidr(clientIp, n.cidr))
+  const matched = (networks ?? []).find(n => ipMatchesCidr(clientIp, n.cidr))
   if (!matched) return NextResponse.json({ matched: false, ip: clientIp })
+
+  // 승인 필수 모드 — 미승인 PC는 자동 출근 처리 안 함
+  const { data: settings } = await supabase
+    .from('cg_company_settings')
+    .select('require_device_approval')
+    .maybeSingle()
+
+  const userAgent = request.headers.get('user-agent') ?? 'unknown'
+
+  if (settings?.require_device_approval) {
+    const { data: device } = await supabase
+      .from('cg_office_devices')
+      .select('id, status')
+      .eq('user_id', user.id)
+      .eq('user_agent', userAgent)
+      .maybeSingle()
+
+    if (!device || device.status !== 'approved') {
+      return NextResponse.json({
+        matched: true,
+        ip: clientIp,
+        skipped: 'device_not_approved',
+        device_status: device?.status ?? 'unregistered',
+      })
+    }
+
+    // last_used_at 갱신 (best-effort)
+    await supabase
+      .from('cg_office_devices')
+      .update({ last_used_at: new Date().toISOString(), last_ip: clientIp })
+      .eq('id', device.id)
+  }
+
+  // 매칭된 네트워크의 최근 매칭 일시 갱신 (best-effort)
+  await supabase
+    .from('cg_office_networks')
+    .update({ last_matched_at: new Date().toISOString() })
+    .eq('id', matched.id)
 
   // KST 오늘 날짜 (UTC+9)
   const today = new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10)

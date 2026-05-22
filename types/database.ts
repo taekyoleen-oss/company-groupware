@@ -463,6 +463,7 @@ export interface Database {
           radius_meters: number
           attendance_method: 'gps' | 'ip'
           office_ips: string | null
+          require_device_approval: boolean
           updated_at: string
         }
         Insert: {
@@ -473,6 +474,7 @@ export interface Database {
           radius_meters?: number
           attendance_method?: 'gps' | 'ip'
           office_ips?: string | null
+          require_device_approval?: boolean
           updated_at?: string
         }
         Update: {
@@ -483,9 +485,64 @@ export interface Database {
           radius_meters?: number
           attendance_method?: 'gps' | 'ip'
           office_ips?: string | null
+          require_device_approval?: boolean
           updated_at?: string
         }
         Relationships: []
+      }
+      cg_office_devices: {
+        Row: {
+          id: string
+          user_id: string
+          user_agent: string
+          last_ip: string | null
+          device_label: string | null
+          status: 'pending' | 'approved' | 'rejected'
+          requested_at: string
+          decided_at: string | null
+          decided_by: string | null
+          last_used_at: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          user_agent: string
+          last_ip?: string | null
+          device_label?: string | null
+          status?: 'pending' | 'approved' | 'rejected'
+          requested_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          last_used_at?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          user_agent?: string
+          last_ip?: string | null
+          device_label?: string | null
+          status?: 'pending' | 'approved' | 'rejected'
+          requested_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          last_used_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'cg_office_devices_user_id_fkey'
+            columns: ['user_id']
+            isOneToOne: false
+            referencedRelation: 'cg_profiles'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'cg_office_devices_decided_by_fkey'
+            columns: ['decided_by']
+            isOneToOne: false
+            referencedRelation: 'cg_profiles'
+            referencedColumns: ['id']
+          }
+        ]
       }
       cg_office_networks: {
         Row: {
