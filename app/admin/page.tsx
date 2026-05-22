@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Check, Plus, Trash2, X, Save, Sun, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ClipboardList, Settings, Clock, CheckCircle, XCircle, Wifi, Download, ShieldCheck, ShieldAlert, Monitor, RefreshCw } from 'lucide-react'
@@ -180,7 +180,17 @@ function toLocalDateStr(d: Date = new Date()) {
 
 const VALID_TABS = new Set(['users', 'attendance', 'vacation', 'teams', 'categories', 'settings'])
 
+// useSearchParams 를 쓰는 컴포넌트는 Next.js 빌드 시 Suspense 경계가 필요해
+// 실제 페이지 로직을 inner 로 분리하고 default export 는 Suspense 로 감싼다.
 export default function AdminPage() {
+  return (
+    <Suspense fallback={<div className="p-4 text-center text-[#6B7280]">불러오는 중...</div>}>
+      <AdminPageInner />
+    </Suspense>
+  )
+}
+
+function AdminPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { showToast, ToastComponent } = useToast()
