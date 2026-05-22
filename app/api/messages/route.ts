@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
+// 본인이 숨긴 메시지 ID 목록
+async function fetchHiddenIds(supabase: Awaited<ReturnType<typeof createClient>>, userId: string): Promise<Set<string>> {
+  const { data } = await (supabase as any)
+    .from('cg_message_hides')
+    .select('message_id')
+    .eq('user_id', userId)
+  return new Set(((data ?? []) as { message_id: string }[]).map(h => h.message_id))
+}
+
 export async function GET(request: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -8,6 +17,8 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url)
   const type = searchParams.get('type') // 'sent' | 'received' (default)
+
+  const hidden = await fetchHiddenIds(supabase, user.id)
 
   if (type === 'sent') {
     const { data, error } = await (supabase as any)
@@ -17,7 +28,8 @@ export async function GET(request: NextRequest) {
       .order('created_at', { ascending: false })
       .limit(50)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    return NextResponse.json(data)
+    const filtered = ((data ?? []) as { id: string }[]).filter(m => !hidden.has(m.id))
+    return NextResponse.json(filtered)
   }
 
   // received (default)
@@ -39,7 +51,8 @@ export async function GET(request: NextRequest) {
     .limit(50)
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json(data)
+  const filtered = ((data ?? []) as { id: string }[]).filter(m => !hidden.has(m.id))
+  return NextResponse.json(filtered)
 }
 
 export async function POST(request: NextRequest) {
@@ -94,4 +107,55 @@ export async function POST(request: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json(data, { status: 201 })
+}
+
+// DELETE — 전체 삭제 (받은 메시지 또는 보낸 메시지 일괄 숨김)
+// ?type=received | sent  (필수)
+export async function DELETE(request: NextRequest) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { searchParams } = new URL(request.url)
+  const type = searchParams.get('type')
+  if (type !== 'received' && type !== 'sent') {
+    return NextResponse.json({ error: 'type 쿼리는 received 또는 sent 여야 합니다.' }, { status: 400 })
+  }
+
+  let messages: { id: string }[] = []
+
+  if (type === 'sent') {
+    const { data } = await (supabase as any)
+      .from('cg_messages')
+      .select('id')
+      .eq('sender_id', user.id)
+    messages = (data ?? []) as { id: string }[]
+  } else {
+    const { data: profile } = await supabase
+      .from('cg_profiles')
+      .select('team_id')
+      .eq('id', user.id)
+      .single()
+    const orFilter = profile?.team_id
+      ? `recipient_id.eq.${user.id},team_id.eq.${profile.team_id}`
+      : `recipient_id.eq.${user.id}`
+    const { data } = await (supabase as any)
+      .from('cg_messages')
+      .select('id')
+      .or(orFilter)
+    messages = (data ?? []) as { id: string }[]
+  }
+
+  if (messages.length === 0) {
+    return NextResponse.json({ hidden: 0 })
+  }
+
+  // upsert (이미 숨긴 항목은 그대로) — primary key (message_id, user_id) 충돌 무시
+  const rows = messages.map(m => ({ message_id: m.id, user_id: user.id }))
+  const { error } = await (supabase as any)
+    .from('cg_message_hides')
+    .upsert(rows, { onConflict: 'message_id,user_id', ignoreDuplicates: true })
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json({ hidden: messages.length })
 }

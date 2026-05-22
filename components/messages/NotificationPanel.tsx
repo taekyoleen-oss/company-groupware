@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Bell, X, MessageSquare, Send as SendIcon, ArrowDownLeft, ArrowUpRight, CornerUpRight, CornerUpLeft } from 'lucide-react'
+import { Bell, X, MessageSquare, Send as SendIcon, ArrowDownLeft, ArrowUpRight, CornerUpRight, CornerUpLeft, Trash2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { format, parseISO } from 'date-fns'
 import { ko } from 'date-fns/locale'
@@ -44,11 +44,13 @@ function MessageDetailDialog({
   onClose,
   onReply,
   onForward,
+  onDelete,
 }: {
   detail: DetailState | null
   onClose: () => void
   onReply: (msg: Message) => void
   onForward: (msg: Message) => void
+  onDelete: (msg: Message, type: 'received' | 'sent') => void
 }) {
   if (!detail) return null
   const { msg, type } = detail
@@ -103,7 +105,7 @@ function MessageDetailDialog({
         </div>
 
         {/* Actions */}
-        <div className="flex gap-2 pt-1">
+        <div className="flex flex-wrap gap-2 pt-1">
           {/* 답장 — 받은 메시지이고 개인 발신자가 있을 때만 */}
           {!isSent && msg.sender_id && (
             <Button
@@ -126,6 +128,15 @@ function MessageDetailDialog({
             <CornerUpRight className="h-3.5 w-3.5" />
             전달
           </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="flex-1 gap-1.5 text-[#EF4444] border-red-200 hover:bg-red-50"
+            onClick={() => { onDelete(msg, type); onClose() }}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            삭제
+          </Button>
           <Button size="sm" variant="outline" className="flex-1" onClick={onClose}>
             닫기
           </Button>
@@ -143,6 +154,9 @@ export function NotificationPanel({ userId, teamId }: NotificationPanelProps) {
   const [sent,     setSent]     = useState<Message[]>([])
   const [detail,   setDetail]   = useState<DetailState | null>(null)
   const [forward,  setForward]  = useState<{ msg: Message; mode: 'reply' | 'forward' } | null>(null)
+  const [confirmBulk, setConfirmBulk] = useState<'received' | 'sent' | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [bulkDeleting, setBulkDeleting] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
 
   const unreadCount = received.filter(m => !m.is_read).length
@@ -186,6 +200,29 @@ export function NotificationPanel({ userId, teamId }: NotificationPanelProps) {
     document.addEventListener('mousedown', h)
     return () => document.removeEventListener('mousedown', h)
   }, [isOpen])
+
+  // ── Delete (soft hide) ────────────────────────────────────
+  const handleDeleteOne = async (msg: Message, type: 'received' | 'sent', e?: React.MouseEvent) => {
+    e?.stopPropagation()
+    setDeletingId(msg.id)
+    const res = await fetch(`/api/messages/${msg.id}`, { method: 'DELETE' })
+    setDeletingId(null)
+    if (res.ok) {
+      if (type === 'received') setReceived(prev => prev.filter(m => m.id !== msg.id))
+      else setSent(prev => prev.filter(m => m.id !== msg.id))
+    }
+  }
+
+  const handleDeleteAll = async (type: 'received' | 'sent') => {
+    setBulkDeleting(true)
+    const res = await fetch(`/api/messages?type=${type}`, { method: 'DELETE' })
+    setBulkDeleting(false)
+    setConfirmBulk(null)
+    if (res.ok) {
+      if (type === 'received') setReceived([])
+      else setSent([])
+    }
+  }
 
   // ── Click row ─────────────────────────────────────────────
   const handleMsgClick = async (msg: Message, type: 'received' | 'sent') => {
@@ -255,52 +292,89 @@ export function NotificationPanel({ userId, teamId }: NotificationPanelProps) {
               ))}
             </div>
 
+            {/* Bulk delete bar */}
+            {((tab === 'received' && received.length > 0) || (tab === 'sent' && sent.length > 0)) && (
+              <div className="flex items-center justify-between px-4 py-1.5 border-b border-[#F3F4F6] bg-[#FAFAFA]">
+                <span className="text-[10px] text-[#9CA3AF]">
+                  {tab === 'received' ? `${received.length}건` : `${sent.length}건`}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setConfirmBulk(tab)}
+                  className="text-[11px] text-[#EF4444] hover:text-[#DC2626] font-medium flex items-center gap-1"
+                >
+                  <Trash2 className="h-3 w-3" />
+                  {tab === 'received' ? '받은 메시지 전체 삭제' : '보낸 메시지 전체 삭제'}
+                </button>
+              </div>
+            )}
+
             {/* List */}
             <div className="max-h-80 overflow-y-auto divide-y divide-[#F3F4F6]">
               {tab === 'received' ? (
                 received.length === 0 ? (
                   <p className="text-xs text-[#9CA3AF] text-center py-10">받은 메시지가 없습니다.</p>
                 ) : received.map(msg => (
-                  <button key={msg.id} onClick={() => handleMsgClick(msg, 'received')}
-                    className={`w-full text-left px-4 py-3 flex gap-3 hover:bg-[#F9FAFB] transition-colors ${!msg.is_read ? 'bg-[#EFF6FF]' : ''}`}
-                  >
-                    <div className="shrink-0 w-8 h-8 rounded-full bg-[#2563EB] flex items-center justify-center mt-0.5">
-                      <MessageSquare className="h-3.5 w-3.5 text-white" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-1">
-                        <p className="text-xs font-semibold text-[#111827] flex items-center gap-1">
-                          {msg.sender_name}
-                          {msg.team_id && <span className="text-[10px] text-[#6B7280] font-normal bg-[#F3F4F6] px-1.5 py-0.5 rounded">팀</span>}
-                        </p>
-                        <span className="text-[10px] text-[#9CA3AF] shrink-0">{formatShort(msg.created_at)}</span>
+                  <div key={msg.id} className={`group relative w-full px-4 py-3 flex gap-3 hover:bg-[#F9FAFB] transition-colors ${!msg.is_read ? 'bg-[#EFF6FF]' : ''}`}>
+                    <button onClick={() => handleMsgClick(msg, 'received')} className="flex-1 min-w-0 flex gap-3 text-left">
+                      <div className="shrink-0 w-8 h-8 rounded-full bg-[#2563EB] flex items-center justify-center mt-0.5">
+                        <MessageSquare className="h-3.5 w-3.5 text-white" />
                       </div>
-                      <p className="text-xs text-[#374151] mt-0.5 line-clamp-1 break-words">{msg.content}</p>
-                    </div>
-                    {!msg.is_read && <div className="shrink-0 w-2 h-2 bg-[#2563EB] rounded-full mt-2" />}
-                  </button>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-1">
+                          <p className="text-xs font-semibold text-[#111827] flex items-center gap-1">
+                            {msg.sender_name}
+                            {msg.team_id && <span className="text-[10px] text-[#6B7280] font-normal bg-[#F3F4F6] px-1.5 py-0.5 rounded">팀</span>}
+                          </p>
+                          <span className="text-[10px] text-[#9CA3AF] shrink-0 mr-5">{formatShort(msg.created_at)}</span>
+                        </div>
+                        <p className="text-xs text-[#374151] mt-0.5 line-clamp-1 break-words">{msg.content}</p>
+                      </div>
+                      {!msg.is_read && <div className="shrink-0 w-2 h-2 bg-[#2563EB] rounded-full mt-2" />}
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="삭제"
+                      title="삭제"
+                      disabled={deletingId === msg.id}
+                      onClick={(e) => handleDeleteOne(msg, 'received', e)}
+                      className="absolute top-2 right-2 p-1 rounded text-[#9CA3AF] hover:text-[#EF4444] hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 ))
               ) : (
                 sent.length === 0 ? (
                   <p className="text-xs text-[#9CA3AF] text-center py-10">보낸 메시지가 없습니다.</p>
                 ) : sent.map(msg => (
-                  <button key={msg.id} onClick={() => handleMsgClick(msg, 'sent')}
-                    className="w-full text-left px-4 py-3 flex gap-3 hover:bg-[#F9FAFB] transition-colors"
-                  >
-                    <div className="shrink-0 w-8 h-8 rounded-full bg-[#10B981] flex items-center justify-center mt-0.5">
-                      <SendIcon className="h-3.5 w-3.5 text-white" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-1">
-                        <p className="text-xs font-semibold text-[#111827]">
-                          → {msg.team_id ? `${msg.team_name ?? '팀'} 전체` : (msg.recipient_name ?? '알 수 없음')}
-                        </p>
-                        <span className="text-[10px] text-[#9CA3AF] shrink-0">{formatShort(msg.created_at)}</span>
+                  <div key={msg.id} className="group relative w-full px-4 py-3 flex gap-3 hover:bg-[#F9FAFB] transition-colors">
+                    <button onClick={() => handleMsgClick(msg, 'sent')} className="flex-1 min-w-0 flex gap-3 text-left">
+                      <div className="shrink-0 w-8 h-8 rounded-full bg-[#10B981] flex items-center justify-center mt-0.5">
+                        <SendIcon className="h-3.5 w-3.5 text-white" />
                       </div>
-                      <p className="text-xs text-[#374151] mt-0.5 line-clamp-1 break-words">{msg.content}</p>
-                      {msg.is_read && <p className="text-[10px] text-[#10B981] mt-0.5 font-medium">✓ 읽음</p>}
-                    </div>
-                  </button>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-1">
+                          <p className="text-xs font-semibold text-[#111827]">
+                            → {msg.team_id ? `${msg.team_name ?? '팀'} 전체` : (msg.recipient_name ?? '알 수 없음')}
+                          </p>
+                          <span className="text-[10px] text-[#9CA3AF] shrink-0 mr-5">{formatShort(msg.created_at)}</span>
+                        </div>
+                        <p className="text-xs text-[#374151] mt-0.5 line-clamp-1 break-words">{msg.content}</p>
+                        {msg.is_read && <p className="text-[10px] text-[#10B981] mt-0.5 font-medium">✓ 읽음</p>}
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="삭제"
+                      title="삭제"
+                      disabled={deletingId === msg.id}
+                      onClick={(e) => handleDeleteOne(msg, 'sent', e)}
+                      className="absolute top-2 right-2 p-1 rounded text-[#9CA3AF] hover:text-[#EF4444] hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 ))
               )}
             </div>
@@ -314,6 +388,7 @@ export function NotificationPanel({ userId, teamId }: NotificationPanelProps) {
         onClose={() => setDetail(null)}
         onReply={msg => setForward({ msg, mode: 'reply' })}
         onForward={msg => setForward({ msg, mode: 'forward' })}
+        onDelete={(msg, type) => handleDeleteOne(msg, type)}
       />
 
       {/* Forward / Reply modal */}
@@ -328,6 +403,36 @@ export function NotificationPanel({ userId, teamId }: NotificationPanelProps) {
           replyRecipientName={forward.msg.sender_name}
         />
       )}
+
+      {/* Bulk delete confirmation */}
+      <Dialog open={confirmBulk !== null} onOpenChange={open => { if (!open) setConfirmBulk(null) }}>
+        <DialogContent className="max-w-xs">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-sm">
+              <Trash2 className="h-4 w-4 text-[#EF4444]" />
+              {confirmBulk === 'received' ? '받은 메시지 전체 삭제' : '보낸 메시지 전체 삭제'}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-[#6B7280] leading-relaxed">
+            {confirmBulk === 'received'
+              ? '내 받은 메시지 목록에서 모두 사라집니다. 발신자의 보낸 메시지에는 영향이 없습니다.'
+              : '내 보낸 메시지 목록에서 모두 사라집니다. 수신자의 받은 메시지에는 영향이 없습니다.'}
+          </p>
+          <div className="flex gap-2 pt-2">
+            <Button size="sm" variant="outline" className="flex-1" onClick={() => setConfirmBulk(null)} disabled={bulkDeleting}>
+              취소
+            </Button>
+            <Button
+              size="sm"
+              className="flex-1 bg-[#EF4444] hover:bg-[#DC2626] text-white"
+              disabled={bulkDeleting}
+              onClick={() => confirmBulk && handleDeleteAll(confirmBulk)}
+            >
+              {bulkDeleting ? '삭제 중...' : '전체 삭제'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }
