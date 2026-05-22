@@ -24,15 +24,20 @@ export async function GET(request: NextRequest) {
       .select('id, full_name, color, team_id, role, status')
       .eq('status', 'active')
       .order('full_name'),
+    // method 컬럼이 아직 없는 환경 호환 — * 와일드카드
     supabase
       .from('cg_attendance')
-      .select('user_id, checked_in_at, method')
+      .select('*')
       .eq('date', date),
   ])
 
+  if (attendanceRes.error) {
+    console.error('[admin/attendance GET] attendance select error:', attendanceRes.error.message)
+  }
+
   const attendanceMap: Record<string, { checked_in_at: string; method: string }> = {}
-  for (const a of attendanceRes.data ?? []) {
-    attendanceMap[a.user_id] = { checked_in_at: a.checked_in_at, method: a.method ?? 'gps' }
+  for (const a of (attendanceRes.data ?? []) as Array<{ user_id: string; checked_in_at: string; method?: string | null }>) {
+    attendanceMap[a.user_id] = { checked_in_at: a.checked_in_at, method: a.method ?? 'office_login' }
   }
 
   const result = (usersRes.data ?? []).map(u => ({

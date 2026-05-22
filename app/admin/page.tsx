@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Check, Plus, Trash2, X, Save, Sun, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ClipboardList, Settings, Clock, CheckCircle, XCircle, Wifi, Download, ShieldCheck, ShieldAlert, Monitor, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -178,8 +178,11 @@ function toLocalDateStr(d: Date = new Date()) {
   return d.toLocaleDateString('sv-SE') // YYYY-MM-DD
 }
 
+const VALID_TABS = new Set(['users', 'attendance', 'vacation', 'teams', 'categories', 'settings'])
+
 export default function AdminPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { showToast, ToastComponent } = useToast()
   const [users, setUsers] = useState<ProfileWithTeam[]>([])
   const [edits, setEdits] = useState<Record<string, UserEdit>>({})
@@ -201,7 +204,18 @@ export default function AdminPage() {
   const [requestProcessing, setRequestProcessing] = useState<string | null>(null)
   const [approveComplete, setApproveComplete] = useState<{ kind: 'cancel' | 'request' } | null>(null)
   // 탭 컨트롤 — 승인 완료 후 휴가 탭으로 자동 이동시키기 위해 controlled 로 운용
-  const [activeTab, setActiveTab] = useState<string>('users')
+  // URL ?tab=... 파라미터가 유효하면 그 값을 초기 탭으로 사용
+  const initialTab = (() => {
+    const t = searchParams.get('tab')
+    return t && VALID_TABS.has(t) ? t : 'users'
+  })()
+  const [activeTab, setActiveTab] = useState<string>(initialTab)
+
+  // URL ?tab=... 이 바뀌면 (다른 페이지에서 새 링크로 진입) 탭도 동기화
+  useEffect(() => {
+    const t = searchParams.get('tab')
+    if (t && VALID_TABS.has(t)) setActiveTab(t)
+  }, [searchParams])
   const [historyOpen, setHistoryOpen] = useState(false)
   const [historyItems, setHistoryItems] = useState<HistoryItem[]>([])
 

@@ -17,10 +17,11 @@ export async function GET(request: NextRequest) {
   const from = searchParams.get('from')
   const to = searchParams.get('to')
 
+  // method 컬럼 부재 환경 호환
   let query = supabase
     .from('cg_attendance')
     .select(`
-      id, user_id, date, checked_in_at, method,
+      *,
       profile:cg_profiles!user_id(id, full_name, color, role, team_id, team:cg_teams(id, name))
     `)
     .order('date', { ascending: false })
@@ -51,7 +52,7 @@ export async function GET(request: NextRequest) {
     user_id: row.user_id,
     date: row.date,
     checked_in_at: row.checked_in_at,
-    method: (row.method ?? 'gps') as 'gps' | 'office_login',
+    method: (row.method ?? 'office_login') as 'gps' | 'office_login',
     full_name: row.profile?.full_name ?? '(알 수 없음)',
     color: row.profile?.color ?? '#6B7280',
     team_name: row.profile?.team?.name ?? null,

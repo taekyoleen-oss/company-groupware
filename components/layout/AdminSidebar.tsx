@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { Settings, Users, Building2, Tag, UserCheck, Sun, CheckCircle } from 'lucide-react'
+import { Settings, Users, Building2, Tag, UserCheck, Sun, CheckCircle, ClipboardList, Wifi } from 'lucide-react'
 import { UserAvatar } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
@@ -216,7 +216,7 @@ export function AdminSidebar() {
       <div>
         <h3 className="text-xs font-semibold text-[#374151] mb-2 dark:text-[#D1D5DB]">빠른 메뉴</h3>
         <nav className="flex flex-col gap-1">
-          <Link href="/admin"
+          <Link href="/admin?tab=users"
             className="flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-white hover:text-[#2563EB] text-[#374151] transition-colors group border border-transparent hover:border-[#E5E7EB] dark:text-[#D1D5DB] dark:hover:bg-[#374151] dark:hover:text-[#60A5FA] dark:hover:border-[#4B5563]">
             <Users className="h-4 w-4 text-[#6B7280] group-hover:text-[#2563EB] shrink-0 dark:text-[#94A3B8] dark:group-hover:text-[#60A5FA]" />
             <div className="flex-1 min-w-0">
@@ -224,7 +224,23 @@ export function AdminSidebar() {
               <p className="text-[10px] text-[#9CA3AF] dark:text-[#6B7280]">권한·팀 설정</p>
             </div>
           </Link>
-          <Link href="/admin"
+          <Link href="/admin?tab=attendance"
+            className="flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-white hover:text-[#2563EB] text-[#374151] transition-colors group border border-transparent hover:border-[#E5E7EB] dark:text-[#D1D5DB] dark:hover:bg-[#374151] dark:hover:text-[#60A5FA] dark:hover:border-[#4B5563]">
+            <ClipboardList className="h-4 w-4 text-[#6B7280] group-hover:text-[#2563EB] shrink-0 dark:text-[#94A3B8] dark:group-hover:text-[#60A5FA]" />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium">출근 관리</p>
+              <p className="text-[10px] text-[#9CA3AF] dark:text-[#6B7280]">일자별 출근 현황</p>
+            </div>
+          </Link>
+          <Link href="/admin?tab=vacation"
+            className="flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-white hover:text-[#2563EB] text-[#374151] transition-colors group border border-transparent hover:border-[#E5E7EB] dark:text-[#D1D5DB] dark:hover:bg-[#374151] dark:hover:text-[#60A5FA] dark:hover:border-[#4B5563]">
+            <Sun className="h-4 w-4 text-[#6B7280] group-hover:text-[#2563EB] shrink-0 dark:text-[#94A3B8] dark:group-hover:text-[#60A5FA]" />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium">휴가 관리</p>
+              <p className="text-[10px] text-[#9CA3AF] dark:text-[#6B7280]">휴가일수·결재 이력</p>
+            </div>
+          </Link>
+          <Link href="/admin?tab=teams"
             className="flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-white hover:text-[#2563EB] text-[#374151] transition-colors group border border-transparent hover:border-[#E5E7EB] dark:text-[#D1D5DB] dark:hover:bg-[#374151] dark:hover:text-[#60A5FA] dark:hover:border-[#4B5563]">
             <Building2 className="h-4 w-4 text-[#6B7280] group-hover:text-[#2563EB] shrink-0 dark:text-[#94A3B8] dark:group-hover:text-[#60A5FA]" />
             <div className="flex-1 min-w-0">
@@ -232,12 +248,20 @@ export function AdminSidebar() {
               <p className="text-[10px] text-[#9CA3AF] dark:text-[#6B7280]">팀 {teamCount}개</p>
             </div>
           </Link>
-          <Link href="/admin"
+          <Link href="/admin?tab=categories"
             className="flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-white hover:text-[#2563EB] text-[#374151] transition-colors group border border-transparent hover:border-[#E5E7EB] dark:text-[#D1D5DB] dark:hover:bg-[#374151] dark:hover:text-[#60A5FA] dark:hover:border-[#4B5563]">
             <Tag className="h-4 w-4 text-[#6B7280] group-hover:text-[#2563EB] shrink-0 dark:text-[#94A3B8] dark:group-hover:text-[#60A5FA]" />
             <div className="flex-1 min-w-0">
               <p className="text-xs font-medium">카테고리</p>
               <p className="text-[10px] text-[#9CA3AF] dark:text-[#6B7280]">카테고리 {categoryCount}개</p>
+            </div>
+          </Link>
+          <Link href="/admin?tab=settings"
+            className="flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-white hover:text-[#2563EB] text-[#374151] transition-colors group border border-transparent hover:border-[#E5E7EB] dark:text-[#D1D5DB] dark:hover:bg-[#374151] dark:hover:text-[#60A5FA] dark:hover:border-[#4B5563]">
+            <Wifi className="h-4 w-4 text-[#6B7280] group-hover:text-[#2563EB] shrink-0 dark:text-[#94A3B8] dark:group-hover:text-[#60A5FA]" />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium">회사 설정</p>
+              <p className="text-[10px] text-[#9CA3AF] dark:text-[#6B7280]">IP·PC 승인 정책</p>
             </div>
           </Link>
         </nav>

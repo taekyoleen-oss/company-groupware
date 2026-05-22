@@ -16,9 +16,10 @@ export async function GET(request: NextRequest) {
   // 클라이언트가 로컬 날짜(YYYY-MM-DD)를 전달 — 없으면 KST 기준 오늘
   const date = searchParams.get('date') ?? kstToday()
 
+  // method 컬럼이 DB에 아직 없는 환경 호환 — '*' 와일드카드로 조회
   const { data, error } = await supabase
     .from('cg_attendance')
-    .select('id, user_id, date, checked_in_at, method')
+    .select('*')
     .eq('user_id', user.id)
     .eq('date', date)
     .maybeSingle()
@@ -108,7 +109,7 @@ export async function POST(request: NextRequest) {
   // 기존 출근 기록 확인 (멱등) — 같은 user + 같은 날짜는 한 번만 허용
   const { data: existing, error: selectError } = await supabase
     .from('cg_attendance')
-    .select('id, user_id, date, checked_in_at, method')
+    .select('*')
     .eq('user_id', user.id)
     .eq('date', date)
     .maybeSingle()
@@ -123,13 +124,34 @@ export async function POST(request: NextRequest) {
   }
 
   // 출근 방식 결정: 사무실 IP 매칭 — 'office_login', GPS 모드 — 'gps'
+  // method 컬럼이 DB 에 없는 환경에서도 동작하도록 try → fallback
   const method = isIpMode ? 'office_login' : 'gps'
 
-  const { data, error } = await supabase
+  let insertPayload: Record<string, unknown> = {
+    user_id: user.id,
+    date,
+    checked_in_at: new Date().toISOString(),
+    method,
+  }
+
+  let { data, error } = await supabase
     .from('cg_attendance')
-    .insert({ user_id: user.id, date, checked_in_at: new Date().toISOString(), method })
-    .select('id, user_id, date, checked_in_at, method')
+    .insert(insertPayload as never)
+    .select('*')
     .single()
+
+  // method 컬럼이 아직 없다는 에러면 빼고 재시도
+  if (error && /method/.test(error.message)) {
+    console.warn('[attendance POST] retry without method column:', error.message)
+    insertPayload = { user_id: user.id, date, checked_in_at: insertPayload.checked_in_at }
+    const retry = await supabase
+      .from('cg_attendance')
+      .insert(insertPayload as never)
+      .select('*')
+      .single()
+    data = retry.data
+    error = retry.error
+  }
 
   if (error) {
     console.error('[attendance POST] insert error:', error.message, { date, user_id: user.id, method })
