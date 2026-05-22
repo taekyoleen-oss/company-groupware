@@ -40,7 +40,7 @@ export function EventModal({ isOpen, onClose, initialDate, eventId, onSuccess }:
     end_at: '',
     is_all_day: false,
     location: '',
-    visibility: 'private' as 'company' | 'team' | 'private',
+    visibility: 'company' as 'company' | 'team' | 'private',
     category_id: '',
     color: '',
   })
@@ -67,7 +67,7 @@ export function EventModal({ isOpen, onClose, initialDate, eventId, onSuccess }:
         title: '',
         description: '',
         location: '',
-        visibility: 'private',
+        visibility: 'company',
         category_id: '',
         color: '',
       }))
