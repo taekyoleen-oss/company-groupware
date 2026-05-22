@@ -844,8 +844,51 @@ function AdminPageInner() {
     else { showToast('삭제에 실패했습니다.', 'error') }
   }
 
+  // ── 팀 정렬 기반 사용자 정렬 헬퍼 ─────────────────────────
+  // 팀 sort_order 순으로 그룹화 → 같은 팀 안에서는 가나다순 (full_name)
+  // 팀 미지정(team_id=null) 인 사람은 마지막 그룹에 배치
+  const teamOrderMap = (() => {
+    const m = new Map<string, number>()
+    teams.forEach((t, i) => m.set(t.id, t.sort_order ?? (i + 1) * 10))
+    return m
+  })()
+  const NO_TEAM_ORDER = Number.MAX_SAFE_INTEGER
+  function sortByTeamThenName<T extends { team_id?: string | null; full_name?: string | null; name?: string | null }>(arr: T[]): T[] {
+    return [...arr].sort((a, b) => {
+      const ao = a.team_id ? (teamOrderMap.get(a.team_id) ?? NO_TEAM_ORDER) : NO_TEAM_ORDER
+      const bo = b.team_id ? (teamOrderMap.get(b.team_id) ?? NO_TEAM_ORDER) : NO_TEAM_ORDER
+      if (ao !== bo) return ao - bo
+      const an = (a.full_name ?? a.name ?? '')
+      const bn = (b.full_name ?? b.name ?? '')
+      return an.localeCompare(bn, 'ko')
+    })
+  }
+
+  // ── 팀 순서 변경 ──────────────────────────────────────────
+  const reorderTeams = async (fromIdx: number, toIdx: number) => {
+    if (toIdx < 0 || toIdx >= teams.length || fromIdx === toIdx) return
+    const next = [...teams]
+    const [moved] = next.splice(fromIdx, 1)
+    next.splice(toIdx, 0, moved)
+    // optimistic update
+    setTeams(next)
+    const res = await fetch('/api/admin/teams/reorder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ order: next.map(t => t.id) }),
+    })
+    if (res.ok) showToast('팀 순서가 변경되었습니다.', 'success')
+    else { showToast('팀 순서 변경에 실패했습니다.', 'error'); fetchAll() }
+  }
+
   const pending = users.filter(u => u.status === 'pending')
   const active = users.filter(u => u.status !== 'pending')
+  // 회원 관리: 팀 → 가나다 정렬
+  const sortedActive = sortByTeamThenName(active)
+  // 출근 관리: 팀 → 가나다 정렬
+  const sortedAttendanceRecords = sortByTeamThenName(attendanceRecords)
+  // 휴가 관리: 팀 → 가나다 정렬
+  const sortedVacationUsers = sortByTeamThenName(vacationUsers)
   const pendingCancelRequests = cancelRequests.filter(r => r.status === 'pending')
   const pendingVacationRequests = vacationRequests.filter(r => r.status === 'pending')
   // 관리자가 직접 결재할 수 있는 대기 건 (대상의 approver_id가 null)
@@ -936,7 +979,7 @@ function AdminPageInner() {
           )}
           <h2 className="text-sm font-semibold text-[#6B7280] dark:text-[#94A3B8] mb-2">전체 회원</h2>
           <div className="space-y-2">
-            {active.map(user => {
+            {sortedActive.map(user => {
               const edit = edits[user.id]
               if (!edit) return null
               // 결재자 후보: 활성 관리자(manager) 또는 앱관리자, 본인 제외
@@ -1041,7 +1084,7 @@ function AdminPageInner() {
             <p className="text-sm text-[#6B7280] text-center py-8">불러오는 중...</p>
           ) : (
             <div className="space-y-2">
-              {attendanceRecords.map(r => (
+              {sortedAttendanceRecords.map(r => (
                 <div key={r.id} className="bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded-lg px-4 py-3 flex items-center gap-3">
                   <UserAvatar name={r.full_name} color={r.color} size={32} />
                   <div className="flex-1 min-w-0">
@@ -1389,7 +1432,7 @@ function AdminPageInner() {
             <span>{new Date().getFullYear()}년 휴가 할당량 / 결재자 관리</span>
           </div>
           <div className="space-y-2">
-            {vacationUsers.map(u => {
+            {sortedVacationUsers.map(u => {
               const currentTotal = vacEdits[u.id] ?? u.total_days
               const currentApprover = vacApproverEdits[u.id] ?? (u.approver_id ?? 'admin')
               const isApproverSelfAdmin = currentApprover === 'admin'
@@ -1483,10 +1526,38 @@ function AdminPageInner() {
             <Input value={newTeamName} onChange={e => setNewTeamName(e.target.value)} placeholder="새 팀명" />
             <Button type="submit" size="sm"><Plus className="h-4 w-4 mr-1" />생성</Button>
           </form>
+          <p className="text-xs text-[#6B7280] dark:text-[#94A3B8] mb-2">
+            ↑↓ 버튼으로 순서를 바꾸면 회원·출근·휴가 관리에서도 이 순서대로 정렬됩니다. 같은 팀 안에서는 가나다순.
+          </p>
           <div className="space-y-2">
-            {teams.map(team => (
+            {teams.map((team, idx) => (
               <div key={team.id} className="bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded-lg p-3 flex flex-wrap items-center gap-3">
+                {/* 순서 변경 버튼 */}
+                <div className="flex flex-col gap-0.5">
+                  <button
+                    type="button"
+                    onClick={() => reorderTeams(idx, idx - 1)}
+                    disabled={idx === 0}
+                    className="p-0.5 rounded hover:bg-[#F3F4F6] dark:hover:bg-[#374151] text-[#6B7280] dark:text-[#94A3B8] disabled:opacity-30 disabled:cursor-not-allowed"
+                    title="위로"
+                    aria-label="위로 이동"
+                  >
+                    <ChevronUp className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => reorderTeams(idx, idx + 1)}
+                    disabled={idx === teams.length - 1}
+                    className="p-0.5 rounded hover:bg-[#F3F4F6] dark:hover:bg-[#374151] text-[#6B7280] dark:text-[#94A3B8] disabled:opacity-30 disabled:cursor-not-allowed"
+                    title="아래로"
+                    aria-label="아래로 이동"
+                  >
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+
                 <div className="flex items-center gap-2 flex-1 min-w-0">
+                  <span className="text-[10px] tabular-nums text-[#9CA3AF] dark:text-[#64748B] w-4 text-right">{idx + 1}</span>
                   <span className="font-medium text-sm dark:text-[#F1F5F9]">{team.name}</span>
                   <span className="text-xs text-[#374151] dark:text-[#D1D5DB] bg-[#F3F4F6] dark:bg-[#374151] border border-[#E5E7EB] dark:border-[#4B5563] rounded px-1.5 py-0.5">
                     [{team.abbreviation ?? team.name.slice(0, 2)}]
