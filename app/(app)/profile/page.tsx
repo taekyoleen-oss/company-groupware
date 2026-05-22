@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   X, Eye, EyeOff, KeyRound, Sun, CalendarDays,
@@ -285,7 +285,7 @@ export default function ProfilePage() {
       fetch('/api/admin/teams').then(r => r.json()),
       fetch('/api/vacation').then(r => r.json()),
       fetch('/api/admin/settings').then(r => r.json()),
-      fetch(`/api/attendance?date=${todayStr}`).then(r => r.json()),
+      fetch(`/api/attendance?date=${todayStr}`, { cache: 'no-store' }).then(r => r.json()),
     ]).then(([profileData, teamsData, vacData, settingsData, attendanceData]: [
       ProfileWithTeam, Team[], VacSummaryV2, CompanySettings, { checked_in_at: string; method?: string } | null
     ]) => {
@@ -380,6 +380,25 @@ export default function ProfilePage() {
     fetchOwnVacation()
   }
 
+  // 오늘 출근 상태를 서버에서 강제로 다시 가져오기
+  const refetchTodayAttendance = useCallback(async () => {
+    const todayStr = getLocalDateStr()
+    try {
+      const res = await fetch(`/api/attendance?date=${todayStr}`, { cache: 'no-store' })
+      if (res.ok) {
+        const data = await res.json()
+        setTodayAttendance(data)
+      }
+    } catch (e) {
+      console.error('refetchTodayAttendance failed', e)
+    }
+  }, [])
+
+  // 출근 탭 진입 시 최신 상태 강제 새로고침 (캐시·시간 차 보정)
+  useEffect(() => {
+    if (activeTab === '출근') refetchTodayAttendance()
+  }, [activeTab, refetchTodayAttendance])
+
   const handleCheckIn = async () => {
     setCheckingIn(true)
     const todayStr = getLocalDateStr()
@@ -390,11 +409,15 @@ export default function ProfilePage() {
     })
     const data = await res.json()
     if (res.ok) {
+      // POST 응답을 즉시 반영
       setTodayAttendance({ checked_in_at: data.checked_in_at, method: data.method })
       showToast('출근이 확인되었습니다.', 'success')
+      // 서버에서 한 번 더 확인해 상태 영속성 보장
+      refetchTodayAttendance()
     } else if (res.status === 409) {
       setTodayAttendance({ checked_in_at: data.checked_in_at, method: data.method })
       showToast('이미 출근 처리되었습니다.', 'success')
+      refetchTodayAttendance()
     } else {
       if (data.current_ip) setCurrentIp(data.current_ip)
       if (res.status === 403) setIpStatus('denied')
@@ -561,15 +584,15 @@ export default function ProfilePage() {
               </div>
 
               {checkedInTime ? (
-                <div className="flex items-center gap-3 rounded-lg bg-green-50 dark:bg-green-950/30 px-4 py-3">
-                  <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400 shrink-0" />
-                  <div>
-                    <p className="text-sm font-medium text-green-700 dark:text-green-300">출근 완료</p>
-                    <p className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1 mt-0.5">
-                      <Clock className="h-3 w-3" />
-                      🖥️ 사무실 PC 출근 {checkedInTime}
-                    </p>
+                <div className="rounded-lg bg-green-50 dark:bg-green-950/30 px-4 py-3 space-y-1">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400 shrink-0" />
+                    <p className="text-sm font-semibold text-green-700 dark:text-green-300">출근이 확인되었습니다</p>
                   </div>
+                  <p className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1 ml-7">
+                    <Clock className="h-3 w-3" />
+                    🖥️ 사무실 PC · {checkedInTime}
+                  </p>
                 </div>
               ) : (
                 <div className="space-y-3">

@@ -2,22 +2,31 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getClientIp, ipMatchesCidr } from '@/lib/utils/cidr'
 
+// KST(UTC+9) 기준 오늘 날짜 — 클라이언트가 date 를 안 보낼 때의 안전한 기본값
+function kstToday(): string {
+  return new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10)
+}
+
 export async function GET(request: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { searchParams } = new URL(request.url)
-  // 클라이언트가 로컬 날짜(YYYY-MM-DD)를 전달 — 서버 UTC 기준과 분리
-  const date = searchParams.get('date') ?? new Date().toISOString().slice(0, 10)
+  // 클라이언트가 로컬 날짜(YYYY-MM-DD)를 전달 — 없으면 KST 기준 오늘
+  const date = searchParams.get('date') ?? kstToday()
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('cg_attendance')
     .select('id, user_id, date, checked_in_at, method')
     .eq('user_id', user.id)
     .eq('date', date)
-    .single()
+    .maybeSingle()
 
+  if (error) {
+    console.error('[attendance GET] select error:', error.message, { date, user_id: user.id })
+    return NextResponse.json(null)
+  }
   return NextResponse.json(data ?? null)
 }
 
@@ -35,12 +44,15 @@ export async function POST(request: NextRequest) {
   const { data: settings } = await supabase
     .from('cg_company_settings')
     .select('attendance_method, require_device_approval')
-    .single()
+    .maybeSingle()
 
   const clientIp = getClientIp(request)
   const userAgent = request.headers.get('user-agent') ?? 'unknown'
 
-  if (settings?.attendance_method === 'ip') {
+  // GPS 출근은 더 이상 사용하지 않음. 기본을 IP 매칭으로 간주하되, 명시적으로 'gps' 설정인 경우만 IP 체크 스킵.
+  const isIpMode = settings?.attendance_method !== 'gps'
+
+  if (isIpMode) {
     const { data: networks } = await supabase
       .from('cg_office_networks')
       .select('id, cidr')
@@ -93,26 +105,35 @@ export async function POST(request: NextRequest) {
       .eq('id', matched.id)
   }
 
-  const { data: existing } = await supabase
+  // 기존 출근 기록 확인 (멱등) — 같은 user + 같은 날짜는 한 번만 허용
+  const { data: existing, error: selectError } = await supabase
     .from('cg_attendance')
-    .select('id, checked_in_at')
+    .select('id, user_id, date, checked_in_at, method')
     .eq('user_id', user.id)
     .eq('date', date)
-    .single()
+    .maybeSingle()
+
+  if (selectError) {
+    console.error('[attendance POST] existing select error:', selectError.message, { date, user_id: user.id })
+  }
 
   if (existing) {
-    return NextResponse.json(
-      { error: '이미 출근 확인이 완료되었습니다.', checked_in_at: existing.checked_in_at },
-      { status: 409 }
-    )
+    // 이미 있으면 200 으로 기존 row 를 그대로 반환 — 프론트가 동일한 success 흐름으로 처리할 수 있게
+    return NextResponse.json(existing, { status: 200 })
   }
+
+  // 출근 방식 결정: 사무실 IP 매칭 — 'office_login', GPS 모드 — 'gps'
+  const method = isIpMode ? 'office_login' : 'gps'
 
   const { data, error } = await supabase
     .from('cg_attendance')
-    .insert({ user_id: user.id, date, checked_in_at: new Date().toISOString() })
-    .select()
+    .insert({ user_id: user.id, date, checked_in_at: new Date().toISOString(), method })
+    .select('id, user_id, date, checked_in_at, method')
     .single()
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) {
+    console.error('[attendance POST] insert error:', error.message, { date, user_id: user.id, method })
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
   return NextResponse.json(data, { status: 201 })
 }
