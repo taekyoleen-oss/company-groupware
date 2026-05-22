@@ -1,7 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Calendar, FileText, CheckSquare, LogOut, Settings, ClipboardCheck } from 'lucide-react'
+import { Calendar, FileText, CheckSquare, LogOut, ClipboardCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { UserAvatar } from '@/components/ui/avatar'
 import { Logo } from '@/components/ui/Logo'
@@ -50,19 +50,6 @@ export function AppHeader({ profile }: AppHeaderProps) {
               {label}
             </Link>
           ))}
-          {isSuperAdmin(profile) && (
-            <Link
-              href="/admin"
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                pathname.startsWith('/admin')
-                  ? 'bg-[#EFF6FF] text-[#2563EB] dark:bg-[#1E3A5F] dark:text-[#93C5FD]'
-                  : 'text-[#6B7280] hover:text-[#111827] hover:bg-[#F9FAFB] dark:text-[#94A3B8] dark:hover:text-[#F1F5F9] dark:hover:bg-[#4B5563]'
-              }`}
-            >
-              <Settings className="h-4 w-4" />
-              앱관리자
-            </Link>
-          )}
           {!isSuperAdmin(profile) && profile.role === 'manager' && (
             <Link
               href="/approvals"
