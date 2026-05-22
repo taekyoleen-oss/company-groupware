@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Check, Plus, Trash2, X, Save, Sun, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ClipboardList, Settings, Clock, CheckCircle, XCircle, Wifi, Download, ShieldCheck, ShieldAlert, Monitor } from 'lucide-react'
+import { Check, Plus, Trash2, X, Save, Sun, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ClipboardList, Settings, Clock, CheckCircle, XCircle, Wifi, Download, ShieldCheck, ShieldAlert, Monitor, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
@@ -383,12 +383,18 @@ export default function AdminPage() {
   }
 
   // 휴가 취소 요청 / 신청 변경 / 사이드바에서 승인 → 자동 새로고침
+  // 출근 기록 / PC 디바이스 신청·승인 → 실시간 반영
   useEffect(() => {
     const supabase = createClient()
     const channel = supabase
       .channel('admin-page-refresh')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'cg_vacation_cancel_requests' }, () => fetchAll())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'cg_vacation_requests' }, () => fetchAll())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cg_attendance' }, () => {
+        fetchAttendance(attendanceDate)
+        fetchAll()
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cg_office_devices' }, () => fetchDevices())
       .subscribe()
     // 다른 컴포넌트(예: AdminSidebar)에서 휴가 취소를 승인하고 확인을 누른 경우에도
     // 관리자 패널의 활성 탭을 휴가 관리로 전환하고 목록을 갱신한다.
@@ -398,7 +404,7 @@ export default function AdminPage() {
       supabase.removeChannel(channel)
       window.removeEventListener('vacation-cancel-approved', handler)
     }
-  }, [fetchAll])
+  }, [fetchAll, fetchAttendance, fetchDevices, attendanceDate])
 
   const shiftDate = (days: number) => {
     const d = new Date(attendanceDate + 'T12:00:00')
@@ -851,7 +857,16 @@ export default function AdminPage() {
         </div>
       )}
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
+      <Tabs
+        value={activeTab}
+        onValueChange={(v) => {
+          setActiveTab(v)
+          // 탭 진입 시 최신 데이터 강제 새로고침 (실시간 구독이 잠시 끊겼을 때를 대비)
+          if (v === 'attendance') fetchAttendance(attendanceDate)
+          if (v === 'settings') { fetchDevices(); fetchNetworks() }
+          if (v === 'users' || v === 'vacation') fetchAll()
+        }}
+      >
         <TabsList className="mb-4 flex-wrap">
           <TabsTrigger value="users">
             회원 관리 {pending.length > 0 && <span className="ml-1 text-xs bg-red-500 text-white rounded-full px-1.5">{pending.length}</span>}
@@ -989,6 +1004,9 @@ export default function AdminPage() {
                 오늘
               </Button>
             )}
+            <Button size="sm" variant="outline" onClick={() => fetchAttendance(attendanceDate)} disabled={attendanceLoading} title="새로고침">
+              <RefreshCw className={`h-3.5 w-3.5 ${attendanceLoading ? 'animate-spin' : ''}`} />
+            </Button>
             <span className="ml-auto text-sm text-[#6B7280] dark:text-[#94A3B8]">
               출근 <span className="font-semibold text-green-600">{attendedCount}</span>명
               {' / '}전체 <span className="font-semibold">{attendanceRecords.length}</span>명
@@ -1616,124 +1634,167 @@ export default function AdminPage() {
             </Button>
           </form>
 
-          {/* 등록된 PC 리스트 — 사무실 IP 설정 아래 */}
-          <div className="mt-6 max-w-md bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded-xl p-5 space-y-4">
-            <div className="flex items-center gap-2 mb-1">
-              <Monitor className="h-4 w-4 text-[#2563EB]" />
-              <h2 className="text-sm font-semibold text-[#111827] dark:text-[#F1F5F9]">등록된 PC</h2>
-              {devices.filter(d => d.status === 'pending').length > 0 && (
-                <Badge variant="outline" className="ml-1 text-[10px] border-amber-400 text-amber-600 dark:text-amber-400">
-                  대기 {devices.filter(d => d.status === 'pending').length}건
-                </Badge>
-              )}
-            </div>
-            <p className="text-xs text-[#6B7280] dark:text-[#94A3B8] leading-relaxed">
-              사무실 IP에서 직원이 등록 요청한 PC 목록입니다. 승인된 PC만 신뢰됩니다.
-            </p>
+          {/* 등록된 PC / 등록 요청 — 사무실 IP 설정 아래 */}
+          {(() => {
+            const pendingDevices = devices.filter(d => d.status === 'pending')
+            const approvedDevices = devices.filter(d => d.status === 'approved')
+            const rejectedDevices = devices.filter(d => d.status === 'rejected')
 
-            {devices.length === 0 ? (
-              <div className="rounded-lg bg-[#F9FAFB] dark:bg-[#0F172A] border border-dashed border-[#E5E7EB] dark:border-[#334155] px-3 py-4 text-center text-xs text-[#9CA3AF] dark:text-[#6B7280]">
-                등록 요청된 PC가 없습니다.
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {devices.map(d => {
-                  const labelEdit = deviceLabelEdits[d.id] ?? ''
-                  const labelDirty = labelEdit !== (d.device_label ?? '')
-                  const lastUsed = d.last_used_at
-                    ? format(parseISO(d.last_used_at), 'yyyy.MM.dd HH:mm', { locale: ko })
-                    : '—'
-                  const requestedAt = format(parseISO(d.requested_at), 'yyyy.MM.dd HH:mm', { locale: ko })
-                  const statusBadge =
-                    d.status === 'approved' ? { cls: 'bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-300', label: '승인' }
-                    : d.status === 'pending' ? { cls: 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300', label: '대기' }
-                    : { cls: 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300', label: '거절' }
-                  return (
-                    <div key={d.id} className="bg-[#F9FAFB] dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-[#334155] rounded-lg px-3 py-2.5 space-y-2">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <UserAvatar name={d.user?.full_name ?? '알 수 없음'} color={d.user?.color ?? '#9CA3AF'} size={28} />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-[#111827] dark:text-[#F1F5F9] truncate">
-                            {d.user?.full_name ?? '알 수 없음'}
-                          </p>
-                          <p className="text-[10px] text-[#9CA3AF] dark:text-[#64748B]">
-                            요청: {requestedAt} · 최근 사용: {lastUsed}
-                          </p>
-                        </div>
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full ${statusBadge.cls}`}>
-                          {statusBadge.label}
-                        </span>
-                      </div>
-
-                      <div className="text-[10px] font-mono text-[#6B7280] dark:text-[#94A3B8] break-all leading-snug">
-                        UA: {d.user_agent.slice(0, 90)}{d.user_agent.length > 90 ? '…' : ''}
-                      </div>
-                      {d.last_ip && (
-                        <div className="text-[10px] font-mono text-[#9CA3AF] dark:text-[#64748B]">
-                          IP: {d.last_ip}
-                        </div>
-                      )}
-
-                      <div className="flex flex-wrap gap-1.5 items-center">
-                        <Input
-                          value={labelEdit}
-                          onChange={e => setDeviceLabelEdits(prev => ({ ...prev, [d.id]: e.target.value }))}
-                          placeholder="PC 라벨"
-                          className="h-7 text-xs flex-1 min-w-[6rem]"
-                        />
-                        <Button
-                          type="button"
-                          size="sm"
-                          className="h-7 px-2"
-                          disabled={!labelDirty || deviceProcessing === d.id}
-                          onClick={() => handleDeviceLabelSave(d.id)}
-                          title="라벨 저장"
-                        >
-                          <Save className="h-3 w-3" />
-                        </Button>
-                        {d.status !== 'approved' && (
-                          <Button
-                            type="button"
-                            size="sm"
-                            className="h-7 px-2 bg-green-600 hover:bg-green-700"
-                            disabled={deviceProcessing === d.id}
-                            onClick={() => handleDeviceAction(d.id, 'approve')}
-                            title="승인"
-                          >
-                            <Check className="h-3 w-3" />
-                          </Button>
-                        )}
-                        {d.status !== 'rejected' && (
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            className="h-7 px-2 text-amber-600 border-amber-300"
-                            disabled={deviceProcessing === d.id}
-                            onClick={() => handleDeviceAction(d.id, 'reject')}
-                            title="거절"
-                          >
-                            <ShieldAlert className="h-3 w-3" />
-                          </Button>
-                        )}
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="danger"
-                          className="h-7 px-2"
-                          disabled={deviceProcessing === d.id}
-                          onClick={() => handleDeviceDelete(d.id)}
-                          title="삭제"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
-                      </div>
+            const renderDeviceRow = (d: OfficeDevice) => {
+              const labelEdit = deviceLabelEdits[d.id] ?? ''
+              const labelDirty = labelEdit !== (d.device_label ?? '')
+              const lastUsed = d.last_used_at
+                ? format(parseISO(d.last_used_at), 'yyyy.MM.dd HH:mm', { locale: ko })
+                : '—'
+              const requestedAt = format(parseISO(d.requested_at), 'yyyy.MM.dd HH:mm', { locale: ko })
+              return (
+                <div key={d.id} className="bg-[#F9FAFB] dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-[#334155] rounded-lg px-3 py-2.5 space-y-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <UserAvatar name={d.user?.full_name ?? '알 수 없음'} color={d.user?.color ?? '#9CA3AF'} size={28} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-[#111827] dark:text-[#F1F5F9] truncate">
+                        {d.user?.full_name ?? '알 수 없음'}
+                        {d.device_label && <span className="ml-1 text-[10px] font-normal text-[#6B7280] dark:text-[#94A3B8]">· {d.device_label}</span>}
+                      </p>
+                      <p className="text-[10px] text-[#9CA3AF] dark:text-[#64748B]">
+                        요청: {requestedAt}{d.status === 'approved' && ` · 최근 사용: ${lastUsed}`}
+                      </p>
                     </div>
-                  )
-                })}
+                  </div>
+
+                  <div className="text-[10px] font-mono text-[#6B7280] dark:text-[#94A3B8] break-all leading-snug">
+                    UA: {d.user_agent.slice(0, 90)}{d.user_agent.length > 90 ? '…' : ''}
+                  </div>
+                  {d.last_ip && (
+                    <div className="text-[10px] font-mono text-[#9CA3AF] dark:text-[#64748B]">
+                      IP: {d.last_ip}
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap gap-1.5 items-center">
+                    <Input
+                      value={labelEdit}
+                      onChange={e => setDeviceLabelEdits(prev => ({ ...prev, [d.id]: e.target.value }))}
+                      placeholder="PC 라벨"
+                      className="h-7 text-xs flex-1 min-w-[6rem]"
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-7 px-2"
+                      disabled={!labelDirty || deviceProcessing === d.id}
+                      onClick={() => handleDeviceLabelSave(d.id)}
+                      title="라벨 저장"
+                    >
+                      <Save className="h-3 w-3" />
+                    </Button>
+                    {d.status !== 'approved' && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-7 px-2 bg-green-600 hover:bg-green-700"
+                        disabled={deviceProcessing === d.id}
+                        onClick={() => handleDeviceAction(d.id, 'approve')}
+                        title="승인"
+                      >
+                        <Check className="h-3 w-3 mr-1" />승인
+                      </Button>
+                    )}
+                    {d.status !== 'rejected' && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-7 px-2 text-amber-600 border-amber-300"
+                        disabled={deviceProcessing === d.id}
+                        onClick={() => handleDeviceAction(d.id, 'reject')}
+                        title="거절"
+                      >
+                        <ShieldAlert className="h-3 w-3 mr-1" />거절
+                      </Button>
+                    )}
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="danger"
+                      className="h-7 px-2"
+                      disabled={deviceProcessing === d.id}
+                      onClick={() => handleDeviceDelete(d.id)}
+                      title="삭제"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
+              )
+            }
+
+            return (
+              <div className="mt-6 max-w-md space-y-4">
+                {/* (1) 등록 요청 대기 */}
+                <div className="bg-white dark:bg-[#1E293B] border border-amber-200 dark:border-amber-900/50 rounded-xl p-5 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <ShieldAlert className="h-4 w-4 text-amber-500" />
+                    <h2 className="text-sm font-semibold text-[#111827] dark:text-[#F1F5F9]">등록 요청 (승인 대기)</h2>
+                    <Badge variant="outline" className="ml-auto text-[10px] border-amber-400 text-amber-600 dark:text-amber-400">
+                      {pendingDevices.length}건
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-[#6B7280] dark:text-[#94A3B8] leading-relaxed">
+                    사무실 네트워크에서 직원이 등록 요청한 PC입니다. 승인하면 출근 체크 가능 대상이 됩니다.
+                  </p>
+                  {pendingDevices.length === 0 ? (
+                    <div className="rounded-lg bg-[#F9FAFB] dark:bg-[#0F172A] border border-dashed border-[#E5E7EB] dark:border-[#334155] px-3 py-3 text-center text-xs text-[#9CA3AF] dark:text-[#6B7280]">
+                      대기 중인 등록 요청이 없습니다.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {pendingDevices.map(renderDeviceRow)}
+                    </div>
+                  )}
+                </div>
+
+                {/* (2) 등록된 PC (승인됨) */}
+                <div className="bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded-xl p-5 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Monitor className="h-4 w-4 text-green-600" />
+                    <h2 className="text-sm font-semibold text-[#111827] dark:text-[#F1F5F9]">등록된 PC (승인됨)</h2>
+                    <Badge variant="outline" className="ml-auto text-[10px] border-green-400 text-green-600 dark:text-green-400">
+                      {approvedDevices.length}대
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-[#6B7280] dark:text-[#94A3B8] leading-relaxed">
+                    승인된 PC 목록입니다. 승인 필수 모드 ON 일 때는 이 PC들에서만 출근 체크가 됩니다.
+                  </p>
+                  {approvedDevices.length === 0 ? (
+                    <div className="rounded-lg bg-[#F9FAFB] dark:bg-[#0F172A] border border-dashed border-[#E5E7EB] dark:border-[#334155] px-3 py-3 text-center text-xs text-[#9CA3AF] dark:text-[#6B7280]">
+                      아직 등록된 PC가 없습니다.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {approvedDevices.map(renderDeviceRow)}
+                    </div>
+                  )}
+                </div>
+
+                {/* (3) 거절된 요청 — 접힘 */}
+                {rejectedDevices.length > 0 && (
+                  <details className="bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded-xl p-5">
+                    <summary className="flex items-center gap-2 cursor-pointer">
+                      <XCircle className="h-4 w-4 text-red-500" />
+                      <h2 className="text-sm font-semibold text-[#111827] dark:text-[#F1F5F9]">거절된 요청</h2>
+                      <Badge variant="outline" className="ml-auto text-[10px] border-red-400 text-red-600 dark:text-red-400">
+                        {rejectedDevices.length}건
+                      </Badge>
+                    </summary>
+                    <div className="space-y-2 mt-3">
+                      {rejectedDevices.map(renderDeviceRow)}
+                    </div>
+                  </details>
+                )}
               </div>
-            )}
-          </div>
+            )
+          })()}
         </TabsContent>
       </Tabs>
 
