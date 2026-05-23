@@ -2284,6 +2284,33 @@ function AdminPageInner() {
             <p className="text-sm text-[#6B7280] dark:text-[#94A3B8] text-center py-6">불러오는 중...</p>
           ) : (
             <div className="space-y-3 py-2">
+              {/* 회원 본인 화면과 동일한 프로필 정보(읽기 전용) */}
+              {hrModalUser && (
+                <div className="rounded-lg bg-[#F9FAFB] dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-[#334155] p-3 space-y-1.5">
+                  <div className="flex items-center gap-2 mb-1">
+                    <UserAvatar name={hrModalUser.full_name} color={hrModalUser.color} size={32} />
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-[#111827] dark:text-[#F1F5F9] truncate">{hrModalUser.full_name}</p>
+                      <p className="text-[11px] text-[#6B7280] dark:text-[#94A3B8] truncate">{hrModalUser.email ?? '이메일 없음'}</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
+                    <div>
+                      <span className="text-[#6B7280] dark:text-[#94A3B8]">직책</span>
+                      <span className="ml-1.5 font-medium text-[#111827] dark:text-[#F1F5F9]">
+                        {(hrModalUser as any).is_super_admin ? '앱관리자' : hrModalUser.role === 'manager' ? '관리자' : hrModalUser.role === 'admin' ? '앱관리자' : '실무자'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[#6B7280] dark:text-[#94A3B8]">소속 팀</span>
+                      <span className="ml-1.5 font-medium text-[#111827] dark:text-[#F1F5F9]">
+                        {(hrModalUser.team as any)?.name ?? '팀 없음'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="block text-xs font-medium text-[#374151] dark:text-[#D1D5DB] mb-1">사번</label>
                 <Input
