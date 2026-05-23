@@ -203,15 +203,12 @@ export function ApproverSidebar() {
           <p className="text-[10px] text-[#9CA3AF] dark:text-[#6B7280]">결재 지정된 직원이 없습니다.</p>
         ) : (
           <ul className="space-y-1">
-            {employees.slice(0, 8).map(e => (
+            {employees.map(e => (
               <li key={e.id} className="flex items-center gap-2 text-xs">
                 <UserAvatar name={e.full_name} color={e.color} size={20} />
                 <span className="truncate dark:text-[#F1F5F9]">{e.full_name}</span>
               </li>
             ))}
-            {employees.length > 8 && (
-              <li className="text-[10px] text-[#9CA3AF] text-center pt-1">외 {employees.length - 8}명</li>
-            )}
           </ul>
         )}
       </div>
