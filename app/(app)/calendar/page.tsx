@@ -17,6 +17,7 @@ import { DayEventsPopup } from '@/components/calendar/DayEventsPopup'
 import { resolveEventColor } from '@/lib/utils/eventColor'
 import { KOREAN_HOLIDAYS, KOREAN_ANNIVERSARIES, HOLIDAY_DATE_SET } from '@/lib/utils/koreanHolidays'
 import type { EventWithDetails } from '@/types/app'
+import { useProfile, useTeams } from '@/lib/hooks/use-shared-data'
 
 function CalendarContent() {
   const router        = useRouter()
@@ -117,28 +118,26 @@ function CalendarContent() {
     setVacationEventId(null)
   }, [])
 
-  useEffect(() => {
-    fetch('/api/profiles')
-      .then(r => r.json())
-      .then((p: any) => {
-        setCurrentUserId(p?.id ?? null)
-        // 앱관리자: is_super_admin=true. role='admin' fallback도 허용 (마이그레이션 전 안전)
-        setIsAdminUser(p?.is_super_admin === true || (p?.is_super_admin == null && p?.role === 'admin'))
-      })
-      .catch(() => {})
-  }, [])
+  // SWR — /api/profiles, /api/admin/teams 가 여러 컴포넌트에서 호출되어도 30s dedupe
+  const { data: profileSwr } = useProfile()
+  const { data: teamsSwr } = useTeams()
 
   useEffect(() => {
-    fetch('/api/admin/teams')
-      .then(r => r.json())
-      .then((ts: Array<{ id: string; name: string; abbreviation: string | null }>) => {
-        if (!Array.isArray(ts)) return
-        const map: Record<string, { name: string; abbreviation: string | null }> = {}
-        ts.forEach(t => { map[t.id] = { name: t.name, abbreviation: t.abbreviation } })
-        setTeamsMap(map)
-      })
-      .catch(() => {})
-  }, [])
+    if (!profileSwr) return
+    const p: any = profileSwr
+    setCurrentUserId(p?.id ?? null)
+    // 앱관리자: is_super_admin=true. role='admin' fallback도 허용 (마이그레이션 전 안전)
+    setIsAdminUser(p?.is_super_admin === true || (p?.is_super_admin == null && p?.role === 'admin'))
+  }, [profileSwr])
+
+  useEffect(() => {
+    if (!Array.isArray(teamsSwr)) return
+    const map: Record<string, { name: string; abbreviation: string | null }> = {}
+    ;(teamsSwr as Array<{ id: string; name: string; abbreviation: string | null }>).forEach(t => {
+      map[t.id] = { name: t.name, abbreviation: t.abbreviation }
+    })
+    setTeamsMap(map)
+  }, [teamsSwr])
 
   const fetchEvents = useCallback(async () => {
     const params = new URLSearchParams()

@@ -9,6 +9,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@
 import { NoticeEditor } from '@/components/notices/NoticeEditor'
 import { useToast } from '@/components/ui/toast'
 import { createClient } from '@/lib/supabase/client'
+import { useProfile } from '@/lib/hooks/use-shared-data'
 
 
 export default function NewNoticePage() {
@@ -19,11 +20,12 @@ export default function NewNoticePage() {
   const [canPin, setCanPin] = useState(false)
   const [loading, setLoading] = useState(false)
 
+  const { data: profileSwr } = useProfile()
   useEffect(() => {
-    fetch('/api/profiles').then(r => r.json()).then((p: any) => {
-      if (p?.role === 'manager' || p?.role === 'admin') setCanPin(true)
-    }).catch(() => {})
-  }, [])
+    if (!profileSwr) return
+    const p: any = profileSwr
+    if (p?.role === 'manager' || p?.role === 'admin') setCanPin(true)
+  }, [profileSwr])
 
   const handleFileAdd = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newFiles = Array.from(e.target.files ?? [])

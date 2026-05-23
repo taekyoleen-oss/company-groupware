@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { NoticeEditor } from '@/components/notices/NoticeEditor'
 import { useToast } from '@/components/ui/toast'
+import { useProfile } from '@/lib/hooks/use-shared-data'
 
 export default function EditNoticePage() {
   const router = useRouter()
@@ -20,22 +21,27 @@ export default function EditNoticePage() {
   const [loading, setLoading] = useState(false)
   const [initializing, setInitializing] = useState(true)
 
+  // 프로필은 SWR (다른 곳과 dedupe), 공지 본문은 페이지 전용이라 직접 fetch 유지
+  const { data: profileSwr } = useProfile()
   useEffect(() => {
-    Promise.all([
-      fetch(`/api/notices/${id}`).then(r => r.json()),
-      fetch('/api/profiles').then(r => r.json()),
-    ]).then(([notice, profile]) => {
-      setForm({
-        title: notice.title ?? '',
-        content: notice.content ?? '',
-        visibility: notice.visibility ?? 'company',
-        is_pinned: notice.is_pinned ?? false,
+    if (profileSwr && ((profileSwr as any).role === 'manager' || (profileSwr as any).role === 'admin')) {
+      setCanPin(true)
+    }
+  }, [profileSwr])
+
+  useEffect(() => {
+    fetch(`/api/notices/${id}`)
+      .then(r => r.json())
+      .then(notice => {
+        setForm({
+          title: notice.title ?? '',
+          content: notice.content ?? '',
+          visibility: notice.visibility ?? 'company',
+          is_pinned: notice.is_pinned ?? false,
+        })
+        setInitializing(false)
       })
-      if (profile?.role === 'manager' || profile?.role === 'admin') setCanPin(true)
-      setInitializing(false)
-    }).catch(() => {
-      router.push(`/notices/${id}`)
-    })
+      .catch(() => { router.push(`/notices/${id}`) })
   }, [id, router])
 
   const handleSubmit = async (e: React.FormEvent) => {

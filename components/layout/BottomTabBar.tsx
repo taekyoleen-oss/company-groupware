@@ -1,10 +1,13 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Calendar, FileText, CheckSquare, User, Settings } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
 import { createClient } from '@/lib/supabase/client'
+import {
+  useAdminUsers, useVacationCancelRequests, useVacationRequests, useApproverData, invalidate,
+} from '@/lib/hooks/use-shared-data'
 
 const BASE_TABS = [
   { href: '/calendar', label: '캘린더', icon: Calendar },
@@ -21,55 +24,57 @@ interface BottomTabBarProps {
 
 export function BottomTabBar({ role, isSuperAdmin = false, isApprover: isApproverProp }: BottomTabBarProps) {
   const pathname = usePathname()
-  const [pendingCount, setPendingCount] = useState(0)
   // 결재함 노출 여부 — 상위에서 서버사이드로 계산해서 내려준 값을 우선 사용한다.
   // (관리 직원이 0명인 매니저는 결재함을 숨긴다)
   const isApprover = isApproverProp ?? (role === 'manager')
 
-  const fetchCount = useCallback(() => {
+  // SWR — 동일 endpoint 를 다른 컴포넌트도 부르지만 30s 내 1회만 네트워크.
+  // isSuperAdmin / isApprover 가 아닌 경우 conditional fetching (key=null) 로 호출 안 함.
+  const { data: usersData } = useAdminUsers(isSuperAdmin ? undefined : { revalidateOnMount: false })
+  const { data: cancelReqsData } = useVacationCancelRequests(isSuperAdmin ? undefined : { revalidateOnMount: false })
+  const { data: vacReqsData } = useVacationRequests(isSuperAdmin ? undefined : { revalidateOnMount: false })
+  const { data: approverData } = useApproverData((isApprover && !isSuperAdmin) ? undefined : { revalidateOnMount: false })
+
+  const pendingCount = useMemo(() => {
     if (isSuperAdmin) {
-      Promise.all([
-        fetch('/api/admin/users').then(r => r.ok ? r.json() : []),
-        fetch('/api/vacation-cancel-requests').then(r => r.ok ? r.json() : []),
-        fetch('/api/vacation/requests').then(r => r.ok ? r.json() : []),
-      ]).then(([users, cancelReqs, vacReqs]: [any[], any[], any[]]) => {
-        const pendingUsers = Array.isArray(users) ? users.filter(u => u.status === 'pending').length : 0
-        // 앱관리자 actionable: 결재자(approver_id) 미지정 건
-        const pendingCancel = Array.isArray(cancelReqs)
-          ? cancelReqs.filter((r: any) => r.status === 'pending' && (r.requester?.approver_id ?? null) === null).length
-          : 0
-        const pendingVacation = Array.isArray(vacReqs)
-          ? vacReqs.filter((r: any) => r.status === 'pending' && (r.approver_id ?? null) === null).length
-          : 0
-        setPendingCount(pendingUsers + pendingCancel + pendingVacation)
-      }).catch(() => {})
-      return
+      const pendingUsers = Array.isArray(usersData)
+        ? (usersData as any[]).filter(u => u.status === 'pending').length : 0
+      const pendingCancel = Array.isArray(cancelReqsData)
+        ? (cancelReqsData as any[]).filter(r => r.status === 'pending' && (r.requester?.approver_id ?? null) === null).length : 0
+      const pendingVacation = Array.isArray(vacReqsData)
+        ? (vacReqsData as any[]).filter(r => r.status === 'pending' && (r.approver_id ?? null) === null).length : 0
+      return pendingUsers + pendingCancel + pendingVacation
     }
     if (isApprover) {
-      // 결재자: 본인이 결재자인 건만
-      fetch('/api/vacation/approver').then(r => r.ok ? r.json() : { cancel_requests: [], vacation_requests: [] })
-        .then((data: any) => {
-          const c = Array.isArray(data.cancel_requests) ? data.cancel_requests.filter((r: any) => r.status === 'pending').length : 0
-          const v = Array.isArray(data.vacation_requests) ? data.vacation_requests.filter((r: any) => r.status === 'pending').length : 0
-          setPendingCount(c + v)
-        }).catch(() => {})
+      const c = Array.isArray((approverData as any)?.cancel_requests)
+        ? (approverData as any).cancel_requests.filter((r: any) => r.status === 'pending').length : 0
+      const v = Array.isArray((approverData as any)?.vacation_requests)
+        ? (approverData as any).vacation_requests.filter((r: any) => r.status === 'pending').length : 0
+      return c + v
     }
-  }, [isSuperAdmin, isApprover])
+    return 0
+  }, [isSuperAdmin, isApprover, usersData, cancelReqsData, vacReqsData, approverData])
 
-  useEffect(() => { fetchCount() }, [fetchCount])
-
-  // 휴가 취소 요청 / 회원 가입 변경 시 자동 갱신
+  // 휴가 취소 요청 / 회원 가입 변경 시 SWR 캐시 무효화
   useEffect(() => {
     if (!isSuperAdmin && !isApprover) return
     const supabase = createClient()
     const channel = supabase
       .channel('bottom-tab-bar-refresh')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'cg_vacation_cancel_requests' }, () => fetchCount())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'cg_vacation_requests' }, () => fetchCount())
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'cg_profiles' }, () => fetchCount())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cg_vacation_cancel_requests' }, () => {
+        invalidate.vacationCancel()
+        if (isApprover) invalidate.vacationApprover()
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cg_vacation_requests' }, () => {
+        invalidate.vacationRequests()
+        if (isApprover) invalidate.vacationApprover()
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'cg_profiles' }, () => {
+        if (isSuperAdmin) invalidate.adminUsers()
+      })
       .subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [isSuperAdmin, isApprover, fetchCount])
+  }, [isSuperAdmin, isApprover])
 
   const tabs = isSuperAdmin
     ? [...BASE_TABS, { href: '/admin', label: '앱관리', icon: Settings }]

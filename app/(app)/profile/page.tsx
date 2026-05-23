@@ -17,6 +17,7 @@ import { cn } from '@/lib/utils/cn'
 import { format, parseISO } from 'date-fns'
 import { ko } from 'date-fns/locale'
 import type { ProfileWithTeam, Team } from '@/types/app'
+import { useProfile, useTeams, useVacationOwn, useApproverData, useVacationHistory, invalidate } from '@/lib/hooks/use-shared-data'
 
 const ROLE_LABEL: Record<string, string> = { admin: '앱관리자', manager: '관리자', member: '실무자' }
 
@@ -274,52 +275,60 @@ export default function ProfilePage() {
     }
   }
 
-  const fetchApproverData = async () => {
-    const [appRes, histRes] = await Promise.all([
-      fetch('/api/vacation/approver'),
-      fetch('/api/vacation-history'),
-    ])
-    if (appRes.ok) {
-      const data: ApproverData = await appRes.json()
-      setApproverData(data)
-      const init: Record<string, number> = {}
-      data.employees.forEach(e => { init[e.id] = e.total_days })
-      setEmpTotalEdits(init)
-    }
-    if (histRes.ok) {
-      const hist: VacHistoryItem[] = await histRes.json()
-      setEmpHistory(hist)
-    }
-  }
+  // SWR 기반 — 액션 후 캐시 무효화 한 번이면 위쪽의 hook 들이 자동 reload
+  const fetchApproverData = () => invalidate.vacationFamily()
 
   const fetchOwnVacation = async () => {
     const res = await fetch('/api/vacation')
     if (res.ok) setVacSummary(await res.json())
   }
 
+  // ── 공용 데이터: SWR 로 dedupe (다른 컴포넌트 호출과 30s 내 합산 1회) ──
+  const { data: profileSwr } = useProfile()
+  const { data: teamsSwr } = useTeams()
+  const { data: vacSwr } = useVacationOwn()
+  const { data: approverSwr } = useApproverData()
+  const { data: vacHistorySwr } = useVacationHistory()
+
+  useEffect(() => {
+    if (!profileSwr) return
+    const p = profileSwr as ProfileWithTeam
+    setProfile(p)
+    setForm({ full_name: p.full_name, color: p.color, team_id: p.team_id ?? 'none' })
+  }, [profileSwr])
+  useEffect(() => { if (Array.isArray(teamsSwr)) setTeams(teamsSwr as Team[]) }, [teamsSwr])
+  useEffect(() => {
+    const v = vacSwr as any
+    if (v && typeof v.total_days === 'number') setVacSummary(v)
+  }, [vacSwr])
+  useEffect(() => {
+    if (!approverSwr) return
+    const data = approverSwr as ApproverData
+    setApproverData(data)
+    const init: Record<string, number> = {}
+    data.employees.forEach(e => { init[e.id] = e.total_days })
+    setEmpTotalEdits(init)
+  }, [approverSwr])
+  useEffect(() => {
+    if (Array.isArray(vacHistorySwr)) setEmpHistory(vacHistorySwr as VacHistoryItem[])
+  }, [vacHistorySwr])
+
+  // ── 페이지 전용 fetch (캐시 불필요): 이메일·설정·오늘 출근·인사기록·퇴근보정 ──
   useEffect(() => {
     import('@/lib/supabase/client').then(({ createClient }) => {
       createClient().auth.getUser().then(({ data }) => setEmail(data.user?.email ?? ''))
     })
     const todayStr = getLocalDateStr()
     Promise.all([
-      fetch('/api/profiles').then(r => r.json()),
-      fetch('/api/admin/teams').then(r => r.json()),
-      fetch('/api/vacation').then(r => r.json()),
       fetch('/api/admin/settings').then(r => r.json()),
       fetch(`/api/attendance?date=${todayStr}`, { cache: 'no-store' }).then(r => r.json()),
-    ]).then(([profileData, teamsData, vacData, settingsData, attendanceData]: [
-      ProfileWithTeam, Team[], VacSummaryV2, CompanySettings, { checked_in_at: string; checked_out_at?: string | null; method?: string } | null
+    ]).then(([settingsData, attendanceData]: [
+      CompanySettings, { checked_in_at: string; checked_out_at?: string | null; method?: string } | null
     ]) => {
-      setProfile(profileData)
-      setForm({ full_name: profileData.full_name, color: profileData.color, team_id: profileData.team_id ?? 'none' })
-      setTeams(Array.isArray(teamsData) ? teamsData : [])
-      if (vacData && typeof vacData.total_days === 'number') setVacSummary(vacData)
       setCompanySettings(settingsData)
       setViewedAttendance(attendanceData)
       if (settingsData && !attendanceData) checkIp()
     })
-    fetchApproverData()
     fetch('/api/hr-records').then(r => r.ok ? r.json() : null).then(setHrRecord).catch(() => {})
     // 어제 이전 출근 행 중 퇴근 미입력 건은 18:00(KST)로 자동 보정 — best-effort
     fetch('/api/attendance/checkout', { method: 'PATCH' }).catch(() => {})

@@ -9,6 +9,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@
 import { useToast } from '@/components/ui/toast'
 import { User, Clock, MapPin, Tag, Eye, Bell } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { useProfile, useCategories } from '@/lib/hooks/use-shared-data'
 import type { EventCategory } from '@/types/app'
 
 const VISIBILITY_LABEL = { company: '전사 공개', team: '팀 공개', private: '나만 보기' }
@@ -45,13 +46,16 @@ export function EventModal({ isOpen, onClose, initialDate, eventId, onSuccess }:
     color: '',
   })
 
+  // SWR — 같은 endpoint 를 다른 컴포넌트도 호출하지만 30s 내 단 1회 네트워크
+  const { data: categoriesSwr } = useCategories()
+  const { data: profileSwr } = useProfile()
+  useEffect(() => { if (categoriesSwr) setCategories(categoriesSwr as any) }, [categoriesSwr])
   useEffect(() => {
-    fetch('/api/admin/categories').then(r => r.json()).then(setCategories).catch(() => {})
-    fetch('/api/profiles').then(r => r.json()).then((p: any) => {
-      setCurrentUserId(p?.id ?? null)
-      setIsAdmin(p?.is_super_admin === true || (p?.is_super_admin == null && p?.role === 'admin'))
-    }).catch(() => {})
-  }, [])
+    if (!profileSwr) return
+    const p: any = profileSwr
+    setCurrentUserId(p?.id ?? null)
+    setIsAdmin(p?.is_super_admin === true || (p?.is_super_admin == null && p?.role === 'admin'))
+  }, [profileSwr])
 
   useEffect(() => {
     if (initialDate && isOpen) {

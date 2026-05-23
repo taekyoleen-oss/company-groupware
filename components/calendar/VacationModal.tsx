@@ -9,6 +9,7 @@ import { useToast } from '@/components/ui/toast'
 import { Clock, User, Sun, AlertTriangle } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { countWorkdays } from '@/lib/utils/holidayDates'
+import { useProfile } from '@/lib/hooks/use-shared-data'
 
 type VacationType = 'full' | 'morning' | 'afternoon'
 
@@ -70,18 +71,20 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
   const [vacationType, setVacationType]     = useState<VacationType>('full')
   const [form, setForm] = useState({ title: '', description: '', start_at: '', end_at: '' })
 
+  // SWR — /api/profiles 가 여러 컴포넌트에서 호출되어도 30s 내 1회만 네트워크
+  const { data: profileSwr } = useProfile()
   useEffect(() => {
-    fetch('/api/profiles').then(r => r.json()).then((p: any) => {
-      setCurrentUserId(p?.id ?? null)
-      setCurrentUserName(p?.full_name ?? '')
-      const superAdmin = p?.is_super_admin === true || (p?.is_super_admin == null && p?.role === 'admin')
-      setIsAdmin(superAdmin)
-      // 결재자 역할 = 관리자(manager) 또는 앱관리자. 본인이 결재자고 외부 결재자도 없으면 자기결재.
-      setIsApproverRole(superAdmin || p?.role === 'manager')
-      setApproverId(p?.approver_id ?? null)
-      setApproverName(p?.approver?.full_name ?? null)
-    }).catch(() => {})
-  }, [])
+    if (!profileSwr) return
+    const p: any = profileSwr
+    setCurrentUserId(p?.id ?? null)
+    setCurrentUserName(p?.full_name ?? '')
+    const superAdmin = p?.is_super_admin === true || (p?.is_super_admin == null && p?.role === 'admin')
+    setIsAdmin(superAdmin)
+    // 결재자 역할 = 관리자(manager) 또는 앱관리자. 본인이 결재자고 외부 결재자도 없으면 자기결재.
+    setIsApproverRole(superAdmin || p?.role === 'manager')
+    setApproverId(p?.approver_id ?? null)
+    setApproverName(p?.approver?.full_name ?? null)
+  }, [profileSwr])
 
   // New vacation
   useEffect(() => {

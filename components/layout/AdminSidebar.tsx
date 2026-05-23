@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import Link from 'next/link'
 import { Settings, Users, Building2, Tag, UserCheck, Sun, CheckCircle, ClipboardList, Wifi } from 'lucide-react'
 import { UserAvatar } from '@/components/ui/avatar'
@@ -9,6 +9,9 @@ import { format, parseISO } from 'date-fns'
 import { ko } from 'date-fns/locale'
 import { createClient } from '@/lib/supabase/client'
 import type { ProfileWithTeam, Team, EventCategory } from '@/types/app'
+import {
+  useAdminUsers, useTeams, useCategories, useVacationCancelRequests, invalidate,
+} from '@/lib/hooks/use-shared-data'
 
 interface PendingUser {
   id: string
@@ -25,56 +28,42 @@ interface CancelRequest {
 }
 
 export function AdminSidebar() {
-  const [pendingUsers, setPendingUsers] = useState<PendingUser[]>([])
-  const [cancelReqs, setCancelReqs] = useState<CancelRequest[]>([])
-  const [teamCount, setTeamCount] = useState(0)
-  const [categoryCount, setCategoryCount] = useState(0)
+  // SWR hooks — 같은 endpoint 를 다른 컴포넌트가 호출해도 30초 dedupe
+  const { data: usersData } = useAdminUsers()
+  const { data: teamsData } = useTeams()
+  const { data: catsData } = useCategories()
+  const { data: cancelData, mutate: mutateCancel } = useVacationCancelRequests()
+
+  const pendingUsers: PendingUser[] = useMemo(
+    () => Array.isArray(usersData)
+      ? (usersData as ProfileWithTeam[]).filter(u => u.status === 'pending').slice(0, 5)
+      : [],
+    [usersData]
+  )
+  const teamCount = useMemo(() => Array.isArray(teamsData) ? (teamsData as Team[]).length : 0, [teamsData])
+  const categoryCount = useMemo(() => Array.isArray(catsData) ? (catsData as EventCategory[]).length : 0, [catsData])
+  // 사이드바엔 관리자 본인이 결재할 수 있는 건만 표시 (approver_id == null)
+  const cancelReqs: CancelRequest[] = useMemo(
+    () => Array.isArray(cancelData)
+      ? (cancelData as CancelRequest[]).filter(r => r.status === 'pending' && (r.requester?.approver_id ?? null) === null)
+      : [],
+    [cancelData]
+  )
+
   const [approving, setApproving] = useState<string | null>(null)
   const [processingCancel, setProcessingCancel] = useState<string | null>(null)
   const [approveComplete, setApproveComplete] = useState(false)
 
-  const fetchData = useCallback(async () => {
-    const [usersRes, teamsRes, catsRes, cancelRes] = await Promise.all([
-      fetch('/api/admin/users'),
-      fetch('/api/admin/teams'),
-      fetch('/api/admin/categories'),
-      fetch('/api/vacation-cancel-requests'),
-    ])
-    if (usersRes.ok) {
-      const data: ProfileWithTeam[] = await usersRes.json()
-      if (Array.isArray(data)) setPendingUsers(data.filter(u => u.status === 'pending').slice(0, 5))
-    }
-    if (teamsRes.ok) {
-      const data: Team[] = await teamsRes.json()
-      if (Array.isArray(data)) setTeamCount(data.length)
-    }
-    if (catsRes.ok) {
-      const data: EventCategory[] = await catsRes.json()
-      if (Array.isArray(data)) setCategoryCount(data.length)
-    }
-    if (cancelRes.ok) {
-      const data: CancelRequest[] = await cancelRes.json()
-      // 사이드바엔 관리자 본인이 결재할 수 있는 건만 표시 (approver_id == null)
-      if (Array.isArray(data)) {
-        setCancelReqs(
-          data.filter(r => r.status === 'pending' && (r.requester?.approver_id ?? null) === null)
-        )
-      }
-    }
-  }, [])
-
-  useEffect(() => { fetchData() }, [fetchData])
-
-  // cg_messages / cg_vacation_cancel_requests 변경 감지 → 자동 갱신
+  // cg_vacation_cancel_requests / cg_profiles 변경 감지 → 관련 SWR 캐시 무효화
   useEffect(() => {
     const supabase = createClient()
     const channel = supabase
       .channel('admin-sidebar-refresh')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'cg_vacation_cancel_requests' }, () => fetchData())
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'cg_profiles' }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cg_vacation_cancel_requests' }, () => invalidate.vacationCancel())
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'cg_profiles' }, () => invalidate.adminUsers())
       .subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [fetchData])
+  }, [])
 
   const handleApprove = async (userId: string) => {
     setApproving(userId)
@@ -84,7 +73,7 @@ export function AdminSidebar() {
       body: JSON.stringify({ status: 'active' }),
     })
     setApproving(null)
-    if (res.ok) fetchData()
+    if (res.ok) invalidate.adminUsers()
   }
 
   const handleCancelAction = async (id: string, action: 'approve' | 'reject') => {
@@ -101,20 +90,23 @@ export function AdminSidebar() {
       return
     }
     if (action === 'approve') {
-      // 승인 완료 팝업 → 확인 시 fetchData + 이벤트 디스패치
+      // 승인 완료 팝업 → 확인 시 invalidate + 이벤트 디스패치
       setApproveComplete(true)
     } else {
-      // 거부는 즉시 제거
-      setCancelReqs(prev => prev.filter(r => r.id !== id))
+      // 거부는 즉시 캐시에서 제거 (optimistic)
+      mutateCancel(
+        (prev: CancelRequest[] | undefined) => (prev ?? []).filter(r => r.id !== id),
+        { revalidate: false }
+      )
     }
   }
 
   const handleApproveCompleteClose = useCallback(() => {
     setApproveComplete(false)
-    fetchData()
+    invalidate.vacationFamily()
     // 다른 컴포넌트(관리자 페이지, 캘린더 등) 동기화
     window.dispatchEvent(new CustomEvent('vacation-cancel-approved'))
-  }, [fetchData])
+  }, [])
 
   return (
     <aside className="hidden md:flex flex-col w-52 shrink-0 bg-[#F8FAFC] border-l border-[#E5E7EB] p-4 gap-4 overflow-y-auto dark:bg-[#2D3440] dark:border-[#4B5563]">

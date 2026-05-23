@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import Link from 'next/link'
 import { Sun, ClipboardCheck, Users, CheckCircle } from 'lucide-react'
 import { UserAvatar } from '@/components/ui/avatar'
@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { format, parseISO } from 'date-fns'
 import { ko } from 'date-fns/locale'
 import { createClient } from '@/lib/supabase/client'
+import { useApproverData, invalidate } from '@/lib/hooks/use-shared-data'
 
 interface CancelReq {
   id: string
@@ -30,36 +31,37 @@ interface Employee { id: string; full_name: string; color: string }
 // 결재자(관리자) 전용 사이드바.
 // 본인이 결재자(approver_id == me)로 지정된 직원의 휴가 신청·취소만 표시한다.
 export function ApproverSidebar() {
-  const [pendingCancels, setPendingCancels] = useState<CancelReq[]>([])
-  const [pendingVacReqs, setPendingVacReqs] = useState<VacReq[]>([])
-  const [employees, setEmployees] = useState<Employee[]>([])
+  // SWR — 같은 endpoint 호출이 30s 내 중복 차단됨
+  const { data } = useApproverData()
+
+  const employees: Employee[] = useMemo(
+    () => Array.isArray((data as any)?.employees) ? (data as any).employees : [],
+    [data]
+  )
+  const pendingCancels: CancelReq[] = useMemo(
+    () => (Array.isArray((data as any)?.cancel_requests) ? (data as any).cancel_requests : [])
+      .filter((r: CancelReq) => r.status === 'pending'),
+    [data]
+  )
+  const pendingVacReqs: VacReq[] = useMemo(
+    () => (Array.isArray((data as any)?.vacation_requests) ? (data as any).vacation_requests : [])
+      .filter((r: VacReq) => r.status === 'pending'),
+    [data]
+  )
+
   const [processing, setProcessing] = useState<string | null>(null)
   const [approveDone, setApproveDone] = useState<null | 'cancel' | 'vac'>(null)
 
-  const fetchAll = useCallback(async () => {
-    const res = await fetch('/api/vacation/approver')
-    if (!res.ok) return
-    const data = await res.json()
-    setEmployees(Array.isArray(data.employees) ? data.employees : [])
-    setPendingCancels(
-      (Array.isArray(data.cancel_requests) ? data.cancel_requests : []).filter((r: CancelReq) => r.status === 'pending')
-    )
-    setPendingVacReqs(
-      (Array.isArray(data.vacation_requests) ? data.vacation_requests : []).filter((r: VacReq) => r.status === 'pending')
-    )
-  }, [])
-
-  useEffect(() => { fetchAll() }, [fetchAll])
-
+  // Realtime → SWR 캐시 무효화
   useEffect(() => {
     const supabase = createClient()
     const channel = supabase
       .channel('approver-sidebar-refresh')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'cg_vacation_cancel_requests' }, () => fetchAll())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'cg_vacation_requests' }, () => fetchAll())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cg_vacation_cancel_requests' }, () => invalidate.vacationApprover())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cg_vacation_requests' }, () => invalidate.vacationApprover())
       .subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [fetchAll])
+  }, [])
 
   const approveCancel = async (id: string) => {
     setProcessing(id)
@@ -95,9 +97,9 @@ export function ApproverSidebar() {
 
   const closeApproveDone = useCallback(() => {
     setApproveDone(null)
-    fetchAll()
+    invalidate.vacationFamily()
     window.dispatchEvent(new CustomEvent('vacation-cancel-approved'))
-  }, [fetchAll])
+  }, [])
 
   return (
     <aside className="hidden md:flex flex-col w-52 shrink-0 bg-[#F8FAFC] border-l border-[#E5E7EB] p-4 gap-4 overflow-y-auto dark:bg-[#2D3440] dark:border-[#4B5563]">

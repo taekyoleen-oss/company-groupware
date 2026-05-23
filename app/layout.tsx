@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import './globals.css'
 import { ThemeProvider } from '@/components/providers/ThemeProvider'
+import { SWRProvider } from '@/components/providers/SWRProvider'
 
 export const metadata: Metadata = {
   title: '사내 그룹웨어',
@@ -12,7 +13,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="ko" suppressHydrationWarning>
       <body>
         <ThemeProvider>
-          {children}
+          <SWRProvider>
+            {children}
+          </SWRProvider>
         </ThemeProvider>
       </body>
     </html>
