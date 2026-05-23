@@ -8,6 +8,7 @@ import { ApproverSidebar } from '@/components/layout/ApproverSidebar'
 import { BottomTabBar } from '@/components/layout/BottomTabBar'
 import { MessageNotification } from '@/components/messages/MessageNotification'
 import { IdleRefresh } from '@/components/layout/IdleRefresh'
+import { RealtimeProvider } from '@/components/providers/RealtimeProvider'
 import type { ProfileWithTeam } from '@/types/app'
 import { isSuperAdmin } from '@/lib/auth/roles'
 import { CG_PROFILE_HEADER, type MiddlewareProfilePayload } from '@/lib/auth/middleware-headers'
@@ -53,19 +54,21 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const isApprover = !superAdmin && p.role === 'manager' && (payload!.approver_scope_count > 0)
 
   return (
-    <div className="flex flex-col min-h-screen">
-      <AppHeader profile={p} isApprover={isApprover} />
-      <div className="flex flex-1 overflow-hidden">
-        <Sidebar />
-        <main className="flex-1 overflow-y-auto pb-16 md:pb-0">
-          {children}
-        </main>
-        {superAdmin && <AdminSidebar />}
-        {isApprover && <ApproverSidebar />}
+    <RealtimeProvider userId={p.id} teamId={p.team_id ?? null}>
+      <div className="flex flex-col min-h-screen">
+        <AppHeader profile={p} isApprover={isApprover} />
+        <div className="flex flex-1 overflow-hidden">
+          <Sidebar />
+          <main className="flex-1 overflow-y-auto pb-16 md:pb-0">
+            {children}
+          </main>
+          {superAdmin && <AdminSidebar />}
+          {isApprover && <ApproverSidebar />}
+        </div>
+        <BottomTabBar role={p.role} isSuperAdmin={superAdmin} isApprover={isApprover} />
+        <MessageNotification userId={p.id} teamId={p.team_id ?? null} />
+        <IdleRefresh />
       </div>
-      <BottomTabBar role={p.role} isSuperAdmin={superAdmin} isApprover={isApprover} />
-      <MessageNotification userId={p.id} teamId={p.team_id ?? null} />
-      <IdleRefresh />
-    </div>
+    </RealtimeProvider>
   )
 }

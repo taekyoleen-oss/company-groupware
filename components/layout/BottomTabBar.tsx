@@ -1,12 +1,11 @@
 'use client'
-import { useEffect, useMemo } from 'react'
+import { useMemo } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Calendar, FileText, CheckSquare, User, Settings } from 'lucide-react'
 import { cn } from '@/lib/utils/cn'
-import { createClient } from '@/lib/supabase/client'
 import {
-  useAdminUsers, useVacationCancelRequests, useVacationRequests, useApproverData, invalidate,
+  useAdminUsers, useVacationCancelRequests, useVacationRequests, useApproverData,
 } from '@/lib/hooks/use-shared-data'
 
 const BASE_TABS = [
@@ -55,26 +54,7 @@ export function BottomTabBar({ role, isSuperAdmin = false, isApprover: isApprove
     return 0
   }, [isSuperAdmin, isApprover, usersData, cancelReqsData, vacReqsData, approverData])
 
-  // 휴가 취소 요청 / 회원 가입 변경 시 SWR 캐시 무효화
-  useEffect(() => {
-    if (!isSuperAdmin && !isApprover) return
-    const supabase = createClient()
-    const channel = supabase
-      .channel('bottom-tab-bar-refresh')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'cg_vacation_cancel_requests' }, () => {
-        invalidate.vacationCancel()
-        if (isApprover) invalidate.vacationApprover()
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'cg_vacation_requests' }, () => {
-        invalidate.vacationRequests()
-        if (isApprover) invalidate.vacationApprover()
-      })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'cg_profiles' }, () => {
-        if (isSuperAdmin) invalidate.adminUsers()
-      })
-      .subscribe()
-    return () => { supabase.removeChannel(channel) }
-  }, [isSuperAdmin, isApprover])
+  // Realtime 구독은 layout 의 <RealtimeProvider /> 에서 일원화됨
 
   const tabs = isSuperAdmin
     ? [...BASE_TABS, { href: '/admin', label: '앱관리', icon: Settings }]

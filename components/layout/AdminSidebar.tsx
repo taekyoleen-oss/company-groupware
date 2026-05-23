@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import Link from 'next/link'
 import { Settings, Users, Building2, Tag, UserCheck, Sun, CheckCircle, ClipboardList, Wifi } from 'lucide-react'
 import { UserAvatar } from '@/components/ui/avatar'
@@ -7,7 +7,6 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { format, parseISO } from 'date-fns'
 import { ko } from 'date-fns/locale'
-import { createClient } from '@/lib/supabase/client'
 import type { ProfileWithTeam, Team, EventCategory } from '@/types/app'
 import {
   useAdminUsers, useTeams, useCategories, useVacationCancelRequests, invalidate,
@@ -54,16 +53,7 @@ export function AdminSidebar() {
   const [processingCancel, setProcessingCancel] = useState<string | null>(null)
   const [approveComplete, setApproveComplete] = useState(false)
 
-  // cg_vacation_cancel_requests / cg_profiles 변경 감지 → 관련 SWR 캐시 무효화
-  useEffect(() => {
-    const supabase = createClient()
-    const channel = supabase
-      .channel('admin-sidebar-refresh')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'cg_vacation_cancel_requests' }, () => invalidate.vacationCancel())
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'cg_profiles' }, () => invalidate.adminUsers())
-      .subscribe()
-    return () => { supabase.removeChannel(channel) }
-  }, [])
+  // Realtime 구독은 layout 의 <RealtimeProvider /> 에서 일원화됨 — 여기서는 무효화 헬퍼만 사용
 
   const handleApprove = async (userId: string) => {
     setApproving(userId)

@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import Link from 'next/link'
 import { Sun, ClipboardCheck, Users, CheckCircle } from 'lucide-react'
 import { UserAvatar } from '@/components/ui/avatar'
@@ -7,7 +7,6 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { format, parseISO } from 'date-fns'
 import { ko } from 'date-fns/locale'
-import { createClient } from '@/lib/supabase/client'
 import { useApproverData, invalidate } from '@/lib/hooks/use-shared-data'
 
 interface CancelReq {
@@ -52,16 +51,7 @@ export function ApproverSidebar() {
   const [processing, setProcessing] = useState<string | null>(null)
   const [approveDone, setApproveDone] = useState<null | 'cancel' | 'vac'>(null)
 
-  // Realtime → SWR 캐시 무효화
-  useEffect(() => {
-    const supabase = createClient()
-    const channel = supabase
-      .channel('approver-sidebar-refresh')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'cg_vacation_cancel_requests' }, () => invalidate.vacationApprover())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'cg_vacation_requests' }, () => invalidate.vacationApprover())
-      .subscribe()
-    return () => { supabase.removeChannel(channel) }
-  }, [])
+  // Realtime 구독은 layout 의 <RealtimeProvider /> 에서 일원화됨
 
   const approveCancel = async (id: string) => {
     setProcessing(id)
