@@ -1,4 +1,5 @@
 'use client'
+import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Calendar, FileText, CheckSquare, LogOut, ClipboardCheck } from 'lucide-react'
@@ -7,11 +8,12 @@ import { UserAvatar } from '@/components/ui/avatar'
 import { Logo } from '@/components/ui/Logo'
 import { ThemeToggle } from '@/components/ui/theme-toggle'
 import { NotificationPanel } from '@/components/messages/NotificationPanel'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import type { ProfileWithTeam } from '@/types/app'
-import { isSuperAdmin } from '@/lib/auth/roles'
 
 interface AppHeaderProps {
   profile: ProfileWithTeam
+  isApprover?: boolean
 }
 
 const NAV_ITEMS = [
@@ -20,10 +22,14 @@ const NAV_ITEMS = [
   { href: '/todo',     label: 'TO-DO',  icon: CheckSquare },
 ]
 
-export function AppHeader({ profile }: AppHeaderProps) {
+export function AppHeader({ profile, isApprover = false }: AppHeaderProps) {
   const pathname = usePathname()
+  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false)
+  const [signingOut, setSigningOut] = useState(false)
 
-  const handleSignOut = async () => {
+  const confirmSignOut = async () => {
+    if (signingOut) return
+    setSigningOut(true)
     await fetch('/api/auth/signout', { method: 'POST' })
     window.location.href = '/login'
   }
@@ -50,7 +56,7 @@ export function AppHeader({ profile }: AppHeaderProps) {
               {label}
             </Link>
           ))}
-          {!isSuperAdmin(profile) && profile.role === 'manager' && (
+          {isApprover && (
             <Link
               href="/approvals"
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
@@ -83,10 +89,38 @@ export function AppHeader({ profile }: AppHeaderProps) {
         </Link>
 
         {/* 로그아웃 */}
-        <Button variant="ghost" size="icon" onClick={handleSignOut} title="로그아웃">
+        <Button variant="ghost" size="icon" onClick={() => setShowSignOutConfirm(true)} title="로그아웃">
           <LogOut className="h-4 w-4 text-[#6B7280] dark:text-[#94A3B8]" />
         </Button>
       </div>
+
+      {/* 로그아웃 확인 다이얼로그 */}
+      <Dialog open={showSignOutConfirm} onOpenChange={open => { if (!signingOut) setShowSignOutConfirm(open) }}>
+        <DialogContent className="max-w-xs text-center">
+          <div className="flex flex-col items-center gap-3 py-4">
+            <div className="flex items-center justify-center w-14 h-14 rounded-full bg-[#EFF6FF] dark:bg-[#1E3A5F]">
+              <LogOut className="h-7 w-7 text-[#2563EB] dark:text-[#60A5FA]" />
+            </div>
+            <DialogTitle className="text-lg font-bold text-[#111827] dark:text-[#F1F5F9]">로그아웃 하시겠어요?</DialogTitle>
+            <p className="text-sm text-[#6B7280] dark:text-[#94A3B8]">
+              {profile.full_name}님의 계정에서 로그아웃됩니다.
+            </p>
+            <div className="flex gap-2 w-full mt-2">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => setShowSignOutConfirm(false)}
+                disabled={signingOut}
+              >
+                취소
+              </Button>
+              <Button className="flex-1" onClick={confirmSignOut} disabled={signingOut}>
+                {signingOut ? '로그아웃 중...' : '로그아웃'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </header>
   )
 }

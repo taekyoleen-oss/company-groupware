@@ -25,20 +25,29 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   const p = profile as ProfileWithTeam
   const superAdmin = isSuperAdmin(p)
-  const isApprover = p.role === 'manager'
+
+  // 매니저라도 본인이 결재자(approver_id=me)로 지정된 직원이 0명이면 결재함을 노출하지 않는다.
+  let isApprover = false
+  if (!superAdmin && p.role === 'manager') {
+    const { count } = await supabase
+      .from('cg_profiles')
+      .select('id', { count: 'exact', head: true })
+      .eq('approver_id', user.id)
+    isApprover = (count ?? 0) > 0
+  }
 
   return (
     <div className="flex flex-col min-h-screen">
-      <AppHeader profile={p} />
+      <AppHeader profile={p} isApprover={isApprover} />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />
         <main className="flex-1 overflow-y-auto pb-16 md:pb-0">
           {children}
         </main>
         {superAdmin && <AdminSidebar />}
-        {!superAdmin && isApprover && <ApproverSidebar />}
+        {isApprover && <ApproverSidebar />}
       </div>
-      <BottomTabBar role={p.role} isSuperAdmin={superAdmin} />
+      <BottomTabBar role={p.role} isSuperAdmin={superAdmin} isApprover={isApprover} />
       <MessageNotification userId={p.id} teamId={p.team_id ?? null} />
       <IdleRefresh />
     </div>

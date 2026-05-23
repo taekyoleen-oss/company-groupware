@@ -16,12 +16,15 @@ const BASE_TABS = [
 interface BottomTabBarProps {
   role?: string
   isSuperAdmin?: boolean
+  isApprover?: boolean
 }
 
-export function BottomTabBar({ role, isSuperAdmin = false }: BottomTabBarProps) {
+export function BottomTabBar({ role, isSuperAdmin = false, isApprover: isApproverProp }: BottomTabBarProps) {
   const pathname = usePathname()
   const [pendingCount, setPendingCount] = useState(0)
-  const isApprover = role === 'manager'
+  // 결재함 노출 여부 — 상위에서 서버사이드로 계산해서 내려준 값을 우선 사용한다.
+  // (관리 직원이 0명인 매니저는 결재함을 숨긴다)
+  const isApprover = isApproverProp ?? (role === 'manager')
 
   const fetchCount = useCallback(() => {
     if (isSuperAdmin) {

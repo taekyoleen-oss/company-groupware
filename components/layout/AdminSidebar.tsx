@@ -261,7 +261,7 @@ export function AdminSidebar() {
             <Wifi className="h-4 w-4 text-[#6B7280] group-hover:text-[#2563EB] shrink-0 dark:text-[#94A3B8] dark:group-hover:text-[#60A5FA]" />
             <div className="flex-1 min-w-0">
               <p className="text-xs font-medium">회사 설정</p>
-              <p className="text-[10px] text-[#9CA3AF] dark:text-[#6B7280]">IP·PC 승인 정책</p>
+              <p className="text-[10px] text-[#9CA3AF] dark:text-[#6B7280]">사무실 IP·PC 등록 요청</p>
             </div>
           </Link>
         </nav>

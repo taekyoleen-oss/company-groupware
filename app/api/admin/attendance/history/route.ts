@@ -39,6 +39,7 @@ export async function GET(request: NextRequest) {
     user_id: string
     date: string
     checked_in_at: string
+    checked_out_at: string | null
     method: string | null
     profile: {
       full_name: string
@@ -52,6 +53,7 @@ export async function GET(request: NextRequest) {
     user_id: row.user_id,
     date: row.date,
     checked_in_at: row.checked_in_at,
+    checked_out_at: row.checked_out_at ?? null,
     method: (row.method ?? 'office_login') as 'gps' | 'office_login',
     full_name: row.profile?.full_name ?? '(알 수 없음)',
     color: row.profile?.color ?? '#6B7280',

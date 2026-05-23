@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Check, Plus, Trash2, X, Save, Sun, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ClipboardList, Settings, Clock, CheckCircle, XCircle, Wifi, Download, ShieldCheck, ShieldAlert, Monitor, RefreshCw } from 'lucide-react'
+import { Check, Plus, Trash2, X, Save, Sun, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ClipboardList, Settings, Clock, CheckCircle, XCircle, Wifi, Download, ShieldAlert, Monitor, RefreshCw, IdCard } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
@@ -114,6 +114,7 @@ interface AttendanceRecord {
   team_id: string | null
   role: string
   checked_in_at: string | null
+  checked_out_at: string | null
   method: string | null
 }
 
@@ -122,6 +123,7 @@ interface AttendanceHistoryItem {
   user_id: string
   date: string
   checked_in_at: string
+  checked_out_at: string | null
   method: 'gps' | 'office_login'
   full_name: string
   color: string
@@ -178,7 +180,31 @@ function toLocalDateStr(d: Date = new Date()) {
   return d.toLocaleDateString('sv-SE') // YYYY-MM-DD
 }
 
-const VALID_TABS = new Set(['users', 'attendance', 'vacation', 'teams', 'categories', 'settings'])
+const VALID_TABS = new Set(['users', 'attendance', 'vacation', 'teams', 'categories', 'hr', 'settings'])
+
+interface HrRecord {
+  user_id: string
+  hire_date: string | null
+  employee_no: string | null
+  birth_date: string | null
+  phone: string | null
+  emergency_contact: string | null
+  address: string | null
+  notes: string | null
+  updated_at?: string | null
+}
+
+type HrEditValues = Omit<HrRecord, 'user_id' | 'updated_at'>
+
+const EMPTY_HR_EDIT: HrEditValues = {
+  hire_date: '',
+  employee_no: '',
+  birth_date: '',
+  phone: '',
+  emergency_contact: '',
+  address: '',
+  notes: '',
+}
 
 // useSearchParams 를 쓰는 컴포넌트는 Next.js 빌드 시 Suspense 경계가 필요해
 // 실제 페이지 로직을 inner 로 분리하고 default export 는 Suspense 로 감싼다.
@@ -271,6 +297,14 @@ function AdminPageInner() {
   const [devices, setDevices] = useState<OfficeDevice[]>([])
   const [deviceProcessing, setDeviceProcessing] = useState<string | null>(null)
   const [deviceLabelEdits, setDeviceLabelEdits] = useState<Record<string, string>>({})
+
+  // 인사관리 모달
+  const [hrModalUser, setHrModalUser] = useState<ProfileWithTeam | null>(null)
+  const [hrEdit, setHrEdit] = useState<HrEditValues>(EMPTY_HR_EDIT)
+  const [hrLoading, setHrLoading] = useState(false)
+  const [hrSaving, setHrSaving] = useState(false)
+  const [hrHasRecord, setHrHasRecord] = useState(false)
+  const [hrConfirmDelete, setHrConfirmDelete] = useState(false)
 
   const fetchAll = useCallback(async () => {
     const [usersRes, teamsRes, catsRes, vacRes, cancelRes, historyRes, vacReqRes, attHistRes] = await Promise.all([
@@ -395,6 +429,77 @@ function AdminPageInner() {
     setDeviceProcessing(null)
     if (res.ok) { showToast('라벨이 저장되었습니다.', 'success'); fetchDevices() }
     else { showToast('저장에 실패했습니다.', 'error') }
+  }
+
+  // ── 인사관리 모달 핸들러 ───────────────────────────
+  const openHrModal = async (user: ProfileWithTeam) => {
+    setHrModalUser(user)
+    setHrEdit(EMPTY_HR_EDIT)
+    setHrHasRecord(false)
+    setHrLoading(true)
+    setHrConfirmDelete(false)
+    const res = await fetch(`/api/admin/hr-records/${user.id}`)
+    setHrLoading(false)
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      showToast((data as any).error ?? '불러오기에 실패했습니다.', 'error')
+      return
+    }
+    const data: HrRecord | null = await res.json()
+    if (data) {
+      setHrHasRecord(true)
+      setHrEdit({
+        hire_date: data.hire_date ?? '',
+        employee_no: data.employee_no ?? '',
+        birth_date: data.birth_date ?? '',
+        phone: data.phone ?? '',
+        emergency_contact: data.emergency_contact ?? '',
+        address: data.address ?? '',
+        notes: data.notes ?? '',
+      })
+    }
+  }
+
+  const closeHrModal = () => {
+    if (hrSaving) return
+    setHrModalUser(null)
+    setHrEdit(EMPTY_HR_EDIT)
+    setHrHasRecord(false)
+    setHrConfirmDelete(false)
+  }
+
+  const saveHrRecord = async () => {
+    if (!hrModalUser) return
+    setHrSaving(true)
+    const res = await fetch(`/api/admin/hr-records/${hrModalUser.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(hrEdit),
+    })
+    setHrSaving(false)
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      showToast((data as any).error ?? '저장에 실패했습니다.', 'error')
+      return
+    }
+    showToast('인사기록이 저장되었습니다.', 'success')
+    setHrHasRecord(true)
+  }
+
+  const deleteHrRecord = async () => {
+    if (!hrModalUser) return
+    setHrSaving(true)
+    const res = await fetch(`/api/admin/hr-records/${hrModalUser.id}`, { method: 'DELETE' })
+    setHrSaving(false)
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}))
+      showToast((data as any).error ?? '삭제에 실패했습니다.', 'error')
+      return
+    }
+    showToast('인사기록이 삭제되었습니다.', 'success')
+    setHrEdit(EMPTY_HR_EDIT)
+    setHrHasRecord(false)
+    setHrConfirmDelete(false)
   }
 
   const handleDeviceDelete = async (id: string) => {
@@ -732,12 +837,13 @@ function AdminPageInner() {
       office_login: '사무실 PC',
     }
 
-    const headers = ['일자', '이름', '팀', '출근 시각', '방식']
+    const headers = ['일자', '이름', '팀', '출근 시각', '퇴근 시각', '방식']
     const rows = filtered.map(item => [
       item.date,
       item.full_name,
       item.team_name ?? '',
       format(parseISO(item.checked_in_at), 'yyyy-MM-dd HH:mm'),
+      item.checked_out_at ? format(parseISO(item.checked_out_at), 'yyyy-MM-dd HH:mm') : '',
       METHOD_LABEL[item.method] ?? item.method,
     ])
 
@@ -951,6 +1057,9 @@ function AdminPageInner() {
           </TabsTrigger>
           <TabsTrigger value="teams">팀 관리</TabsTrigger>
           <TabsTrigger value="categories">카테고리</TabsTrigger>
+          <TabsTrigger value="hr">
+            <IdCard className="h-3.5 w-3.5 mr-1" />인사관리
+          </TabsTrigger>
           <TabsTrigger value="settings">
             <Settings className="h-3.5 w-3.5 mr-1" />설정
           </TabsTrigger>
@@ -1091,7 +1200,7 @@ function AdminPageInner() {
                     <p className="font-medium text-sm dark:text-[#F1F5F9]">{r.full_name}</p>
                   </div>
                   {r.checked_in_at ? (
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 flex-wrap justify-end">
                       <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
                       <span className="text-sm font-semibold text-green-600 dark:text-green-400">
                         출근
@@ -1099,6 +1208,15 @@ function AdminPageInner() {
                       <span className="text-xs text-[#6B7280] dark:text-[#94A3B8]">
                         {format(parseISO(r.checked_in_at), 'HH:mm', { locale: ko })}
                       </span>
+                      {r.checked_out_at ? (
+                        <span className="text-[10px] bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-300 rounded px-1.5 py-0.5">
+                          🏠 퇴근 {format(parseISO(r.checked_out_at), 'HH:mm', { locale: ko })}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-300 rounded px-1.5 py-0.5">
+                          미퇴근
+                        </span>
+                      )}
                       {r.method === 'office_login' ? (
                         <span className="text-[10px] bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300 rounded px-1.5 py-0.5">🖥️ 사무실</span>
                       ) : (
@@ -1171,7 +1289,10 @@ function AdminPageInner() {
                           {format(parseISO(item.date), 'yyyy-MM-dd')}
                         </p>
                         <p className="text-[11px] text-[#6B7280] dark:text-[#94A3B8]">
-                          {format(parseISO(item.checked_in_at), 'HH:mm', { locale: ko })}
+                          출근 {format(parseISO(item.checked_in_at), 'HH:mm', { locale: ko })}
+                          {item.checked_out_at && (
+                            <> · 퇴근 {format(parseISO(item.checked_out_at), 'HH:mm', { locale: ko })}</>
+                          )}
                         </p>
                       </div>
                       {item.method === 'office_login' ? (
@@ -1608,30 +1729,46 @@ function AdminPageInner() {
           </div>
         </TabsContent>
 
+        {/* ── 인사관리 ─────────────────────────────────────── */}
+        <TabsContent value="hr">
+          <div className="mb-3 flex items-center gap-2">
+            <IdCard className="h-4 w-4 text-[#2563EB]" />
+            <h2 className="text-sm font-semibold text-[#111827] dark:text-[#F1F5F9]">
+              회원 인사기록
+            </h2>
+            <span className="ml-auto text-[11px] text-[#9CA3AF] dark:text-[#64748B]">
+              회원 옆 인사기록 버튼으로 입력·수정·삭제
+            </span>
+          </div>
+          <div className="space-y-2">
+            {sortedActive.length === 0 ? (
+              <p className="text-sm text-[#6B7280] dark:text-[#94A3B8] text-center py-6">
+                등록된 회원이 없습니다.
+              </p>
+            ) : sortedActive.map(user => (
+              <div
+                key={user.id}
+                className="bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded-lg p-3 flex flex-wrap items-center gap-3"
+              >
+                <UserAvatar name={user.full_name} color={user.color} size={32} />
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm dark:text-[#F1F5F9] truncate">{user.full_name}</p>
+                  <p className="text-[11px] text-[#6B7280] dark:text-[#94A3B8] truncate">
+                    {(user.team as any)?.name ?? '팀 없음'}
+                    {user.email && <> · {user.email}</>}
+                  </p>
+                </div>
+                <Button size="sm" variant="outline" onClick={() => openHrModal(user)}>
+                  <IdCard className="h-3.5 w-3.5 mr-1" />인사기록
+                </Button>
+              </div>
+            ))}
+          </div>
+        </TabsContent>
+
         {/* ── 회사 설정 ─────────────────────────────────────── */}
         <TabsContent value="settings">
           <form onSubmit={saveSettings} className="space-y-4 max-w-md">
-
-            {/* PC 승인 정책 */}
-            <div className="bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded-xl p-5 space-y-3">
-              <div className="flex items-center gap-2 mb-1">
-                <ShieldCheck className="h-4 w-4 text-[#2563EB]" />
-                <h2 className="text-sm font-semibold text-[#111827] dark:text-[#F1F5F9]">PC 승인 정책</h2>
-              </div>
-              <p className="text-xs text-[#6B7280] dark:text-[#94A3B8] leading-relaxed">
-                <strong>승인 필수</strong>로 설정하면 사무실 IP에 있어도 관리자가 승인한 PC에서만 출근 체크가 가능합니다.
-                미설정 시에는 IP 매칭만으로 출근 체크가 동작하며, PC 등록은 관리 목적의 기록으로만 사용됩니다.
-              </p>
-              <label className="flex items-center gap-2 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={settings.require_device_approval}
-                  onChange={e => { setSettings(s => ({ ...s, require_device_approval: e.target.checked })); setSettingsDirty(true) }}
-                  className="h-4 w-4 accent-[#2563EB]"
-                />
-                <span className="text-sm text-[#111827] dark:text-[#F1F5F9]">승인된 PC만 출근 체크 허용</span>
-              </label>
-            </div>
 
             {/* IP 설정 — cg_office_networks 행 단위 관리 */}
             <div className="bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded-xl p-5 space-y-4">
@@ -2125,6 +2262,147 @@ function AdminPageInner() {
               {confirming ? '삭제 중...' : '삭제'}
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 인사관리 모달 */}
+      <Dialog open={hrModalUser !== null} onOpenChange={open => { if (!open) closeHrModal() }}>
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <IdCard className="h-4 w-4 text-[#2563EB]" />
+              인사기록
+              {hrModalUser && (
+                <span className="text-sm font-normal text-[#6B7280] dark:text-[#94A3B8]">
+                  · {hrModalUser.full_name}
+                </span>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+
+          {hrLoading ? (
+            <p className="text-sm text-[#6B7280] dark:text-[#94A3B8] text-center py-6">불러오는 중...</p>
+          ) : (
+            <div className="space-y-3 py-2">
+              <div>
+                <label className="block text-xs font-medium text-[#374151] dark:text-[#D1D5DB] mb-1">사번</label>
+                <Input
+                  value={hrEdit.employee_no ?? ''}
+                  onChange={e => setHrEdit(s => ({ ...s, employee_no: e.target.value }))}
+                  placeholder="예: 2024-001"
+                  className="text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[#374151] dark:text-[#D1D5DB] mb-1">입사일</label>
+                <Input
+                  type="date"
+                  value={hrEdit.hire_date ?? ''}
+                  onChange={e => setHrEdit(s => ({ ...s, hire_date: e.target.value }))}
+                  className="text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[#374151] dark:text-[#D1D5DB] mb-1">생년월일</label>
+                <Input
+                  type="date"
+                  value={hrEdit.birth_date ?? ''}
+                  onChange={e => setHrEdit(s => ({ ...s, birth_date: e.target.value }))}
+                  className="text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[#374151] dark:text-[#D1D5DB] mb-1">연락처</label>
+                <Input
+                  value={hrEdit.phone ?? ''}
+                  onChange={e => setHrEdit(s => ({ ...s, phone: e.target.value }))}
+                  placeholder="예: 010-1234-5678"
+                  className="text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[#374151] dark:text-[#D1D5DB] mb-1">비상연락처</label>
+                <Input
+                  value={hrEdit.emergency_contact ?? ''}
+                  onChange={e => setHrEdit(s => ({ ...s, emergency_contact: e.target.value }))}
+                  placeholder="예: 배우자 010-0000-0000"
+                  className="text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[#374151] dark:text-[#D1D5DB] mb-1">주소</label>
+                <Input
+                  value={hrEdit.address ?? ''}
+                  onChange={e => setHrEdit(s => ({ ...s, address: e.target.value }))}
+                  placeholder="예: 서울특별시 ..."
+                  className="text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[#374151] dark:text-[#D1D5DB] mb-1">메모</label>
+                <textarea
+                  value={hrEdit.notes ?? ''}
+                  onChange={e => setHrEdit(s => ({ ...s, notes: e.target.value }))}
+                  placeholder="자유 메모 (특이사항 등)"
+                  rows={3}
+                  className="w-full text-sm rounded-md border border-[#E5E7EB] dark:border-[#334155] bg-white dark:bg-[#0F172A] dark:text-[#F1F5F9] px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
+                />
+              </div>
+
+              {hrConfirmDelete ? (
+                <div className="rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30 px-3 py-3 space-y-2">
+                  <p className="text-xs text-red-700 dark:text-red-300">
+                    이 회원의 인사기록 전체를 삭제합니다. 되돌릴 수 없습니다.
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="flex-1"
+                      onClick={() => setHrConfirmDelete(false)}
+                      disabled={hrSaving}
+                    >
+                      취소
+                    </Button>
+                    <Button
+                      size="sm"
+                      className="flex-1 bg-[#EF4444] hover:bg-[#DC2626] text-white"
+                      onClick={deleteHrRecord}
+                      disabled={hrSaving}
+                    >
+                      {hrSaving ? '삭제 중...' : '삭제 확정'}
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex gap-2 pt-2">
+                  {hrHasRecord && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-red-600 border-red-200 hover:bg-red-50 dark:border-red-800 dark:hover:bg-red-950/30"
+                      onClick={() => setHrConfirmDelete(true)}
+                      disabled={hrSaving}
+                    >
+                      <Trash2 className="h-3.5 w-3.5 mr-1" />삭제
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    className="flex-1"
+                    onClick={closeHrModal}
+                    disabled={hrSaving}
+                  >
+                    닫기
+                  </Button>
+                  <Button className="flex-1" onClick={saveHrRecord} disabled={hrSaving}>
+                    <Save className="h-4 w-4 mr-1" />
+                    {hrSaving ? '저장 중...' : (hrHasRecord ? '수정' : '저장')}
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 

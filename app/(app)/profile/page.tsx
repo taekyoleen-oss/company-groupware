@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation'
 import {
   X, Eye, EyeOff, KeyRound, Sun, CalendarDays,
   CheckCircle2, Clock, Wifi, Settings, Lock, Monitor,
-  IdCard, Users, Save, CheckCircle, XCircle, ClipboardList, ChevronDown, ChevronUp,
+  IdCard, Users, Save, CheckCircle, XCircle, ClipboardList, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, UserCheck,
 } from 'lucide-react'
 import { UserAvatar } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
@@ -209,12 +209,35 @@ export default function ProfilePage() {
   const [empHistory, setEmpHistory] = useState<VacHistoryItem[]>([])
   const [ipStatus, setIpStatus] = useState<IpStatus>('idle')
   const [currentIp, setCurrentIp] = useState<string | null>(null)
-  const [todayAttendance, setTodayAttendance] = useState<{ checked_in_at: string; method?: string } | null>(null)
+  const [viewedDate, setViewedDate] = useState<string>(getLocalDateStr())
+  const [viewedAttendance, setViewedAttendance] = useState<{ checked_in_at: string; checked_out_at?: string | null; method?: string } | null>(null)
   const [companySettings, setCompanySettings] = useState<CompanySettings | null>(null)
   const [checkingIn, setCheckingIn] = useState(false)
+
+  // 결재자(관리 직원 보유) 가 토글로 보는 직원별 출근 섹션
+  const [empAttOpen, setEmpAttOpen] = useState(false)
+  const [empAttDate, setEmpAttDate] = useState<string>(getLocalDateStr())
+  const [empAttLoading, setEmpAttLoading] = useState(false)
+  const [empAttRecords, setEmpAttRecords] = useState<Array<{
+    id: string
+    full_name: string
+    color: string
+    team_name: string | null
+    checked_in_at: string | null
+    checked_out_at: string | null
+    method: string | null
+  }>>([])
   const [device, setDevice] = useState<DeviceStatus | null>(null)
-  const [requireDeviceApproval, setRequireDeviceApproval] = useState(false)
   const [deviceRegistering, setDeviceRegistering] = useState(false)
+  const [hrRecord, setHrRecord] = useState<{
+    hire_date: string | null
+    employee_no: string | null
+    birth_date: string | null
+    phone: string | null
+    emergency_contact: string | null
+    address: string | null
+    notes: string | null
+  } | null>(null)
   const { showToast, ToastComponent } = useToast()
 
   const checkIp = async () => {
@@ -224,7 +247,6 @@ export default function ProfilePage() {
       const data = await res.json()
       setCurrentIp(data.ip ?? null)
       setIpStatus(data.allowed ? 'allowed' : 'denied')
-      setRequireDeviceApproval(!!data.require_device_approval)
       setDevice(data.device ?? null)
     } catch {
       setCurrentIp(null)
@@ -287,17 +309,20 @@ export default function ProfilePage() {
       fetch('/api/admin/settings').then(r => r.json()),
       fetch(`/api/attendance?date=${todayStr}`, { cache: 'no-store' }).then(r => r.json()),
     ]).then(([profileData, teamsData, vacData, settingsData, attendanceData]: [
-      ProfileWithTeam, Team[], VacSummaryV2, CompanySettings, { checked_in_at: string; method?: string } | null
+      ProfileWithTeam, Team[], VacSummaryV2, CompanySettings, { checked_in_at: string; checked_out_at?: string | null; method?: string } | null
     ]) => {
       setProfile(profileData)
       setForm({ full_name: profileData.full_name, color: profileData.color, team_id: profileData.team_id ?? 'none' })
       setTeams(Array.isArray(teamsData) ? teamsData : [])
       if (vacData && typeof vacData.total_days === 'number') setVacSummary(vacData)
       setCompanySettings(settingsData)
-      setTodayAttendance(attendanceData)
+      setViewedAttendance(attendanceData)
       if (settingsData && !attendanceData) checkIp()
     })
     fetchApproverData()
+    fetch('/api/hr-records').then(r => r.ok ? r.json() : null).then(setHrRecord).catch(() => {})
+    // 어제 이전 출근 행 중 퇴근 미입력 건은 18:00(KST)로 자동 보정 — best-effort
+    fetch('/api/attendance/checkout', { method: 'PATCH' }).catch(() => {})
   }, [])
 
   const saveEmployeeTotal = async (userId: string) => {
@@ -380,24 +405,72 @@ export default function ProfilePage() {
     fetchOwnVacation()
   }
 
-  // 오늘 출근 상태를 서버에서 강제로 다시 가져오기
-  const refetchTodayAttendance = useCallback(async () => {
-    const todayStr = getLocalDateStr()
+  // 표시 중인 날짜의 출근 행을 서버에서 다시 가져오기
+  const refetchViewedAttendance = useCallback(async (dateOverride?: string) => {
+    const dateStr = dateOverride ?? viewedDate
     try {
-      const res = await fetch(`/api/attendance?date=${todayStr}`, { cache: 'no-store' })
+      const res = await fetch(`/api/attendance?date=${dateStr}`, { cache: 'no-store' })
       if (res.ok) {
         const data = await res.json()
-        setTodayAttendance(data)
+        setViewedAttendance(data)
       }
     } catch (e) {
-      console.error('refetchTodayAttendance failed', e)
+      console.error('refetchViewedAttendance failed', e)
+    }
+  }, [viewedDate])
+
+  // 출근 탭 진입 시 또는 보고 있는 날짜가 바뀔 때마다 새로고침
+  useEffect(() => {
+    if (activeTab === '출근') {
+      refetchViewedAttendance()
+      // 출근/퇴근 어느 단계든 사무실 네트워크 매칭 여부가 필요하므로 자동 점검
+      if (ipStatus === 'idle') checkIp()
+    }
+  }, [activeTab, viewedDate, refetchViewedAttendance]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 직원 출근 관리 섹션 — 토글이 열려 있고 출근 탭에 있을 때 날짜 변경 시 갱신
+  const fetchEmpAttendance = useCallback(async (date: string) => {
+    setEmpAttLoading(true)
+    try {
+      const res = await fetch(`/api/attendance/approver?date=${date}`, { cache: 'no-store' })
+      if (res.ok) {
+        const data = await res.json()
+        setEmpAttRecords(Array.isArray(data.records) ? data.records : [])
+      } else {
+        setEmpAttRecords([])
+      }
+    } finally {
+      setEmpAttLoading(false)
     }
   }, [])
 
-  // 출근 탭 진입 시 최신 상태 강제 새로고침 (캐시·시간 차 보정)
   useEffect(() => {
-    if (activeTab === '출근') refetchTodayAttendance()
-  }, [activeTab, refetchTodayAttendance])
+    if (activeTab === '출근' && empAttOpen) {
+      fetchEmpAttendance(empAttDate)
+    }
+  }, [activeTab, empAttOpen, empAttDate, fetchEmpAttendance])
+
+  const [checkingOut, setCheckingOut] = useState(false)
+  const handleCheckOut = async () => {
+    setCheckingOut(true)
+    const todayStr = getLocalDateStr()
+    const res = await fetch('/api/attendance/checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: todayStr }),
+    })
+    const data = await res.json()
+    setCheckingOut(false)
+    if (res.ok) {
+      setViewedAttendance(prev => prev ? { ...prev, checked_out_at: data.checked_out_at ?? new Date().toISOString() } : prev)
+      showToast('퇴근이 확인되었습니다. 수고하셨습니다.', 'success')
+      refetchViewedAttendance(getLocalDateStr())
+    } else {
+      if (data.current_ip) setCurrentIp(data.current_ip)
+      if (res.status === 403) setIpStatus('denied')
+      showToast(data.error ?? '퇴근 확인에 실패했습니다.', 'error')
+    }
+  }
 
   const handleCheckIn = async () => {
     setCheckingIn(true)
@@ -410,14 +483,14 @@ export default function ProfilePage() {
     const data = await res.json()
     if (res.ok) {
       // POST 응답을 즉시 반영
-      setTodayAttendance({ checked_in_at: data.checked_in_at, method: data.method })
+      setViewedAttendance({ checked_in_at: data.checked_in_at, checked_out_at: data.checked_out_at ?? null, method: data.method })
       showToast('출근이 확인되었습니다.', 'success')
       // 서버에서 한 번 더 확인해 상태 영속성 보장
-      refetchTodayAttendance()
+      refetchViewedAttendance(getLocalDateStr())
     } else if (res.status === 409) {
-      setTodayAttendance({ checked_in_at: data.checked_in_at, method: data.method })
+      setViewedAttendance({ checked_in_at: data.checked_in_at, checked_out_at: data.checked_out_at ?? null, method: data.method })
       showToast('이미 출근 처리되었습니다.', 'success')
-      refetchTodayAttendance()
+      refetchViewedAttendance(getLocalDateStr())
     } else {
       if (data.current_ip) setCurrentIp(data.current_ip)
       if (res.status === 403) setIpStatus('denied')
@@ -481,9 +554,10 @@ export default function ProfilePage() {
     ? Math.min((vacSummary.used_days / vacSummary.total_days) * 100, 100)
     : 0
 
-  const checkedInTime = todayAttendance?.checked_in_at
-    ? format(new Date(todayAttendance.checked_in_at), 'HH:mm')
+  const checkedInTime = viewedAttendance?.checked_in_at
+    ? format(new Date(viewedAttendance.checked_in_at), 'HH:mm')
     : null
+  const isViewingToday = viewedDate === getLocalDateStr()
 
   return (
     <div className="p-4 max-w-md mx-auto">
@@ -570,129 +644,362 @@ export default function ProfilePage() {
 
       {/* ── 출근 탭 ── */}
       {activeTab === '출근' && (
-        <div className="bg-white dark:bg-[#1E293B] rounded-xl border border-[#E5E7EB] dark:border-[#334155] p-6">
-          {companySettings === null ? (
-            <p className="text-sm text-[#6B7280] dark:text-[#94A3B8] text-center py-4">불러오는 중...</p>
-          ) : (
-            <>
-              <div className="flex items-center gap-2 mb-4">
-                <Wifi className="h-4 w-4 text-blue-500" />
-                <h2 className="text-sm font-semibold text-[#111827] dark:text-[#F1F5F9]">오늘 출근 확인</h2>
-                <span className="ml-auto text-xs text-[#9CA3AF] dark:text-[#64748B]">
-                  {getLocalDateStr().replace(/-/g, '.')}
-                </span>
-              </div>
-
-              {checkedInTime ? (
-                <div className="rounded-lg bg-green-50 dark:bg-green-950/30 px-4 py-3 space-y-1">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400 shrink-0" />
-                    <p className="text-sm font-semibold text-green-700 dark:text-green-300">출근이 확인되었습니다</p>
-                  </div>
-                  <p className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1 ml-7">
-                    <Clock className="h-3 w-3" />
-                    🖥️ 사무실 PC · {checkedInTime}
-                  </p>
+        <div className="space-y-4">
+          {/* 본인 출근/퇴근 카드 */}
+          <div className="bg-white dark:bg-[#1E293B] rounded-xl border border-[#E5E7EB] dark:border-[#334155] p-6">
+            {companySettings === null ? (
+              <p className="text-sm text-[#6B7280] dark:text-[#94A3B8] text-center py-4">불러오는 중...</p>
+            ) : (
+              <>
+                <div className="flex items-center gap-2 mb-3">
+                  <Wifi className="h-4 w-4 text-blue-500" />
+                  <h2 className="text-sm font-semibold text-[#111827] dark:text-[#F1F5F9]">
+                    {isViewingToday ? '오늘 출근 확인' : '출근 기록'}
+                  </h2>
                 </div>
-              ) : (
-                <div className="space-y-3">
-                  {ipStatus === 'checking' && (
-                    <p className="text-sm text-[#6B7280] dark:text-[#94A3B8] text-center py-2 animate-pulse">
-                      네트워크 확인 중...
-                    </p>
-                  )}
-                  {ipStatus === 'allowed' && (
-                    <div className="rounded-lg bg-green-50 dark:bg-green-950/30 px-4 py-2.5 text-sm flex items-center gap-2 text-green-700 dark:text-green-300">
-                      <Wifi className="h-4 w-4 shrink-0" />사무실 네트워크에 연결되어 있습니다.
-                    </div>
-                  )}
-                  {ipStatus === 'denied' && (
-                    <div className="rounded-lg bg-[#F9FAFB] dark:bg-[#0F172A] px-4 py-2.5 text-sm flex items-start gap-2 text-[#6B7280] dark:text-[#94A3B8]">
-                      <Wifi className="h-4 w-4 shrink-0 mt-0.5" />
-                      <div className="flex-1 min-w-0">
-                        <p>사무실 네트워크가 아닙니다.</p>
-                        {currentIp && (
-                          <p className="text-[11px] mt-0.5 font-mono text-[#9CA3AF] dark:text-[#64748B]">
-                            현재 IP: {currentIp}
-                          </p>
-                        )}
-                        <p className="text-[11px] mt-0.5">사무실에서 접속 중인데 이 화면이 보이면 관리자에게 현재 IP 등록을 요청하세요.</p>
-                      </div>
-                    </div>
-                  )}
-                  {ipStatus === 'idle' && (
-                    <p className="text-sm text-[#6B7280] dark:text-[#94A3B8] text-center py-2">
-                      출근 확인 버튼을 눌러 네트워크를 확인하세요.
-                    </p>
-                  )}
 
-                  {/* PC 등록 안내 — 사무실 IP일 때만 노출 */}
-                  {ipStatus === 'allowed' && (
-                    <div className="rounded-lg border border-[#E5E7EB] dark:border-[#334155] bg-[#F9FAFB] dark:bg-[#0F172A] px-3 py-2.5 text-xs space-y-1.5">
-                      <div className="flex items-center gap-1.5">
-                        <Monitor className="h-3.5 w-3.5 text-[#6B7280] dark:text-[#94A3B8]" />
-                        <span className="font-medium text-[#374151] dark:text-[#D1D5DB]">이 PC 등록 상태</span>
-                      </div>
-                      {device === null && (
-                        <>
-                          <p className="text-[11px] text-[#6B7280] dark:text-[#94A3B8] leading-relaxed">
-                            이 PC는 아직 등록되어 있지 않습니다.
-                            {requireDeviceApproval && ' 관리자 승인 필수 모드에서는 등록된 PC에서만 출근 체크가 가능합니다.'}
-                          </p>
-                          <Button type="button" size="sm" variant="outline" className="w-full h-7 text-xs" onClick={requestDeviceRegistration} disabled={deviceRegistering}>
-                            <Monitor className="h-3 w-3 mr-1" />
-                            {deviceRegistering ? '요청 중...' : 'PC 등록 요청'}
-                          </Button>
-                        </>
-                      )}
-                      {device?.status === 'pending' && (
-                        <p className="text-[11px] text-amber-600 dark:text-amber-400">
-                          승인 대기 중{device.device_label ? ` · ${device.device_label}` : ''}
-                        </p>
-                      )}
-                      {device?.status === 'approved' && (
-                        <p className="text-[11px] text-green-600 dark:text-green-400">
-                          ✅ 등록 완료{device.device_label ? ` · ${device.device_label}` : ''}
-                        </p>
-                      )}
-                      {device?.status === 'rejected' && (
-                        <>
-                          <p className="text-[11px] text-red-600 dark:text-red-400">
-                            등록이 거절되었습니다. 다시 요청할 수 있습니다.
-                          </p>
-                          <Button type="button" size="sm" variant="outline" className="w-full h-7 text-xs" onClick={requestDeviceRegistration} disabled={deviceRegistering}>
-                            <Monitor className="h-3 w-3 mr-1" />다시 요청
-                          </Button>
-                        </>
-                      )}
-                    </div>
-                  )}
-
-                  <div className="flex gap-2">
-                    <Button type="button" variant="outline" size="sm" className="flex-none" onClick={checkIp} disabled={ipStatus === 'checking'}>
-                      <Wifi className="h-3.5 w-3.5 mr-1" />재확인
-                    </Button>
+                {/* 날짜 네비게이터 — 과거 날짜 조회 */}
+                <div className="flex items-center gap-1 mb-4">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 px-2"
+                    onClick={() => {
+                      const d = new Date(viewedDate + 'T00:00:00')
+                      d.setDate(d.getDate() - 1)
+                      setViewedDate(d.toLocaleDateString('sv-SE'))
+                    }}
+                    title="이전 날짜"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <Input
+                    type="date"
+                    value={viewedDate}
+                    max={getLocalDateStr()}
+                    onChange={e => setViewedDate(e.target.value || getLocalDateStr())}
+                    className="h-8 text-sm flex-1 text-center"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 px-2"
+                    onClick={() => {
+                      const d = new Date(viewedDate + 'T00:00:00')
+                      d.setDate(d.getDate() + 1)
+                      const next = d.toLocaleDateString('sv-SE')
+                      if (next <= getLocalDateStr()) setViewedDate(next)
+                    }}
+                    disabled={viewedDate >= getLocalDateStr()}
+                    title="다음 날짜"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                  {!isViewingToday && (
                     <Button
                       type="button"
-                      className="flex-1"
-                      disabled={
-                        ipStatus !== 'allowed' ||
-                        checkingIn ||
-                        (requireDeviceApproval && device?.status !== 'approved')
-                      }
-                      onClick={handleCheckIn}
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs"
+                      onClick={() => setViewedDate(getLocalDateStr())}
                     >
-                      <CheckCircle2 className="h-4 w-4 mr-1.5" />{checkingIn ? '처리 중...' : '출근 확인'}
+                      오늘
                     </Button>
-                  </div>
-                  {requireDeviceApproval && device?.status !== 'approved' && ipStatus === 'allowed' && (
-                    <p className="text-[11px] text-[#9CA3AF] dark:text-[#64748B] text-center">
-                      관리자 승인된 PC에서만 출근 체크가 가능합니다.
+                  )}
+                </div>
+
+                {/* 선택 날짜의 본인 출근/퇴근 표시 */}
+                {checkedInTime ? (
+                  <div className="rounded-lg bg-green-50 dark:bg-green-950/30 px-4 py-3 space-y-1 mb-3">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400 shrink-0" />
+                      <p className="text-sm font-semibold text-green-700 dark:text-green-300">
+                        {isViewingToday ? '출근이 확인되었습니다' : `${viewedDate.replace(/-/g, '.')} 출근 기록`}
+                      </p>
+                    </div>
+                    <p className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1 ml-7">
+                      <Clock className="h-3 w-3" />
+                      🖥️ 출근 · {checkedInTime}
                     </p>
+                    {viewedAttendance?.checked_out_at ? (
+                      <p className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1 ml-7">
+                        <Clock className="h-3 w-3" />
+                        🏠 퇴근 · {format(new Date(viewedAttendance.checked_out_at), 'HH:mm')}
+                      </p>
+                    ) : !isViewingToday ? (
+                      <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1 ml-7">
+                        <Clock className="h-3 w-3" />
+                        🏠 퇴근 기록 없음
+                      </p>
+                    ) : null}
+                  </div>
+                ) : (
+                  !isViewingToday && (
+                    <div className="rounded-lg bg-[#F9FAFB] dark:bg-[#0F172A] px-4 py-3 text-sm text-[#6B7280] dark:text-[#94A3B8] text-center mb-3">
+                      {viewedDate.replace(/-/g, '.')} 출근 기록이 없습니다.
+                    </div>
+                  )
+                )}
+
+                {/* 오늘 + 미출근: 출근 흐름 */}
+                {isViewingToday && !checkedInTime && (
+                  <div className="space-y-3">
+                    {ipStatus === 'checking' && (
+                      <p className="text-sm text-[#6B7280] dark:text-[#94A3B8] text-center py-2 animate-pulse">
+                        네트워크 확인 중...
+                      </p>
+                    )}
+                    {ipStatus === 'allowed' && (
+                      <div className="rounded-lg bg-green-50 dark:bg-green-950/30 px-4 py-2.5 text-sm flex items-center gap-2 text-green-700 dark:text-green-300">
+                        <Wifi className="h-4 w-4 shrink-0" />사무실 네트워크에 연결되어 있습니다.
+                      </div>
+                    )}
+                    {ipStatus === 'denied' && (
+                      <div className="rounded-lg bg-[#F9FAFB] dark:bg-[#0F172A] px-4 py-2.5 text-sm flex items-start gap-2 text-[#6B7280] dark:text-[#94A3B8]">
+                        <Wifi className="h-4 w-4 shrink-0 mt-0.5" />
+                        <div className="flex-1 min-w-0">
+                          <p>사무실 네트워크가 아닙니다.</p>
+                          {currentIp && (
+                            <p className="text-[11px] mt-0.5 font-mono text-[#9CA3AF] dark:text-[#64748B]">
+                              현재 IP: {currentIp}
+                            </p>
+                          )}
+                          <p className="text-[11px] mt-0.5">사무실에서 접속 중인데 이 화면이 보이면 관리자에게 현재 IP 등록을 요청하세요.</p>
+                        </div>
+                      </div>
+                    )}
+                    {ipStatus === 'idle' && (
+                      <p className="text-sm text-[#6B7280] dark:text-[#94A3B8] text-center py-2">
+                        출근 확인 버튼을 눌러 네트워크를 확인하세요.
+                      </p>
+                    )}
+
+                    {/* PC 등록 안내 — 사무실 IP일 때만 노출 */}
+                    {ipStatus === 'allowed' && (
+                      <div className="rounded-lg border border-[#E5E7EB] dark:border-[#334155] bg-[#F9FAFB] dark:bg-[#0F172A] px-3 py-2.5 text-xs space-y-1.5">
+                        <div className="flex items-center gap-1.5">
+                          <Monitor className="h-3.5 w-3.5 text-[#6B7280] dark:text-[#94A3B8]" />
+                          <span className="font-medium text-[#374151] dark:text-[#D1D5DB]">이 PC 등록 상태</span>
+                        </div>
+                        {device === null && (
+                          <>
+                            <p className="text-[11px] text-[#6B7280] dark:text-[#94A3B8] leading-relaxed">
+                              이 PC는 아직 등록되어 있지 않습니다. 사무실 외부에서 출근 체크가 필요하면 등록 요청을 보내 관리자 승인을 받으세요.
+                            </p>
+                            <Button type="button" size="sm" variant="outline" className="w-full h-7 text-xs" onClick={requestDeviceRegistration} disabled={deviceRegistering}>
+                              <Monitor className="h-3 w-3 mr-1" />
+                              {deviceRegistering ? '요청 중...' : 'PC 등록 요청'}
+                            </Button>
+                          </>
+                        )}
+                        {device?.status === 'pending' && (
+                          <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                            승인 대기 중{device.device_label ? ` · ${device.device_label}` : ''}
+                          </p>
+                        )}
+                        {device?.status === 'approved' && (
+                          <p className="text-[11px] text-green-600 dark:text-green-400">
+                            ✅ 등록 완료{device.device_label ? ` · ${device.device_label}` : ''}
+                          </p>
+                        )}
+                        {device?.status === 'rejected' && (
+                          <>
+                            <p className="text-[11px] text-red-600 dark:text-red-400">
+                              등록이 거절되었습니다. 다시 요청할 수 있습니다.
+                            </p>
+                            <Button type="button" size="sm" variant="outline" className="w-full h-7 text-xs" onClick={requestDeviceRegistration} disabled={deviceRegistering}>
+                              <Monitor className="h-3 w-3 mr-1" />다시 요청
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="flex gap-2">
+                      <Button type="button" variant="outline" size="sm" className="flex-none" onClick={checkIp} disabled={ipStatus === 'checking'}>
+                        <Wifi className="h-3.5 w-3.5 mr-1" />재확인
+                      </Button>
+                      <Button
+                        type="button"
+                        className="flex-1"
+                        disabled={ipStatus !== 'allowed' || checkingIn}
+                        onClick={handleCheckIn}
+                      >
+                        <CheckCircle2 className="h-4 w-4 mr-1.5" />{checkingIn ? '처리 중...' : '출근 확인'}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* 오늘 + 출근 완료 + 미퇴근: 퇴근 흐름 */}
+                {isViewingToday && checkedInTime && !viewedAttendance?.checked_out_at && (
+                  <div className="space-y-3">
+                    {ipStatus === 'idle' && (
+                      <p className="text-sm text-[#6B7280] dark:text-[#94A3B8] text-center py-2">
+                        네트워크 확인 버튼을 눌러 퇴근 확인이 가능한지 확인하세요.
+                      </p>
+                    )}
+                    {ipStatus === 'checking' && (
+                      <p className="text-sm text-[#6B7280] dark:text-[#94A3B8] text-center py-2 animate-pulse">
+                        네트워크 확인 중...
+                      </p>
+                    )}
+                    {ipStatus === 'denied' && (
+                      <div className="rounded-lg bg-[#F9FAFB] dark:bg-[#0F172A] px-4 py-2.5 text-sm flex items-start gap-2 text-[#6B7280] dark:text-[#94A3B8]">
+                        <Wifi className="h-4 w-4 shrink-0 mt-0.5" />
+                        <div className="flex-1 min-w-0">
+                          <p>사무실 네트워크가 아닙니다. 퇴근 확인은 사무실 IP에서만 가능합니다.</p>
+                          {currentIp && (
+                            <p className="text-[11px] mt-0.5 font-mono text-[#9CA3AF] dark:text-[#64748B]">
+                              현재 IP: {currentIp}
+                            </p>
+                          )}
+                          <p className="text-[11px] mt-0.5">미입력 상태로 다음날이 되면 자동으로 18:00에 퇴근 처리됩니다.</p>
+                        </div>
+                      </div>
+                    )}
+                    <div className="flex gap-2">
+                      <Button type="button" variant="outline" size="sm" className="flex-none" onClick={checkIp} disabled={ipStatus === 'checking'}>
+                        <Wifi className="h-3.5 w-3.5 mr-1" />재확인
+                      </Button>
+                      <Button
+                        type="button"
+                        className="flex-1"
+                        disabled={ipStatus !== 'allowed' || checkingOut}
+                        onClick={handleCheckOut}
+                      >
+                        <CheckCircle2 className="h-4 w-4 mr-1.5" />{checkingOut ? '처리 중...' : '퇴근 확인'}
+                      </Button>
+                    </div>
+                    <p className="text-[11px] text-[#9CA3AF] dark:text-[#64748B] text-center">
+                      퇴근 시간을 입력하지 않고 다음날이 되면 18:00으로 자동 기록됩니다.
+                    </p>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* 결재자 한정: 직원 출근 관리 토글 + 섹션 */}
+          {(approverData?.employees?.length ?? 0) > 0 && (
+            <div className="bg-white dark:bg-[#1E293B] rounded-xl border border-[#E5E7EB] dark:border-[#334155] p-6">
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full justify-between"
+                onClick={() => setEmpAttOpen(o => !o)}
+              >
+                <span className="flex items-center gap-2">
+                  <UserCheck className="h-4 w-4 text-[#2563EB]" />
+                  직원 출근 관리
+                  <span className="text-[10px] bg-[#EFF6FF] dark:bg-[#1E3A5F] text-[#2563EB] dark:text-[#93C5FD] rounded px-1.5 py-0.5">
+                    {approverData?.employees?.length ?? 0}명
+                  </span>
+                </span>
+                {empAttOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              </Button>
+
+              {empAttOpen && (
+                <div className="mt-4 space-y-3">
+                  {/* 직원 섹션 날짜 네비게이터 */}
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 px-2"
+                      onClick={() => {
+                        const d = new Date(empAttDate + 'T00:00:00')
+                        d.setDate(d.getDate() - 1)
+                        setEmpAttDate(d.toLocaleDateString('sv-SE'))
+                      }}
+                      title="이전 날짜"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <Input
+                      type="date"
+                      value={empAttDate}
+                      max={getLocalDateStr()}
+                      onChange={e => setEmpAttDate(e.target.value || getLocalDateStr())}
+                      className="h-8 text-sm flex-1 text-center"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 px-2"
+                      onClick={() => {
+                        const d = new Date(empAttDate + 'T00:00:00')
+                        d.setDate(d.getDate() + 1)
+                        const next = d.toLocaleDateString('sv-SE')
+                        if (next <= getLocalDateStr()) setEmpAttDate(next)
+                      }}
+                      disabled={empAttDate >= getLocalDateStr()}
+                      title="다음 날짜"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                    {empAttDate !== getLocalDateStr() && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-xs"
+                        onClick={() => setEmpAttDate(getLocalDateStr())}
+                      >
+                        오늘
+                      </Button>
+                    )}
+                  </div>
+
+                  {empAttLoading ? (
+                    <p className="text-sm text-[#6B7280] dark:text-[#94A3B8] text-center py-4 animate-pulse">불러오는 중...</p>
+                  ) : empAttRecords.length === 0 ? (
+                    <p className="text-sm text-[#6B7280] dark:text-[#94A3B8] text-center py-4">
+                      관리 직원이 없습니다.
+                    </p>
+                  ) : (
+                    <ul className="space-y-2">
+                      {empAttRecords.map(r => (
+                        <li
+                          key={r.id}
+                          className="bg-[#F9FAFB] dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-[#334155] rounded-lg px-3 py-2.5 flex items-center gap-3"
+                        >
+                          <UserAvatar name={r.full_name} color={r.color} size={28} />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-[#111827] dark:text-[#F1F5F9] truncate">
+                              {r.full_name}
+                            </p>
+                            <p className="text-[11px] text-[#6B7280] dark:text-[#94A3B8] truncate">
+                              {r.team_name ?? '팀 없음'}
+                            </p>
+                          </div>
+                          {r.checked_in_at ? (
+                            <div className="text-right text-[11px] leading-tight">
+                              <p className="text-green-600 dark:text-green-400 font-medium">
+                                출근 {format(parseISO(r.checked_in_at), 'HH:mm', { locale: ko })}
+                              </p>
+                              {r.checked_out_at ? (
+                                <p className="text-purple-600 dark:text-purple-400">
+                                  퇴근 {format(parseISO(r.checked_out_at), 'HH:mm', { locale: ko })}
+                                </p>
+                              ) : (
+                                <p className="text-amber-600 dark:text-amber-400">미퇴근</p>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-[11px] text-[#9CA3AF] dark:text-[#6B7280]">미출근</span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
                   )}
                 </div>
               )}
-            </>
+            </div>
           )}
         </div>
       )}
@@ -841,18 +1148,23 @@ export default function ProfilePage() {
               accent={(profile as any).is_super_admin || profile.role === 'admin' ? 'blue' : profile.role === 'manager' ? 'green' : undefined}
             />
             <InfoRow label="소속 팀" value={profile.team ? (profile.team as any).name : '—'} />
-            <InfoRow label="입사일" value="—" muted />
-            <InfoRow label="사번" value="—" muted />
-            <InfoRow label="생년월일" value="—" muted />
-            <InfoRow label="연락처" value="—" muted />
-            <InfoRow label="비상연락처" value="—" muted />
-            <InfoRow label="주소" value="—" muted />
+            <InfoRow label="사번" value={hrRecord?.employee_no || '—'} muted={!hrRecord?.employee_no} />
+            <InfoRow label="입사일" value={hrRecord?.hire_date || '—'} muted={!hrRecord?.hire_date} />
+            <InfoRow label="생년월일" value={hrRecord?.birth_date || '—'} muted={!hrRecord?.birth_date} />
+            <InfoRow label="연락처" value={hrRecord?.phone || '—'} muted={!hrRecord?.phone} />
+            <InfoRow label="비상연락처" value={hrRecord?.emergency_contact || '—'} muted={!hrRecord?.emergency_contact} />
+            <InfoRow label="주소" value={hrRecord?.address || '—'} muted={!hrRecord?.address} />
+            {hrRecord?.notes && (
+              <div className="text-sm border-b border-[#F3F4F6] dark:border-[#334155] pb-2 last:border-0 last:pb-0">
+                <span className="text-[#6B7280] dark:text-[#94A3B8] block mb-1">메모</span>
+                <span className="text-[#111827] dark:text-[#F1F5F9] whitespace-pre-wrap text-xs leading-relaxed">{hrRecord.notes}</span>
+              </div>
+            )}
           </div>
 
           <div className="mt-5 rounded-lg bg-[#F9FAFB] dark:bg-[#0F172A] border border-dashed border-[#E5E7EB] dark:border-[#334155] px-4 py-3">
             <p className="text-[11px] text-[#6B7280] dark:text-[#94A3B8] leading-relaxed">
-              인사 정보 입력·관리는 추후 제공될 예정입니다.
-              현재는 시스템이 보유한 기본 정보만 표시합니다.
+              사번·입사일 등 인사기록은 앱관리자가 입력·수정·삭제합니다. 변경이 필요하면 앱관리자에게 요청하세요.
             </p>
           </div>
         </div>

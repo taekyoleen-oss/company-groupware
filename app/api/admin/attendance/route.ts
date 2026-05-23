@@ -35,9 +35,13 @@ export async function GET(request: NextRequest) {
     console.error('[admin/attendance GET] attendance select error:', attendanceRes.error.message)
   }
 
-  const attendanceMap: Record<string, { checked_in_at: string; method: string }> = {}
-  for (const a of (attendanceRes.data ?? []) as Array<{ user_id: string; checked_in_at: string; method?: string | null }>) {
-    attendanceMap[a.user_id] = { checked_in_at: a.checked_in_at, method: a.method ?? 'office_login' }
+  const attendanceMap: Record<string, { checked_in_at: string; checked_out_at: string | null; method: string }> = {}
+  for (const a of (attendanceRes.data ?? []) as Array<{ user_id: string; checked_in_at: string; checked_out_at?: string | null; method?: string | null }>) {
+    attendanceMap[a.user_id] = {
+      checked_in_at: a.checked_in_at,
+      checked_out_at: a.checked_out_at ?? null,
+      method: a.method ?? 'office_login',
+    }
   }
 
   const result = (usersRes.data ?? []).map(u => ({
@@ -47,6 +51,7 @@ export async function GET(request: NextRequest) {
     team_id: u.team_id,
     role: u.role,
     checked_in_at: attendanceMap[u.id]?.checked_in_at ?? null,
+    checked_out_at: attendanceMap[u.id]?.checked_out_at ?? null,
     method: attendanceMap[u.id]?.method ?? null,
   }))
 
