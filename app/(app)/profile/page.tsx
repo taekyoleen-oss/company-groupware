@@ -874,7 +874,7 @@ export default function ProfilePage() {
                       </Button>
                     </div>
                     <p className="text-[11px] text-[#9CA3AF] dark:text-[#64748B] text-center">
-                      퇴근 시간을 입력하지 않고 다음날이 되면 18:00으로 자동 기록됩니다.
+                      퇴근 확인을 입력하지 않으면 자동으로 18시로 기록됩니다.
                     </p>
                   </div>
                 )}
