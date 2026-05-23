@@ -1643,9 +1643,16 @@ function AdminPageInner() {
 
         {/* ── 팀 관리 ───────────────────────────────────────── */}
         <TabsContent value="teams">
-          <form onSubmit={addTeam} className="flex gap-2 mb-4">
-            <Input value={newTeamName} onChange={e => setNewTeamName(e.target.value)} placeholder="새 팀명" />
-            <Button type="submit" size="sm"><Plus className="h-4 w-4 mr-1" />생성</Button>
+          <form onSubmit={addTeam} className="flex flex-nowrap items-center gap-2 mb-4">
+            <Input
+              value={newTeamName}
+              onChange={e => setNewTeamName(e.target.value)}
+              placeholder="새 팀명"
+              className="flex-1 min-w-0"
+            />
+            <Button type="submit" size="sm" className="shrink-0 whitespace-nowrap">
+              <Plus className="h-4 w-4 mr-1" />생성
+            </Button>
           </form>
           <p className="text-xs text-[#6B7280] dark:text-[#94A3B8] mb-2">
             ↑↓ 버튼으로 순서를 바꾸면 회원·출근·휴가 관리에서도 이 순서대로 정렬됩니다. 같은 팀 안에서는 가나다순.
@@ -1708,10 +1715,22 @@ function AdminPageInner() {
 
         {/* ── 카테고리 ──────────────────────────────────────── */}
         <TabsContent value="categories">
-          <form onSubmit={addCategory} className="flex gap-2 mb-4">
-            <Input value={newCat.name} onChange={e => setNewCat(c => ({ ...c, name: e.target.value }))} placeholder="카테고리명" />
-            <input type="color" value={newCat.color} onChange={e => setNewCat(c => ({ ...c, color: e.target.value }))} className="h-10 w-10 rounded border cursor-pointer" />
-            <Button type="submit" size="sm"><Plus className="h-4 w-4 mr-1" />추가</Button>
+          <form onSubmit={addCategory} className="flex flex-nowrap items-center gap-2 mb-4">
+            <Input
+              value={newCat.name}
+              onChange={e => setNewCat(c => ({ ...c, name: e.target.value }))}
+              placeholder="카테고리명"
+              className="flex-1 min-w-0"
+            />
+            <input
+              type="color"
+              value={newCat.color}
+              onChange={e => setNewCat(c => ({ ...c, color: e.target.value }))}
+              className="h-10 w-10 rounded border cursor-pointer shrink-0"
+            />
+            <Button type="submit" size="sm" className="shrink-0 whitespace-nowrap">
+              <Plus className="h-4 w-4 mr-1" />추가
+            </Button>
           </form>
           <div className="space-y-2">
             {categories.map(cat => (
