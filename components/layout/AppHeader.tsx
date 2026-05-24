@@ -1,5 +1,6 @@
 'use client'
 import { useState } from 'react'
+import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Calendar, FileText, CheckSquare, LogOut, ClipboardCheck } from 'lucide-react'
@@ -37,10 +38,20 @@ export function AppHeader({ profile, isApprover = false }: AppHeaderProps) {
   return (
     <header className="sticky top-0 z-40 bg-white border-b border-[#E5E7EB] px-4 h-14 flex items-center justify-between dark:bg-[#374151] dark:border-[#4B5563]">
       <div className="flex items-center gap-6">
-        <Link href="/calendar" className="flex items-center gap-2 font-bold text-[#2563EB] text-base dark:text-[#60A5FA]">
-          <Logo className="h-7 w-7" title="그룹웨어 로고" />
-          그룹웨어
-        </Link>
+        <div className="flex items-center gap-2">
+          <Image
+            src="/01-primary-transparent.svg"
+            alt="tkLeen"
+            width={84}
+            height={28}
+            priority
+            className="h-7 w-auto"
+          />
+          <Link href="/calendar" className="flex items-center gap-2 font-bold text-[#2563EB] text-base dark:text-[#60A5FA]">
+            <Logo className="h-7 w-7" title="그룹웨어 로고" />
+            그룹웨어
+          </Link>
+        </div>
         <nav className="hidden md:flex items-center gap-1">
           {NAV_ITEMS.map(({ href, label, icon: Icon }) => (
             <Link
