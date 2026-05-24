@@ -1,6 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
-import { CG_PROFILE_HEADER } from '@/lib/auth/middleware-headers'
+import { CG_PROFILE_HEADER, encodeProfileHeader } from '@/lib/auth/middleware-headers'
 
 const PUBLIC_PATHS = ['/login', '/signup', '/pending']
 const ADMIN_PATHS = ['/admin']
@@ -78,8 +78,9 @@ export async function middleware(request: NextRequest) {
     approverScopeCount = count ?? 0
   }
 
-  // layout 으로 프로필 + 스코프 정보 전달
-  const payload = JSON.stringify({
+  // layout 으로 프로필 + 스코프 정보 전달.
+  // HTTP 헤더는 ByteString 만 허용하므로 한글이 들어가는 full_name 까지 안전하게 보내려면 base64.
+  const payload = encodeProfileHeader({
     id: (profile as any).id,
     full_name: (profile as any).full_name,
     color: (profile as any).color,

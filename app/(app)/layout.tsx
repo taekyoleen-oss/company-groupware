@@ -11,7 +11,7 @@ import { IdleRefresh } from '@/components/layout/IdleRefresh'
 import { RealtimeProvider } from '@/components/providers/RealtimeProvider'
 import type { ProfileWithTeam } from '@/types/app'
 import { isSuperAdmin } from '@/lib/auth/roles'
-import { CG_PROFILE_HEADER, type MiddlewareProfilePayload } from '@/lib/auth/middleware-headers'
+import { CG_PROFILE_HEADER, decodeProfileHeader, type MiddlewareProfilePayload } from '@/lib/auth/middleware-headers'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   // 1) middleware 가 직렬화한 프로필을 헤더에서 읽음 (cg_profiles SELECT 생략 — Phase 2)
@@ -20,7 +20,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   let payload: MiddlewareProfilePayload | null = null
   if (raw) {
-    try { payload = JSON.parse(raw) as MiddlewareProfilePayload } catch { payload = null }
+    payload = decodeProfileHeader(raw)
   }
 
   // 2) 헤더가 없거나 손상된 경우 (RSC prefetch, 미들웨어 미적용 등) — 안전망으로 직접 조회
