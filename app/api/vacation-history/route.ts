@@ -45,7 +45,7 @@ export async function GET() {
     .from('cg_events')
     .select(`
       id, title, start_at, end_at, is_all_day, created_at, created_by,
-      requester:cg_profiles!created_by(id, full_name, color, approver_id)
+      requester:cg_profiles!created_by(id, full_name, color, role, is_super_admin, approver_id)
     `)
     .eq('is_vacation', true)
     .gte('start_at', yearStart)
@@ -80,7 +80,7 @@ export async function GET() {
     .from('cg_vacation_requests')
     .select(`
       id, title, start_at, end_at, is_all_day, created_at, requested_by, reject_reason, reviewed_at,
-      requester:cg_profiles!requested_by(id, full_name, color, approver_id),
+      requester:cg_profiles!requested_by(id, full_name, color, role, is_super_admin, approver_id),
       reviewer:cg_profiles!reviewed_by(id, full_name, color)
     `)
     .eq('status', 'rejected')
@@ -103,7 +103,7 @@ export async function GET() {
     .select(`
       id, status, reason, created_at, reviewed_at, requested_by,
       event_title, event_start_at, event_end_at, event_is_all_day,
-      requester:cg_profiles!requested_by(id, full_name, color, approver_id),
+      requester:cg_profiles!requested_by(id, full_name, color, role, is_super_admin, approver_id),
       reviewer:cg_profiles!reviewed_by(id, full_name, color),
       event:cg_events(id, title, start_at, end_at, is_all_day)
     `)
@@ -165,11 +165,14 @@ export async function GET() {
     reason: c.reason,
   }))
 
-  const combined = [...grantItems, ...rejectedRequestItems, ...cancelItems].sort((a, b) => {
-    const ta = a.happened_at ? new Date(a.happened_at).getTime() : 0
-    const tb = b.happened_at ? new Date(b.happened_at).getTime() : 0
-    return tb - ta
-  })
+  // 앱관리자(super_admin)는 휴가 처리 이력에서 제외 (다운로드/표시 모두)
+  const combined = [...grantItems, ...rejectedRequestItems, ...cancelItems]
+    .filter(item => !isSuperAdmin(item.requester as any))
+    .sort((a, b) => {
+      const ta = a.happened_at ? new Date(a.happened_at).getTime() : 0
+      const tb = b.happened_at ? new Date(b.happened_at).getTime() : 0
+      return tb - ta
+    })
 
   return NextResponse.json(combined)
 }

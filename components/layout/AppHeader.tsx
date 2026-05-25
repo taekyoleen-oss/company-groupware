@@ -1,9 +1,9 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Calendar, FileText, CheckSquare, LogOut, ClipboardCheck } from 'lucide-react'
+import { Calendar, FileText, CheckSquare, LogOut, ClipboardCheck, CheckCircle2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { UserAvatar } from '@/components/ui/avatar'
 import { Logo } from '@/components/ui/Logo'
@@ -11,10 +11,19 @@ import { ThemeToggle } from '@/components/ui/theme-toggle'
 import { NotificationPanel } from '@/components/messages/NotificationPanel'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import type { ProfileWithTeam } from '@/types/app'
+import { isSuperAdmin } from '@/lib/auth/roles'
 
 interface AppHeaderProps {
   profile: ProfileWithTeam
   isApprover?: boolean
+}
+
+function getLocalDateStr(): string {
+  const now = new Date()
+  const y = now.getFullYear()
+  const m = String(now.getMonth() + 1).padStart(2, '0')
+  const d = String(now.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
 }
 
 const NAV_ITEMS = [
@@ -27,6 +36,50 @@ export function AppHeader({ profile, isApprover = false }: AppHeaderProps) {
   const pathname = usePathname()
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
+
+  // ── 출근 확인 버튼 (PC 전용) ──
+  //   - 앱관리자(super_admin)는 출근 기능에서 제외 → 버튼 미노출
+  //   - 사무실 내부 네트워크(IP 매칭)에 있을 때만 노출
+  //   - 오늘 미출근일 때만 노출, 체크인 완료 시 사라짐
+  const isSuper = isSuperAdmin(profile)
+  const [checkInState, setCheckInState] = useState<{ checkedIn: boolean; allowed: boolean } | null>(null)
+  const [checkingIn, setCheckingIn] = useState(false)
+
+  useEffect(() => {
+    if (isSuper) return
+    let cancelled = false
+    const today = getLocalDateStr()
+    Promise.all([
+      fetch(`/api/attendance?date=${today}`, { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch('/api/attendance/ip-check', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null),
+    ]).then(([att, ip]) => {
+      if (cancelled) return
+      setCheckInState({
+        checkedIn: !!att?.checked_in_at,
+        allowed: !!ip?.allowed,
+      })
+    })
+    return () => { cancelled = true }
+  }, [isSuper])
+
+  const handleHeaderCheckIn = async () => {
+    if (checkingIn) return
+    setCheckingIn(true)
+    try {
+      const res = await fetch('/api/attendance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: getLocalDateStr() }),
+      })
+      if (res.ok || res.status === 409) {
+        setCheckInState(s => s ? { ...s, checkedIn: true } : { checkedIn: true, allowed: true })
+      }
+    } finally {
+      setCheckingIn(false)
+    }
+  }
+
+  const showCheckInButton = !isSuper && checkInState && checkInState.allowed && !checkInState.checkedIn
 
   const confirmSignOut = async () => {
     if (signingOut) return
@@ -98,6 +151,20 @@ export function AppHeader({ profile, isApprover = false }: AppHeaderProps) {
           <UserAvatar name={profile.full_name} color={profile.color} size={28} />
           <span className="hidden md:block text-sm text-[#111827] dark:text-[#F1F5F9]">{profile.full_name}</span>
         </Link>
+
+        {/* 출근 확인 버튼 — PC 전용, 내부망 + 미출근일 때만 표시 */}
+        {showCheckInButton && (
+          <Button
+            size="sm"
+            onClick={handleHeaderCheckIn}
+            disabled={checkingIn}
+            className="hidden md:inline-flex items-center gap-1 h-8 px-3 text-xs"
+            title="출근 확인"
+          >
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            {checkingIn ? '확인 중...' : '출근 확인'}
+          </Button>
+        )}
 
         {/* 로그아웃 */}
         <Button variant="ghost" size="icon" onClick={() => setShowSignOutConfirm(true)} title="로그아웃">

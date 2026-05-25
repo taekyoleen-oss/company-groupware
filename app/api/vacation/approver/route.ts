@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { countWorkdays } from '@/lib/utils/holidayDates'
+import { isSuperAdmin } from '@/lib/auth/roles'
 
 function toKSTDate(isoStr: string): string {
   return new Date(new Date(isoStr).getTime() + 9 * 3600000).toISOString().slice(0, 10)
@@ -36,7 +37,7 @@ export async function GET() {
   // employees 쿼리: 사장님 팀/super 면 전 직원, 그 외엔 본인 결재자인 직원
   let empQuery = supabase
     .from('cg_profiles')
-    .select('id, full_name, color, team_id, role, status')
+    .select('id, full_name, color, team_id, role, is_super_admin, status')
     .neq('status', 'pending')
     .neq('id', user.id) // 본인 제외
     .order('full_name')
@@ -45,11 +46,13 @@ export async function GET() {
     empQuery = empQuery.eq('approver_id', user.id)
   }
 
-  const { data: employees, error: empErr } = await empQuery
+  const { data: employeesRaw, error: empErr } = await empQuery
 
   if (empErr) return NextResponse.json({ error: empErr.message }, { status: 500 })
 
-  const employeeIds = (employees ?? []).map(e => e.id)
+  // 앱관리자(super_admin)는 휴가 관리 대상에서 제외
+  const employees = (employeesRaw ?? []).filter(e => !isSuperAdmin(e as any))
+  const employeeIds = employees.map(e => e.id)
 
   // 결재 가능한 요청의 범위 — 본인이 결재자(approver_id=me)로 지정된 직원들
   // 사장님/super 도 본인이 직접 결재자인 직원만 결재 가능. 전직원은 "표시"만.
@@ -135,7 +138,7 @@ export async function GET() {
     pendingMap[p.requested_by] = (pendingMap[p.requested_by] ?? 0) + calcDays(p.start_at, p.end_at, p.is_all_day ?? true)
   }
 
-  const employeeSummaries = (employees ?? []).map(e => {
+  const employeeSummaries = employees.map(e => {
     const total = allocMap[e.id] ?? 10
     const used = usedMap[e.id] ?? 0
     const pending = pendingMap[e.id] ?? 0

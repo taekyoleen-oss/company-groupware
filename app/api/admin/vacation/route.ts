@@ -74,26 +74,29 @@ export async function GET() {
   const nameMap: Record<string, string> = {}
   for (const u of usersRes.data ?? []) nameMap[u.id] = u.full_name
 
-  const result = (usersRes.data ?? []).map(u => {
-    const total = allocMap[u.id] ?? 10
-    const used = usedMap[u.id] ?? 0
-    const pending = pendingMap[u.id] ?? 0
-    return {
-      id: u.id,
-      full_name: u.full_name,
-      color: u.color,
-      team_id: u.team_id,
-      role: u.role,
-      is_super_admin: (u as any).is_super_admin ?? false,
-      status: u.status,
-      approver_id: u.approver_id,
-      approver_name: u.approver_id ? (nameMap[u.approver_id] ?? null) : null,
-      total_days: total,
-      used_days: used,
-      pending_days: pending,
-      remaining_days: total - used - pending,
-    }
-  })
+  // 앱관리자(super_admin)는 휴가 관리 대상에서 제외
+  const result = (usersRes.data ?? [])
+    .filter(u => !isSuperAdmin(u as any))
+    .map(u => {
+      const total = allocMap[u.id] ?? 10
+      const used = usedMap[u.id] ?? 0
+      const pending = pendingMap[u.id] ?? 0
+      return {
+        id: u.id,
+        full_name: u.full_name,
+        color: u.color,
+        team_id: u.team_id,
+        role: u.role,
+        is_super_admin: (u as any).is_super_admin ?? false,
+        status: u.status,
+        approver_id: u.approver_id,
+        approver_name: u.approver_id ? (nameMap[u.approver_id] ?? null) : null,
+        total_days: total,
+        used_days: used,
+        pending_days: pending,
+        remaining_days: total - used - pending,
+      }
+    })
 
   return NextResponse.json(result)
 }

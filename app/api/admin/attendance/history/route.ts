@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
     .from('cg_attendance')
     .select(`
       *,
-      profile:cg_profiles!user_id(id, full_name, color, role, team_id, team:cg_teams(id, name))
+      profile:cg_profiles!user_id(id, full_name, color, role, is_super_admin, team_id, team:cg_teams(id, name))
     `)
     .order('date', { ascending: false })
     .order('checked_in_at', { ascending: false })
@@ -44,11 +44,16 @@ export async function GET(request: NextRequest) {
     profile: {
       full_name: string
       color: string
+      role: 'admin' | 'manager' | 'member'
+      is_super_admin: boolean | null
       team: { id: string; name: string } | null
     } | null
   }
 
-  const items = ((data ?? []) as unknown as Row[]).map(row => ({
+  // 앱관리자(super_admin)의 출근 기록은 이력/다운로드 모두에서 제외
+  const items = ((data ?? []) as unknown as Row[])
+    .filter(row => !isSuperAdmin(row.profile as any))
+    .map(row => ({
     id: row.id,
     user_id: row.user_id,
     date: row.date,

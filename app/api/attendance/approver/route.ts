@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { isSuperAdmin } from '@/lib/auth/roles'
 
 function kstToday(): string {
   return new Date(Date.now() + 9 * 3600_000).toISOString().slice(0, 10)
@@ -32,7 +33,7 @@ export async function GET(request: NextRequest) {
 
   let empQuery = supabase
     .from('cg_profiles')
-    .select('id, full_name, color, team_id, team:cg_teams(name)')
+    .select('id, full_name, color, team_id, role, is_super_admin, team:cg_teams(name)')
     .eq('status', 'active')
     .neq('id', user.id)
     .order('full_name')
@@ -40,10 +41,12 @@ export async function GET(request: NextRequest) {
     empQuery = empQuery.eq('approver_id', user.id)
   }
 
-  const { data: employees, error: empErr } = await empQuery
+  const { data: employeesRaw, error: empErr } = await empQuery
   if (empErr) return NextResponse.json({ error: empErr.message }, { status: 500 })
 
-  const ids = (employees ?? []).map((e: any) => e.id)
+  // 앱관리자(super_admin)는 출근 관리 대상에서 제외
+  const employees = (employeesRaw ?? []).filter((e: any) => !isSuperAdmin(e))
+  const ids = employees.map((e: any) => e.id)
   if (ids.length === 0) {
     return NextResponse.json({ date, records: [] })
   }
@@ -64,7 +67,7 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  const records = (employees ?? []).map((e: any) => ({
+  const records = employees.map((e: any) => ({
     id: e.id,
     full_name: e.full_name,
     color: e.color,
