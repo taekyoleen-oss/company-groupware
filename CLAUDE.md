@@ -11,7 +11,7 @@
 PC/모바일 반응형, 역할 기반 권한 3단계, Supabase RLS 보안.
 
 ### 역할 모델
-- **앱관리자(super admin)**: `is_super_admin=true` (+ role='admin'). 전체 시스템 관리. seed: `test@example.com`.
+- **앱관리자(super admin)**: `is_super_admin=true` (+ role='admin'). 전체 시스템 관리. seed: `manager@howdenkorea.com`.
   - 회원 활성화/권한, 팀/카테고리, 휴가일수, 사무실 IP/설정 관리
   - 결재자가 지정되지 않은(approver_id=NULL) 모든 직원의 휴가/취소 결재
   - 다른 관리자(manager)의 휴가/취소도 위임 또는 직접 결재
