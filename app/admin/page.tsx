@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Check, Plus, Trash2, X, Save, Sun, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ClipboardList, Settings, Clock, CheckCircle, XCircle, Wifi, Download, ShieldAlert, Monitor, RefreshCw, IdCard } from 'lucide-react'
+import { Check, Plus, Trash2, X, Save, Sun, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, ClipboardList, Settings, Clock, CheckCircle, XCircle, Wifi, Download, ShieldAlert, Monitor, RefreshCw, IdCard, KeyRound } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
@@ -239,6 +239,9 @@ function AdminPageInner() {
   const [vacationRequests, setVacationRequests] = useState<VacationRequest[]>([])
   const [requestProcessing, setRequestProcessing] = useState<string | null>(null)
   const [approveComplete, setApproveComplete] = useState<{ kind: 'cancel' | 'request' } | null>(null)
+  // 비밀번호 초기화 — 대상 회원의 비밀번호를 'password' 로 일괄 변경
+  const [pwResetConfirm, setPwResetConfirm] = useState<{ id: string; name: string } | null>(null)
+  const [pwResetting, setPwResetting] = useState<string | null>(null)
   // 탭 컨트롤 — 승인 완료 후 휴가 탭으로 자동 이동시키기 위해 controlled 로 운용
   // URL ?tab=... 파라미터가 유효하면 그 값을 초기 탭으로 사용
   const initialTab = (() => {
@@ -576,6 +579,20 @@ function AdminPageInner() {
       body: JSON.stringify({ status: 'active' }),
     })
     if (res.ok) { showToast('승인되었습니다.', 'success'); fetchAll() }
+  }
+
+  const resetPassword = async (id: string) => {
+    setPwResetting(id)
+    const res = await fetch(`/api/admin/users/${id}/reset-password`, { method: 'POST' })
+    setPwResetting(null)
+    setPwResetConfirm(null)
+    const data = await res.json().catch(() => ({}))
+    if (res.ok) {
+      const name = data.user?.full_name ?? ''
+      showToast(`${name ? name + '님의 ' : ''}비밀번호가 'password' 로 초기화되었습니다.`, 'success')
+    } else {
+      showToast((data as any).error ?? '비밀번호 초기화에 실패했습니다.', 'error')
+    }
   }
 
   const addTeam = async (e: React.FormEvent) => {
@@ -1141,6 +1158,16 @@ function AdminPageInner() {
                     onClick={() => setEdit(user.id, { status: edit.status === 'active' ? 'inactive' : 'active' })}
                   >
                     {edit.status === 'active' ? '비활성화' : '활성화'}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    title="임시 비밀번호 발급"
+                    disabled={pwResetting === user.id}
+                    onClick={() => setPwResetConfirm({ id: user.id, name: user.full_name })}
+                  >
+                    <KeyRound className="h-4 w-4 mr-1" />
+                    {pwResetting === user.id ? '발급 중...' : '비밀번호 초기화'}
                   </Button>
                   <Button size="sm" disabled={!edit.dirty || saving === user.id} onClick={() => saveUser(user.id)}>
                     <Save className="h-4 w-4 mr-1" />
@@ -2279,6 +2306,35 @@ function AdminPageInner() {
               disabled={confirming}
             >
               {confirming ? '삭제 중...' : '삭제'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── 비밀번호 초기화 확인 모달 ────────────────────── */}
+      <Dialog open={!!pwResetConfirm} onOpenChange={open => { if (!open) setPwResetConfirm(null) }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <KeyRound className="h-5 w-5 text-[#0E7690]" />
+              비밀번호 초기화
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-[#374151] dark:text-[#D1D5DB] leading-relaxed">
+            <span className="font-semibold text-[#111827] dark:text-[#F1F5F9]">{pwResetConfirm?.name}</span>
+            님의 비밀번호를 <code className="font-mono font-semibold text-[#0E7490] dark:text-[#67E8F9] bg-[#ECFEFF] dark:bg-[#0E7690]/20 px-1.5 py-0.5 rounded">password</code> 로 초기화하시겠습니까?
+          </p>
+          <p className="text-xs text-[#6B7280] dark:text-[#94A3B8] leading-relaxed">
+            초기화 후, 해당 회원에게 <strong>password</strong> 로 로그인한 뒤 프로필 화면에서 새 비밀번호로 변경하라고 안내해 주세요. (이메일 발송은 일어나지 않습니다)
+          </p>
+          <div className="flex gap-2 pt-2">
+            <Button variant="outline" className="flex-1" onClick={() => setPwResetConfirm(null)}>취소</Button>
+            <Button
+              className="flex-1"
+              disabled={pwResetting !== null}
+              onClick={() => pwResetConfirm && resetPassword(pwResetConfirm.id)}
+            >
+              {pwResetting ? '변경 중...' : '초기화'}
             </Button>
           </div>
         </DialogContent>
