@@ -136,3 +136,13 @@ body {
 .dark .fc-day-sun .fc-daygrid-day-number {
   color: #F87171 !important;
 }
+
+/* 공휴일은 요일(특히 토요일) 색상을 덮어쓰고 빨간색으로 표시 */
+.fc-day.cg-holiday .fc-col-header-cell-cushion,
+.fc-day.cg-holiday .fc-daygrid-day-number {
+  color: #DC2626 !important;
+}
+.dark .fc-day.cg-holiday .fc-col-header-cell-cushion,
+.dark .fc-day.cg-holiday .fc-daygrid-day-number {
+  color: #F87171 !important;
+}
