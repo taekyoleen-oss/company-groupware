@@ -449,9 +449,15 @@ function CalendarContent() {
           eventTimeFormat={{ hour: '2-digit', minute: '2-digit', hour12: false }}
           dayCellDidMount={(arg) => {
             const dateStr = arg.date.toLocaleDateString('sv-SE')
-            // 공휴일은 요일과 무관하게 빨간색으로 표시 (토요일 .fc-day-sat의 !important 규칙을 이기려고 클래스 추가)
+            // 공휴일은 요일과 무관하게 빨간색으로 표시.
+            // .fc-day-sat 등 외부 !important 규칙을 확실히 이기기 위해 클래스 + 인라인 !important 이중 적용.
             if (HOLIDAY_DATE_SET.has(dateStr)) {
               arg.el.classList.add('cg-holiday')
+              const dayNum = arg.el.querySelector<HTMLElement>('.fc-daygrid-day-number, .fc-col-header-cell-cushion')
+              if (dayNum) {
+                const isDark = document.documentElement.classList.contains('dark')
+                dayNum.style.setProperty('color', isDark ? '#F87171' : '#DC2626', 'important')
+              }
             }
           }}
         />
