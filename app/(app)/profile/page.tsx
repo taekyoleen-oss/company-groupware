@@ -232,8 +232,8 @@ export default function ProfilePage() {
   const [deviceRegistering, setDeviceRegistering] = useState(false)
   const [hrRecord, setHrRecord] = useState<{
     hire_date: string | null
-    employee_no: string | null
-    birth_date: string | null
+    hire_position: string | null
+    resident_id_masked: string | null
     phone: string | null
     emergency_contact: string | null
     address: string | null
@@ -1160,12 +1160,12 @@ export default function ProfilePage() {
               accent={(profile as any).is_super_admin || profile.role === 'admin' ? 'blue' : profile.role === 'manager' ? 'green' : undefined}
             />
             <InfoRow label="소속 팀" value={profile.team ? (profile.team as any).name : '—'} />
-            <InfoRow label="사번" value={hrRecord?.employee_no || '—'} muted={!hrRecord?.employee_no} />
-            <InfoRow label="입사일" value={hrRecord?.hire_date || '—'} muted={!hrRecord?.hire_date} />
-            <InfoRow label="생년월일" value={hrRecord?.birth_date || '—'} muted={!hrRecord?.birth_date} />
-            <InfoRow label="연락처" value={hrRecord?.phone || '—'} muted={!hrRecord?.phone} />
-            <InfoRow label="비상연락처" value={hrRecord?.emergency_contact || '—'} muted={!hrRecord?.emergency_contact} />
+            <InfoRow label="주민등록번호" value={hrRecord?.resident_id_masked || '—'} muted={!hrRecord?.resident_id_masked} />
+            <InfoRow label="핸드폰번호" value={hrRecord?.phone || '—'} muted={!hrRecord?.phone} />
             <InfoRow label="주소" value={hrRecord?.address || '—'} muted={!hrRecord?.address} />
+            <InfoRow label="비상연락처 (가족)" value={hrRecord?.emergency_contact || '—'} muted={!hrRecord?.emergency_contact} />
+            <InfoRow label="입사일자" value={hrRecord?.hire_date || '—'} muted={!hrRecord?.hire_date} />
+            <InfoRow label="입사직급" value={hrRecord?.hire_position || '—'} muted={!hrRecord?.hire_position} />
             {hrRecord?.notes && (
               <div className="text-sm border-b border-[#F3F4F6] dark:border-[#334155] pb-2 last:border-0 last:pb-0">
                 <span className="text-[#6B7280] dark:text-[#94A3B8] block mb-1">메모</span>
@@ -1202,7 +1202,7 @@ export default function ProfilePage() {
 
           <div className="mt-5 rounded-lg bg-[#F9FAFB] dark:bg-[#0F172A] border border-dashed border-[#E5E7EB] dark:border-[#334155] px-4 py-3">
             <p className="text-[11px] text-[#6B7280] dark:text-[#94A3B8] leading-relaxed">
-              사번·입사일·학력·경력 등 인사기록은 앱관리자가 입력·수정·삭제합니다. 변경이 필요하면 앱관리자에게 요청하세요.
+              주민등록번호·입사일·학력·경력 등 인사기록은 앱관리자가 입력·수정·삭제합니다. 변경이 필요하면 앱관리자에게 요청하세요.
             </p>
           </div>
         </div>

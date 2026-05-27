@@ -185,8 +185,8 @@ const VALID_TABS = new Set(['users', 'attendance', 'vacation', 'teams', 'categor
 interface HrRecord {
   user_id: string
   hire_date: string | null
-  employee_no: string | null
-  birth_date: string | null
+  hire_position: string | null
+  resident_id: string | null
   phone: string | null
   emergency_contact: string | null
   address: string | null
@@ -209,8 +209,8 @@ const CERTIFICATE_ROWS = 5
 
 const EMPTY_HR_EDIT: HrEditValues = {
   hire_date: '',
-  employee_no: '',
-  birth_date: '',
+  hire_position: '',
+  resident_id: '',
   phone: '',
   emergency_contact: '',
   address: '',
@@ -474,8 +474,8 @@ function AdminPageInner() {
       setHrHasRecord(true)
       setHrEdit({
         hire_date: data.hire_date ?? '',
-        employee_no: data.employee_no ?? '',
-        birth_date: data.birth_date ?? '',
+        hire_position: data.hire_position ?? '',
+        resident_id: data.resident_id ?? '',
         phone: data.phone ?? '',
         emergency_contact: data.emergency_contact ?? '',
         address: data.address ?? '',
@@ -2411,47 +2411,22 @@ function AdminPageInner() {
               )}
 
               <div>
-                <label className="block text-xs font-medium text-[#374151] dark:text-[#D1D5DB] mb-1">사번</label>
+                <label className="block text-xs font-medium text-[#374151] dark:text-[#D1D5DB] mb-1">주민등록번호</label>
                 <Input
-                  value={hrEdit.employee_no ?? ''}
-                  onChange={e => setHrEdit(s => ({ ...s, employee_no: e.target.value }))}
-                  placeholder="예: 2024-001"
+                  value={hrEdit.resident_id ?? ''}
+                  onChange={e => setHrEdit(s => ({ ...s, resident_id: e.target.value }))}
+                  placeholder="예: 880101-1234567"
                   className="text-sm"
+                  autoComplete="off"
                 />
+                <p className="mt-1 text-[10px] text-[#9CA3AF] dark:text-[#64748B]">본인 화면에는 880101-1****** 형태로 마스킹되어 표시됩니다.</p>
               </div>
               <div>
-                <label className="block text-xs font-medium text-[#374151] dark:text-[#D1D5DB] mb-1">입사일</label>
-                <Input
-                  type="date"
-                  value={hrEdit.hire_date ?? ''}
-                  onChange={e => setHrEdit(s => ({ ...s, hire_date: e.target.value }))}
-                  className="text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-[#374151] dark:text-[#D1D5DB] mb-1">생년월일</label>
-                <Input
-                  type="date"
-                  value={hrEdit.birth_date ?? ''}
-                  onChange={e => setHrEdit(s => ({ ...s, birth_date: e.target.value }))}
-                  className="text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-[#374151] dark:text-[#D1D5DB] mb-1">연락처</label>
+                <label className="block text-xs font-medium text-[#374151] dark:text-[#D1D5DB] mb-1">핸드폰번호</label>
                 <Input
                   value={hrEdit.phone ?? ''}
                   onChange={e => setHrEdit(s => ({ ...s, phone: e.target.value }))}
                   placeholder="예: 010-1234-5678"
-                  className="text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-[#374151] dark:text-[#D1D5DB] mb-1">비상연락처</label>
-                <Input
-                  value={hrEdit.emergency_contact ?? ''}
-                  onChange={e => setHrEdit(s => ({ ...s, emergency_contact: e.target.value }))}
-                  placeholder="예: 배우자 010-0000-0000"
                   className="text-sm"
                 />
               </div>
@@ -2461,6 +2436,33 @@ function AdminPageInner() {
                   value={hrEdit.address ?? ''}
                   onChange={e => setHrEdit(s => ({ ...s, address: e.target.value }))}
                   placeholder="예: 서울특별시 ..."
+                  className="text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[#374151] dark:text-[#D1D5DB] mb-1">비상연락처 (가족)</label>
+                <Input
+                  value={hrEdit.emergency_contact ?? ''}
+                  onChange={e => setHrEdit(s => ({ ...s, emergency_contact: e.target.value }))}
+                  placeholder="예: 배우자 010-0000-0000"
+                  className="text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[#374151] dark:text-[#D1D5DB] mb-1">입사일자</label>
+                <Input
+                  type="date"
+                  value={hrEdit.hire_date ?? ''}
+                  onChange={e => setHrEdit(s => ({ ...s, hire_date: e.target.value }))}
+                  className="text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-[#374151] dark:text-[#D1D5DB] mb-1">입사직급</label>
+                <Input
+                  value={hrEdit.hire_position ?? ''}
+                  onChange={e => setHrEdit(s => ({ ...s, hire_position: e.target.value }))}
+                  placeholder="예: 사원, 대리, 과장"
                   className="text-sm"
                 />
               </div>
@@ -2526,7 +2528,7 @@ function AdminPageInner() {
                 <textarea
                   value={hrEdit.notes ?? ''}
                   onChange={e => setHrEdit(s => ({ ...s, notes: e.target.value }))}
-                  placeholder="자유 메모 (특이사항 등)"
+                  placeholder="예: 승진 이력, 연봉 변동 등"
                   rows={3}
                   className="w-full text-sm rounded-md border border-[#E5E7EB] dark:border-[#334155] bg-white dark:bg-[#0F172A] dark:text-[#F1F5F9] px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
                 />

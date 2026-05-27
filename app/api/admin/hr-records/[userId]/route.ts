@@ -55,7 +55,7 @@ export async function PUT(
 
   const body = await request.json().catch(() => ({})) as Record<string, unknown>
 
-  const allowed = ['hire_date', 'employee_no', 'birth_date', 'phone', 'emergency_contact', 'address', 'notes'] as const
+  const allowed = ['hire_date', 'hire_position', 'resident_id', 'phone', 'emergency_contact', 'address', 'notes'] as const
   const payload: Record<string, unknown> = {
     user_id: userId,
     updated_at: new Date().toISOString(),
