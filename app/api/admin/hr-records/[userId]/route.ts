@@ -68,6 +68,22 @@ export async function PUT(
     }
   }
 
+  // 학력/경력/자격증 — string[] 한 줄 자유입력, 빈 문자열 제거 후 상한 적용
+  const listLimits = { education: 3, career: 5, certificates: 5 } as const
+  for (const [key, limit] of Object.entries(listLimits)) {
+    if (key in body) {
+      const raw = body[key]
+      if (!Array.isArray(raw)) {
+        return NextResponse.json({ error: `${key}는 배열이어야 합니다.` }, { status: 400 })
+      }
+      const cleaned = raw
+        .map(v => (typeof v === 'string' ? v.trim() : ''))
+        .filter(v => v.length > 0)
+        .slice(0, limit)
+      payload[key] = cleaned
+    }
+  }
+
   const { data, error } = await supabase
     .from('cg_hr_records')
     .upsert(payload as never, { onConflict: 'user_id' })

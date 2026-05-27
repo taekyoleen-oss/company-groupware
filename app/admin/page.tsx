@@ -191,10 +191,21 @@ interface HrRecord {
   emergency_contact: string | null
   address: string | null
   notes: string | null
+  education: string[] | null
+  career: string[] | null
+  certificates: string[] | null
   updated_at?: string | null
 }
 
-type HrEditValues = Omit<HrRecord, 'user_id' | 'updated_at'>
+type HrEditValues = Omit<HrRecord, 'user_id' | 'updated_at' | 'education' | 'career' | 'certificates'> & {
+  education: string[]
+  career: string[]
+  certificates: string[]
+}
+
+const EDUCATION_ROWS = 3
+const CAREER_ROWS = 5
+const CERTIFICATE_ROWS = 5
 
 const EMPTY_HR_EDIT: HrEditValues = {
   hire_date: '',
@@ -204,6 +215,16 @@ const EMPTY_HR_EDIT: HrEditValues = {
   emergency_contact: '',
   address: '',
   notes: '',
+  education: Array(EDUCATION_ROWS).fill(''),
+  career: Array(CAREER_ROWS).fill(''),
+  certificates: Array(CERTIFICATE_ROWS).fill(''),
+}
+
+function padList(list: string[] | null | undefined, size: number): string[] {
+  const src = Array.isArray(list) ? list.slice(0, size) : []
+  const out = src.map(v => (typeof v === 'string' ? v : ''))
+  while (out.length < size) out.push('')
+  return out
 }
 
 // useSearchParams 를 쓰는 컴포넌트는 Next.js 빌드 시 Suspense 경계가 필요해
@@ -459,6 +480,9 @@ function AdminPageInner() {
         emergency_contact: data.emergency_contact ?? '',
         address: data.address ?? '',
         notes: data.notes ?? '',
+        education: padList(data.education, EDUCATION_ROWS),
+        career: padList(data.career, CAREER_ROWS),
+        certificates: padList(data.certificates, CERTIFICATE_ROWS),
       })
     }
   }
@@ -2342,7 +2366,7 @@ function AdminPageInner() {
 
       {/* 인사관리 모달 */}
       <Dialog open={hrModalUser !== null} onOpenChange={open => { if (!open) closeHrModal() }}>
-        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <IdCard className="h-4 w-4 text-[#2563EB]" />
@@ -2440,6 +2464,63 @@ function AdminPageInner() {
                   className="text-sm"
                 />
               </div>
+              <div>
+                <label className="block text-xs font-medium text-[#374151] dark:text-[#D1D5DB] mb-1">학력 (최대 {EDUCATION_ROWS}행)</label>
+                <div className="space-y-1.5">
+                  {hrEdit.education.map((v, i) => (
+                    <Input
+                      key={`edu-${i}`}
+                      value={v}
+                      onChange={e => setHrEdit(s => {
+                        const next = [...s.education]
+                        next[i] = e.target.value
+                        return { ...s, education: next }
+                      })}
+                      placeholder={i === 0 ? '예: 서울대학교 경영학과 학사 2008.03~2012.02' : ''}
+                      className="text-sm"
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-[#374151] dark:text-[#D1D5DB] mb-1">경력 (최대 {CAREER_ROWS}행)</label>
+                <div className="space-y-1.5">
+                  {hrEdit.career.map((v, i) => (
+                    <Input
+                      key={`car-${i}`}
+                      value={v}
+                      onChange={e => setHrEdit(s => {
+                        const next = [...s.career]
+                        next[i] = e.target.value
+                        return { ...s, career: next }
+                      })}
+                      placeholder={i === 0 ? '예: 삼성전자 영업마케팅 2012.03~2018.12' : ''}
+                      className="text-sm"
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-[#374151] dark:text-[#D1D5DB] mb-1">자격증 (최대 {CERTIFICATE_ROWS}행)</label>
+                <div className="space-y-1.5">
+                  {hrEdit.certificates.map((v, i) => (
+                    <Input
+                      key={`cert-${i}`}
+                      value={v}
+                      onChange={e => setHrEdit(s => {
+                        const next = [...s.certificates]
+                        next[i] = e.target.value
+                        return { ...s, certificates: next }
+                      })}
+                      placeholder={i === 0 ? '예: 정보처리기사 KISA 2015.05' : ''}
+                      className="text-sm"
+                    />
+                  ))}
+                </div>
+              </div>
+
               <div>
                 <label className="block text-xs font-medium text-[#374151] dark:text-[#D1D5DB] mb-1">메모</label>
                 <textarea

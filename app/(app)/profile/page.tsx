@@ -238,6 +238,9 @@ export default function ProfilePage() {
     emergency_contact: string | null
     address: string | null
     notes: string | null
+    education: string[] | null
+    career: string[] | null
+    certificates: string[] | null
   } | null>(null)
   const { showToast, ToastComponent } = useToast()
 
@@ -1171,9 +1174,35 @@ export default function ProfilePage() {
             )}
           </div>
 
+          {(() => {
+            const eduList = (hrRecord?.education ?? []).filter(v => typeof v === 'string' && v.trim().length > 0)
+            const carList = (hrRecord?.career ?? []).filter(v => typeof v === 'string' && v.trim().length > 0)
+            const certList = (hrRecord?.certificates ?? []).filter(v => typeof v === 'string' && v.trim().length > 0)
+            if (eduList.length === 0 && carList.length === 0 && certList.length === 0) return null
+            const SectionList = ({ title, items }: { title: string, items: string[] }) => (
+              items.length === 0 ? null : (
+                <div>
+                  <p className="text-xs font-medium text-[#6B7280] dark:text-[#94A3B8] mb-1.5">{title}</p>
+                  <ul className="space-y-1">
+                    {items.map((v, i) => (
+                      <li key={i} className="text-sm text-[#111827] dark:text-[#F1F5F9] leading-relaxed">• {v}</li>
+                    ))}
+                  </ul>
+                </div>
+              )
+            )
+            return (
+              <div className="mt-5 space-y-4 rounded-lg border border-[#E5E7EB] dark:border-[#334155] bg-white dark:bg-[#0F172A] px-4 py-4">
+                <SectionList title="학력" items={eduList} />
+                <SectionList title="경력" items={carList} />
+                <SectionList title="자격증" items={certList} />
+              </div>
+            )
+          })()}
+
           <div className="mt-5 rounded-lg bg-[#F9FAFB] dark:bg-[#0F172A] border border-dashed border-[#E5E7EB] dark:border-[#334155] px-4 py-3">
             <p className="text-[11px] text-[#6B7280] dark:text-[#94A3B8] leading-relaxed">
-              사번·입사일 등 인사기록은 앱관리자가 입력·수정·삭제합니다. 변경이 필요하면 앱관리자에게 요청하세요.
+              사번·입사일·학력·경력 등 인사기록은 앱관리자가 입력·수정·삭제합니다. 변경이 필요하면 앱관리자에게 요청하세요.
             </p>
           </div>
         </div>
