@@ -1148,9 +1148,9 @@ function AdminPageInner() {
                       <p className="text-xs text-[#6B7280] dark:text-[#94A3B8]">{(user.team as any)?.name ?? '팀 없음'}</p>
                     </div>
                   </div>
-                  <Badge variant={edit.status === 'active' ? 'success' : 'danger'}>{STATUS_LABEL[edit.status as keyof typeof STATUS_LABEL]}</Badge>
+                  <Badge variant={edit.status === 'active' ? 'success' : 'danger'} className="text-[10px] px-1.5 py-0">{STATUS_LABEL[edit.status as keyof typeof STATUS_LABEL]}</Badge>
                   <Select value={edit.role} onValueChange={v => setEdit(user.id, { role: v as RoleSelectValue })}>
-                    <SelectTrigger className="w-28 h-8 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="w-[72px] h-7 text-[11px] px-2"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="member">실무자</SelectItem>
                       <SelectItem value="manager">관리자</SelectItem>
@@ -1158,16 +1158,16 @@ function AdminPageInner() {
                     </SelectContent>
                   </Select>
                   <Select value={edit.team_id} onValueChange={v => setEdit(user.id, { team_id: v })}>
-                    <SelectTrigger className="w-24 h-8 text-xs"><SelectValue placeholder="팀" /></SelectTrigger>
+                    <SelectTrigger className="w-[72px] h-7 text-[11px] px-2"><SelectValue placeholder="팀" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">팀 없음</SelectItem>
                       {teams.map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs text-[#6B7280] dark:text-[#94A3B8]">결재자</span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-[#6B7280] dark:text-[#94A3B8]">결재</span>
                     <Select value={edit.approver_id} onValueChange={v => setEdit(user.id, { approver_id: v })}>
-                      <SelectTrigger className="h-8 text-xs min-w-[7rem]"><SelectValue /></SelectTrigger>
+                      <SelectTrigger className="h-7 text-[11px] px-2 w-[92px]"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="self">본인 결재</SelectItem>
                         {adminCandidates.map(a => (
@@ -1179,23 +1179,29 @@ function AdminPageInner() {
                   <Button
                     size="sm"
                     variant={edit.status === 'active' ? 'secondary' : 'default'}
+                    className="h-7 px-2 text-[11px]"
                     onClick={() => setEdit(user.id, { status: edit.status === 'active' ? 'inactive' : 'active' })}
                   >
-                    {edit.status === 'active' ? '비활성화' : '활성화'}
+                    {edit.status === 'active' ? '비활성' : '활성'}
                   </Button>
                   <Button
                     size="sm"
                     variant="outline"
-                    title="임시 비밀번호 발급"
+                    className="h-7 w-7 p-0"
+                    title={pwResetting === user.id ? '발급 중...' : '비밀번호 초기화'}
                     disabled={pwResetting === user.id}
                     onClick={() => setPwResetConfirm({ id: user.id, name: user.full_name })}
                   >
-                    <KeyRound className="h-4 w-4 mr-1" />
-                    {pwResetting === user.id ? '발급 중...' : '비밀번호 초기화'}
+                    <KeyRound className="h-3.5 w-3.5" />
                   </Button>
-                  <Button size="sm" disabled={!edit.dirty || saving === user.id} onClick={() => saveUser(user.id)}>
-                    <Save className="h-4 w-4 mr-1" />
-                    {saving === user.id ? '저장 중...' : '저장'}
+                  <Button
+                    size="sm"
+                    className="h-7 w-7 p-0"
+                    title={saving === user.id ? '저장 중...' : '저장'}
+                    disabled={!edit.dirty || saving === user.id}
+                    onClick={() => saveUser(user.id)}
+                  >
+                    <Save className="h-3.5 w-3.5" />
                   </Button>
                 </div>
               )
