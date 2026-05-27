@@ -4,13 +4,18 @@
 -- - certificates : string[] (최대 5행, 한 줄 자유 입력)
 --
 -- 실행: Supabase Dashboard → SQL Editor 에 붙여넣고 Run (멱등 — 재실행 안전)
+--
+-- 설계 메모
+--   - CHECK 제약은 서브쿼리를 쓸 수 없으므로(Postgres 표준)
+--     "배열 타입 + 길이 상한"만 DB 레벨에서 강제한다.
+--   - 원소 타입(string) 검증은 API 레이어(/api/admin/hr-records/[userId]) 에서
+--     trim + 빈 문자열 제거 + slice 로 처리한다.
 
 ALTER TABLE cg_hr_records
   ADD COLUMN IF NOT EXISTS education    jsonb NOT NULL DEFAULT '[]'::jsonb,
   ADD COLUMN IF NOT EXISTS career       jsonb NOT NULL DEFAULT '[]'::jsonb,
   ADD COLUMN IF NOT EXISTS certificates jsonb NOT NULL DEFAULT '[]'::jsonb;
 
--- 항목 개수 상한 + 모든 원소가 text 인지 검증
 ALTER TABLE cg_hr_records
   DROP CONSTRAINT IF EXISTS cg_hr_records_education_chk;
 ALTER TABLE cg_hr_records
@@ -18,9 +23,6 @@ ALTER TABLE cg_hr_records
   CHECK (
     jsonb_typeof(education) = 'array'
     AND jsonb_array_length(education) <= 3
-    AND NOT EXISTS (
-      SELECT 1 FROM jsonb_array_elements(education) e WHERE jsonb_typeof(e) <> 'string'
-    )
   );
 
 ALTER TABLE cg_hr_records
@@ -30,9 +32,6 @@ ALTER TABLE cg_hr_records
   CHECK (
     jsonb_typeof(career) = 'array'
     AND jsonb_array_length(career) <= 5
-    AND NOT EXISTS (
-      SELECT 1 FROM jsonb_array_elements(career) e WHERE jsonb_typeof(e) <> 'string'
-    )
   );
 
 ALTER TABLE cg_hr_records
@@ -42,9 +41,6 @@ ALTER TABLE cg_hr_records
   CHECK (
     jsonb_typeof(certificates) = 'array'
     AND jsonb_array_length(certificates) <= 5
-    AND NOT EXISTS (
-      SELECT 1 FROM jsonb_array_elements(certificates) e WHERE jsonb_typeof(e) <> 'string'
-    )
   );
 
 NOTIFY pgrst, 'reload schema';
