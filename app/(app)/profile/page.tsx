@@ -31,6 +31,10 @@ function displayRoleLabel(p: { role?: string | null; is_super_admin?: boolean | 
 
 type TabKey = '설정' | '출근' | '휴가' | '인사관리' | '비밀번호'
 
+const EDUCATION_ROWS = 3
+const CAREER_ROWS = 5
+const CERTIFICATE_ROWS = 5
+
 interface VacHistory {
   id: string
   title: string
@@ -150,33 +154,6 @@ function getLocalDateStr(): string {
   const now = new Date()
   const kst = new Date(now.getTime() + 9 * 3600 * 1000)
   return kst.toISOString().slice(0, 10)
-}
-
-function InfoRow({
-  label,
-  value,
-  muted,
-  accent,
-}: {
-  label: string
-  value: string
-  muted?: boolean
-  accent?: 'blue' | 'green'
-}) {
-  const accentClass =
-    accent === 'blue'
-      ? 'text-[#2563EB] dark:text-[#60A5FA] font-medium'
-      : accent === 'green'
-      ? 'text-green-600 dark:text-green-400 font-medium'
-      : muted
-      ? 'text-[#9CA3AF] dark:text-[#64748B]'
-      : 'text-[#111827] dark:text-[#F1F5F9]'
-  return (
-    <div className="flex items-center justify-between text-sm border-b border-[#F3F4F6] dark:border-[#334155] pb-2 last:border-0 last:pb-0">
-      <span className="text-[#6B7280] dark:text-[#94A3B8]">{label}</span>
-      <span className={accentClass}>{value}</span>
-    </div>
-  )
 }
 
 const TABS: { key: TabKey; icon: React.ReactNode; label: string }[] = [
@@ -1142,63 +1119,113 @@ export default function ProfilePage() {
         </div>
       )}
 
-      {/* ── 인사관리 탭 (조회만, 편집은 추후) ── */}
+      {/* ── 인사관리 탭 (조회 전용 — 앱관리자 모달과 동일한 레이아웃) ── */}
       {activeTab === '인사관리' && (
         <div className="bg-white dark:bg-[#1E293B] rounded-xl border border-[#E5E7EB] dark:border-[#334155] p-6">
           <div className="flex items-center gap-2 mb-4">
             <IdCard className="h-4 w-4 text-[#2563EB]" />
-            <h2 className="text-sm font-semibold text-[#111827] dark:text-[#F1F5F9]">인사 정보</h2>
+            <h2 className="text-sm font-semibold text-[#111827] dark:text-[#F1F5F9]">인사기록</h2>
             <span className="ml-auto text-[10px] text-[#9CA3AF] dark:text-[#64748B]">조회 전용</span>
           </div>
 
-          <div className="space-y-3">
-            <InfoRow label="이름" value={profile.full_name} />
-            <InfoRow label="이메일" value={email || '—'} />
-            <InfoRow
-              label="직책"
-              value={displayRoleLabel(profile as any)}
-              accent={(profile as any).is_super_admin || profile.role === 'admin' ? 'blue' : profile.role === 'manager' ? 'green' : undefined}
-            />
-            <InfoRow label="소속 팀" value={profile.team ? (profile.team as any).name : '—'} />
-            <InfoRow label="주민등록번호" value={hrRecord?.resident_id_masked || '—'} muted={!hrRecord?.resident_id_masked} />
-            <InfoRow label="핸드폰번호" value={hrRecord?.phone || '—'} muted={!hrRecord?.phone} />
-            <InfoRow label="주소" value={hrRecord?.address || '—'} muted={!hrRecord?.address} />
-            <InfoRow label="비상연락처 (가족)" value={hrRecord?.emergency_contact || '—'} muted={!hrRecord?.emergency_contact} />
-            <InfoRow label="입사일자" value={hrRecord?.hire_date || '—'} muted={!hrRecord?.hire_date} />
-            <InfoRow label="입사직급" value={hrRecord?.hire_position || '—'} muted={!hrRecord?.hire_position} />
-            {hrRecord?.notes && (
-              <div className="text-sm border-b border-[#F3F4F6] dark:border-[#334155] pb-2 last:border-0 last:pb-0">
-                <span className="text-[#6B7280] dark:text-[#94A3B8] block mb-1">메모</span>
-                <span className="text-[#111827] dark:text-[#F1F5F9] whitespace-pre-wrap text-xs leading-relaxed">{hrRecord.notes}</span>
+          <div className="space-y-3 py-2">
+            {/* 프로필 요약 카드 — 관리자 모달과 동일 */}
+            <div className="rounded-lg bg-[#F9FAFB] dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-[#334155] p-3 space-y-1.5">
+              <div className="flex items-center gap-2 mb-1">
+                <UserAvatar name={profile.full_name} color={profile.color} size={32} />
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-[#111827] dark:text-[#F1F5F9] truncate">{profile.full_name}</p>
+                  <p className="text-[11px] text-[#6B7280] dark:text-[#94A3B8] truncate">{email || '이메일 없음'}</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
+                <div>
+                  <span className="text-[#6B7280] dark:text-[#94A3B8]">직책</span>
+                  <span className="ml-1.5 font-medium text-[#111827] dark:text-[#F1F5F9]">
+                    {displayRoleLabel(profile as any) || '—'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[#6B7280] dark:text-[#94A3B8]">소속 팀</span>
+                  <span className="ml-1.5 font-medium text-[#111827] dark:text-[#F1F5F9]">
+                    {(profile.team as any)?.name ?? '팀 없음'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-[#374151] dark:text-[#D1D5DB] mb-1">주민등록번호</label>
+              <Input
+                value={hrRecord?.resident_id_masked || '—'}
+                className="text-sm"
+                disabled
+                readOnly
+              />
+              <p className="mt-1 text-[10px] text-[#9CA3AF] dark:text-[#64748B]">본인 화면에는 880101-1****** 형태로 마스킹되어 표시됩니다.</p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-[#374151] dark:text-[#D1D5DB] mb-1">핸드폰번호</label>
+              <Input value={hrRecord?.phone || '—'} className="text-sm" disabled readOnly />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-[#374151] dark:text-[#D1D5DB] mb-1">주소</label>
+              <Input value={hrRecord?.address || '—'} className="text-sm" disabled readOnly />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-[#374151] dark:text-[#D1D5DB] mb-1">비상연락처 (가족)</label>
+              <Input value={hrRecord?.emergency_contact || '—'} className="text-sm" disabled readOnly />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-[#374151] dark:text-[#D1D5DB] mb-1">입사일자</label>
+              {hrRecord?.hire_date ? (
+                <Input type="date" value={hrRecord.hire_date} className="text-sm" disabled readOnly />
+              ) : (
+                <Input type="text" value="—" className="text-sm" disabled readOnly />
+              )}
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-[#374151] dark:text-[#D1D5DB] mb-1">입사직급</label>
+              <Input value={hrRecord?.hire_position || '—'} className="text-sm" disabled readOnly />
+            </div>
+
+            {(() => {
+              const renderList = (label: string, max: number, src: string[] | null | undefined, keyPrefix: string) => {
+                const filled = (src ?? []).map(v => (typeof v === 'string' ? v : '')).filter(v => v.trim().length > 0)
+                const rows = filled.length === 0 ? ['미입력'] : filled
+                return (
+                  <div>
+                    <label className="block text-xs font-medium text-[#374151] dark:text-[#D1D5DB] mb-1">{label} (최대 {max}행)</label>
+                    <div className="space-y-1.5">
+                      {rows.map((v, i) => (
+                        <Input key={`${keyPrefix}-${i}`} value={v} className="text-sm" disabled readOnly />
+                      ))}
+                    </div>
+                  </div>
+                )
+              }
+              return (
+                <>
+                  {renderList('학력', EDUCATION_ROWS, hrRecord?.education, 'edu')}
+                  {renderList('경력', CAREER_ROWS, hrRecord?.career, 'car')}
+                  {renderList('자격증', CERTIFICATE_ROWS, hrRecord?.certificates, 'cert')}
+                </>
+              )
+            })()}
+
+            {hrRecord?.notes && hrRecord.notes.trim().length > 0 && (
+              <div>
+                <label className="block text-xs font-medium text-[#374151] dark:text-[#D1D5DB] mb-1">메모</label>
+                <textarea
+                  value={hrRecord.notes}
+                  rows={3}
+                  disabled
+                  readOnly
+                  className="w-full text-sm rounded-md border border-[#E5E7EB] dark:border-[#334155] bg-[#F3F4F6] dark:bg-[#0F172A] text-[#6B7280] dark:text-[#94A3B8] px-3 py-2 disabled:cursor-not-allowed disabled:opacity-70"
+                />
               </div>
             )}
           </div>
-
-          {(() => {
-            const eduList = (hrRecord?.education ?? []).filter(v => typeof v === 'string' && v.trim().length > 0)
-            const carList = (hrRecord?.career ?? []).filter(v => typeof v === 'string' && v.trim().length > 0)
-            const certList = (hrRecord?.certificates ?? []).filter(v => typeof v === 'string' && v.trim().length > 0)
-            if (eduList.length === 0 && carList.length === 0 && certList.length === 0) return null
-            const SectionList = ({ title, items }: { title: string, items: string[] }) => (
-              items.length === 0 ? null : (
-                <div>
-                  <p className="text-xs font-medium text-[#6B7280] dark:text-[#94A3B8] mb-1.5">{title}</p>
-                  <ul className="space-y-1">
-                    {items.map((v, i) => (
-                      <li key={i} className="text-sm text-[#111827] dark:text-[#F1F5F9] leading-relaxed">• {v}</li>
-                    ))}
-                  </ul>
-                </div>
-              )
-            )
-            return (
-              <div className="mt-5 space-y-4 rounded-lg border border-[#E5E7EB] dark:border-[#334155] bg-white dark:bg-[#0F172A] px-4 py-4">
-                <SectionList title="학력" items={eduList} />
-                <SectionList title="경력" items={carList} />
-                <SectionList title="자격증" items={certList} />
-              </div>
-            )
-          })()}
 
           <div className="mt-5 rounded-lg bg-[#F9FAFB] dark:bg-[#0F172A] border border-dashed border-[#E5E7EB] dark:border-[#334155] px-4 py-3">
             <p className="text-[11px] text-[#6B7280] dark:text-[#94A3B8] leading-relaxed">
