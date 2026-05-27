@@ -2476,7 +2476,7 @@ function AdminPageInner() {
                         next[i] = e.target.value
                         return { ...s, education: next }
                       })}
-                      placeholder={i === 0 ? '예: 서울대학교 경영학과 학사 2008.03~2012.02' : ''}
+                      placeholder={i === 0 ? '예: AA대학교 BB학과 학사 2000.03~2002.02' : ''}
                       className="text-sm"
                     />
                   ))}
@@ -2495,7 +2495,7 @@ function AdminPageInner() {
                         next[i] = e.target.value
                         return { ...s, career: next }
                       })}
-                      placeholder={i === 0 ? '예: 삼성전자 영업마케팅 2012.03~2018.12' : ''}
+                      placeholder={i === 0 ? '예: CC보험 일반보험 2010.03~2020.12' : ''}
                       className="text-sm"
                     />
                   ))}
