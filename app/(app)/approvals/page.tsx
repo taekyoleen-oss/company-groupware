@@ -319,11 +319,17 @@ export default function ApprovalsPage() {
                     <span className="text-xs text-[#6B7280] dark:text-[#94A3B8]">총휴가</span>
                     <Input
                       type="number"
-                      step={0.5}
+                      step={0.1}
                       min={0}
                       max={365}
                       value={vacEdits[e.id] ?? e.total_days}
-                      onChange={ev => setVacEdits(prev => ({ ...prev, [e.id]: Number(ev.target.value) }))}
+                      onChange={ev => {
+                        const v = ev.target.value
+                        setVacEdits(prev => ({
+                          ...prev,
+                          [e.id]: v === '' ? 0 : Math.round(Number(v) * 10) / 10,
+                        }))
+                      }}
                       className="w-20 h-8 text-xs"
                     />
                     <Button size="sm" disabled={vacSaving === e.id || (vacEdits[e.id] ?? e.total_days) === e.total_days} onClick={() => saveTotalDays(e.id)}>

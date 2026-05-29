@@ -1661,10 +1661,16 @@ function AdminPageInner() {
                     <div className="flex items-center gap-1.5">
                       <span className="text-xs text-[#6B7280] dark:text-[#94A3B8]">총 휴가</span>
                       <Input
-                        type="number" min={0} max={365} value={currentTotal}
+                        type="number" min={0} max={365} step={0.1} value={currentTotal}
                         disabled={!canEditDays}
-                        onChange={e => setVacEdits(prev => ({ ...prev, [u.id]: Number(e.target.value) }))}
-                        className="w-16 h-8 text-sm text-center disabled:opacity-50"
+                        onChange={e => {
+                          const v = e.target.value
+                          setVacEdits(prev => ({
+                            ...prev,
+                            [u.id]: v === '' ? 0 : Math.round(Number(v) * 10) / 10,
+                          }))
+                        }}
+                        className="w-20 h-8 text-sm text-center disabled:opacity-50"
                       />
                       <span className="text-xs text-[#6B7280]">일</span>
                     </div>
