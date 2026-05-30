@@ -18,6 +18,7 @@ import { format, parseISO } from 'date-fns'
 import { ko } from 'date-fns/locale'
 import type { ProfileWithTeam, Team } from '@/types/app'
 import { useProfile, useTeams, useVacationOwn, useApproverData, useVacationHistory, invalidate } from '@/lib/hooks/use-shared-data'
+import { isSuperAdmin } from '@/lib/auth/roles'
 
 const ROLE_LABEL: Record<string, string> = { admin: '앱관리자', manager: '관리자', member: '실무자' }
 
@@ -1213,7 +1214,7 @@ export default function ProfilePage() {
               )
             })()}
 
-            {hrRecord?.notes && hrRecord.notes.trim().length > 0 && (
+            {isSuperAdmin(profile) && hrRecord?.notes && hrRecord.notes.trim().length > 0 && (
               <div>
                 <label className="block text-xs font-medium text-[#374151] dark:text-[#D1D5DB] mb-1">메모</label>
                 <textarea
