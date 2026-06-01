@@ -1,5 +1,5 @@
 'use client'
-import { useState, useCallback, useRef, useEffect, Suspense } from 'react'
+import { useState, useCallback, useRef, useEffect, useMemo, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
@@ -15,9 +15,17 @@ import { EventModal } from '@/components/calendar/EventModal'
 import { VacationModal } from '@/components/calendar/VacationModal'
 import { DayEventsPopup } from '@/components/calendar/DayEventsPopup'
 import { resolveEventColor } from '@/lib/utils/eventColor'
-import { KOREAN_HOLIDAYS, KOREAN_ANNIVERSARIES, HOLIDAY_DATE_SET } from '@/lib/utils/koreanHolidays'
+import {
+  buildHolidays,
+  isHolidayRegion,
+  HOLIDAY_REGION_OPTIONS,
+  DEFAULT_HOLIDAY_REGION,
+  type HolidayRegion,
+} from '@/lib/utils/holidays'
 import type { EventWithDetails } from '@/types/app'
 import { useProfile, useTeams } from '@/lib/hooks/use-shared-data'
+
+const HOLIDAY_REGION_STORAGE_KEY = 'cg.holidayRegion'
 
 function CalendarContent() {
   const router        = useRouter()
@@ -46,7 +54,7 @@ function CalendarContent() {
   const [pendingCancelIds, setPendingCancelIds] = useState<Set<string>>(new Set())
 
   const [currentView, setCurrentView] = useState('dayGridMonth')
-  const [showAnniversaries, setShowAnniversaries] = useState(true)
+  const [holidayRegion, setHolidayRegion] = useState<HolidayRegion>(DEFAULT_HOLIDAY_REGION)
   const [teamsMap, setTeamsMap] = useState<Record<string, { name: string; abbreviation: string | null }>>({})
 
   const clickTimerRef    = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -129,6 +137,25 @@ function CalendarContent() {
     // 앱관리자: is_super_admin=true. role='admin' fallback도 허용 (마이그레이션 전 안전)
     setIsAdminUser(p?.is_super_admin === true || (p?.is_super_admin == null && p?.role === 'admin'))
   }, [profileSwr])
+
+  // 공휴일 표시 국가: 브라우저(PC)에 저장 → 각자 변경 전까지 유지
+  // SSR/CSR hydration 일치를 위해 초기값은 기본값, 마운트 후 localStorage 적용
+  useEffect(() => {
+    const saved = localStorage.getItem(HOLIDAY_REGION_STORAGE_KEY)
+    if (isHolidayRegion(saved)) setHolidayRegion(saved)
+  }, [])
+
+  // 선택한 국가/지역의 공휴일 (순수 계산 → useMemo)
+  const { events: holidayEvents, dateSet: holidayDateSet } = useMemo(
+    () => buildHolidays(holidayRegion),
+    [holidayRegion],
+  )
+
+  // 콤보박스 변경 → 즉시 반영 + 브라우저에 저장(각자 변경 전까지 유지)
+  const handleHolidayRegionChange = useCallback((region: HolidayRegion) => {
+    setHolidayRegion(region)
+    try { localStorage.setItem(HOLIDAY_REGION_STORAGE_KEY, region) } catch { /* 저장 실패해도 화면 표시는 유지 */ }
+  }, [])
 
   useEffect(() => {
     if (!Array.isArray(teamsSwr)) return
@@ -213,8 +240,7 @@ function CalendarContent() {
   }
 
   const fcEvents: EventInput[] = [
-    ...KOREAN_HOLIDAYS,
-    ...(showAnniversaries ? KOREAN_ANNIVERSARIES : []),
+    ...holidayEvents,
     ...events.map(e => {
       const isVac = e.is_vacation
       const isHalf = isVac && !e.is_all_day
@@ -300,7 +326,7 @@ function CalendarContent() {
   }
 
   const handleEventClick = (info: EventClickArg) => {
-    if (info.event.id.startsWith('holiday-') || info.event.id.startsWith('anniversary-')) return
+    if (info.event.id.startsWith('holiday-')) return
     openEventOrVacation(info.event.id)
   }
 
@@ -318,7 +344,7 @@ function CalendarContent() {
 
   const handleEventDrop = async (info: EventDropArg) => {
     const { event, revert } = info
-    if (event.id.startsWith('holiday-') || event.id.startsWith('anniversary-')) { revert(); return }
+    if (event.id.startsWith('holiday-')) { revert(); return }
     const eventData = events.find(e => e.id === event.id)
     if (eventData?.is_vacation) { revert(); return }
     const start = event.start
@@ -346,19 +372,19 @@ function CalendarContent() {
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-xl font-bold text-[#111827] dark:text-[#F1F5F9]">캘린더</h1>
         <div className="flex items-center gap-2 sm:gap-3">
-          {/* 기념일 토글 */}
-          <button
-            type="button"
-            onClick={() => setShowAnniversaries(v => !v)}
-            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors select-none ${
-              showAnniversaries
-                ? 'border-[#D1D5DB] bg-[#F3F4F6] text-[#6B7280] dark:border-[#4B5563] dark:bg-[#374151] dark:text-[#9CA3AF]'
-                : 'border-[#E5E7EB] bg-white text-[#9CA3AF] dark:border-[#374151] dark:bg-[#1F2937] dark:text-[#6B7280]'
-            }`}
+          {/* 공휴일 표시 국가 선택 (회원별 유지) */}
+          <label className="sr-only" htmlFor="holiday-region">공휴일 국가</label>
+          <select
+            id="holiday-region"
+            value={holidayRegion}
+            onChange={(e) => handleHolidayRegionChange(e.target.value as HolidayRegion)}
+            className="rounded-full border border-[#D1D5DB] bg-white px-2.5 py-1 text-xs font-medium text-[#374151] transition-colors hover:border-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#3B82F6]/30 dark:border-[#4B5563] dark:bg-[#1F2937] dark:text-[#E5E7EB]"
+            title="캘린더에 표시할 공휴일 국가를 선택하세요"
           >
-            <span className={`inline-block h-2 w-2 rounded-full ${showAnniversaries ? 'bg-[#9CA3AF]' : 'bg-[#D1D5DB]'}`} />
-            기념일
-          </button>
+            {HOLIDAY_REGION_OPTIONS.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
           {/* 휴가 신청 버튼 */}
           <Button
             size="sm"
@@ -447,18 +473,12 @@ function CalendarContent() {
           dayMaxEvents={3}
           buttonText={{ today: '오늘', month: '월', week: '주', day: '일' }}
           eventTimeFormat={{ hour: '2-digit', minute: '2-digit', hour12: false }}
-          dayCellDidMount={(arg) => {
+          dayCellClassNames={(arg) => {
+            // 공휴일은 요일(특히 토요일) 색상을 덮어쓰고 빨간색으로 표시.
+            // .fc-day.cg-holiday CSS 규칙(globals.css)이 !important로 날짜 숫자를 빨간색 처리.
+            // 콤보박스로 국가를 바꾸면 holidayDateSet 이 갱신되어 자동 재적용된다.
             const dateStr = arg.date.toLocaleDateString('sv-SE')
-            // 공휴일은 요일과 무관하게 빨간색으로 표시.
-            // .fc-day-sat 등 외부 !important 규칙을 확실히 이기기 위해 클래스 + 인라인 !important 이중 적용.
-            if (HOLIDAY_DATE_SET.has(dateStr)) {
-              arg.el.classList.add('cg-holiday')
-              const dayNum = arg.el.querySelector<HTMLElement>('.fc-daygrid-day-number, .fc-col-header-cell-cushion')
-              if (dayNum) {
-                const isDark = document.documentElement.classList.contains('dark')
-                dayNum.style.setProperty('color', isDark ? '#F87171' : '#DC2626', 'important')
-              }
-            }
+            return holidayDateSet.has(dateStr) ? ['cg-holiday'] : []
           }}
         />
       </div>
