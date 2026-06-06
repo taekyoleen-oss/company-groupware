@@ -13,6 +13,7 @@ export async function GET() {
       .select('id, full_name, color, role, team_id')
       .eq('status', 'active')
       .neq('id', user.id)   // 자기 자신 제외
+      .neq('is_hidden', true)   // 개발자 전용 숨김 계정 제외
       .order('full_name'),
     supabase
       .from('cg_teams')

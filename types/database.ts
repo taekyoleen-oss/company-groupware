@@ -20,6 +20,7 @@ export interface Database {
           color: string
           approver_id: string | null
           is_super_admin: boolean
+          is_hidden: boolean
           created_at: string
         }
         Insert: {
@@ -32,6 +33,7 @@ export interface Database {
           color?: string
           approver_id?: string | null
           is_super_admin?: boolean
+          is_hidden?: boolean
           created_at?: string
         }
         Update: {
@@ -44,6 +46,7 @@ export interface Database {
           color?: string
           approver_id?: string | null
           is_super_admin?: boolean
+          is_hidden?: boolean
           created_at?: string
         }
         Relationships: [

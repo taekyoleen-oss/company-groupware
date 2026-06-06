@@ -15,6 +15,7 @@ export async function getAllProfiles(supabase: Client) {
   return supabase
     .from('cg_profiles')
     .select(`*, team:cg_teams(id,name)`)
+    .neq('is_hidden', true)   // 개발자 전용 숨김 계정 제외
     .order('created_at')
 }
 

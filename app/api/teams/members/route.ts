@@ -22,6 +22,7 @@ export async function GET() {
     .eq('team_id', profile.team_id)
     .eq('status', 'active')
     .neq('id', user.id)
+    .neq('is_hidden', true)   // 개발자 전용 숨김 계정 제외
     .order('full_name')
 
   return NextResponse.json({

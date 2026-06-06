@@ -8,7 +8,8 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { data: me } = await supabase.from('cg_profiles').select('role, is_super_admin').eq('id', user.id).single()
   if (!isSuperAdmin(me)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  const { data, error } = await supabase.from('cg_profiles').select(`*, team:cg_teams(id,name)`).order('created_at')
+  // 개발자 전용 숨김 계정(is_hidden)은 회원 명단에서 제외
+  const { data, error } = await supabase.from('cg_profiles').select(`*, team:cg_teams(id,name)`).neq('is_hidden', true).order('created_at')
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json(data)
 }
