@@ -180,7 +180,13 @@ function CalendarContent() {
     setTeamsMap(map)
   }, [teamsSwr])
 
+  // 현재 보이는 달력 범위(±1개월 여유). datesSet 이 채운다.
+  // 이전에는 start/end 없이 전 기간 이벤트를 무제한 조회해 이벤트가 쌓일수록 Disk IO 가 커졌다.
+  const rangeRef = useRef<{ start: string; end: string } | null>(null)
+
   const fetchEvents = useCallback(async () => {
+    // 보이는 범위가 아직 정해지지 않았으면(datesSet 이전) 전체 조회를 피하기 위해 대기.
+    if (!rangeRef.current) return
     const params = new URLSearchParams()
     if (filterType === 'team') {
       params.set('team_only', 'true')
@@ -188,8 +194,9 @@ function CalendarContent() {
       params.set('created_by', filterUserId)
     }
     if (!includeCompany) params.set('include_company', 'false')
-    const query = params.toString()
-    const res = await fetch(`/api/events${query ? '?' + query : ''}`)
+    params.set('start', rangeRef.current.start)
+    params.set('end', rangeRef.current.end)
+    const res = await fetch(`/api/events?${params.toString()}`)
     if (res.ok) {
       const data: EventWithDetails[] = await res.json()
       setEvents(data)
@@ -472,7 +479,18 @@ function CalendarContent() {
               duration: { days: 7 },
             },
           }}
-          datesSet={(arg) => setCurrentView(arg.view.type)}
+          datesSet={(arg) => {
+            setCurrentView(arg.view.type)
+            // 보이는 범위 ±1개월만 조회 (긴 다일 일정·월 경계 안전 여유)
+            const PAD = 31 * 24 * 60 * 60 * 1000
+            const start = new Date(arg.start.getTime() - PAD).toISOString()
+            const end   = new Date(arg.end.getTime() + PAD).toISOString()
+            const prev = rangeRef.current
+            if (!prev || prev.start !== start || prev.end !== end) {
+              rangeRef.current = { start, end }
+              fetchEvents()
+            }
+          }}
           locale="ko"
           timeZone="local"
           firstDay={0}

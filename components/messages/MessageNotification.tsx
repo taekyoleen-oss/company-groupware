@@ -37,46 +37,56 @@ export function MessageNotification({ userId, teamId }: MessageNotificationProps
 
   useEffect(() => {
     const supabase = createClient()
-    const channel = supabase
+
+    // 서버측 filter 로 '나에게 온' / '내 팀' 메시지만 구독 → Realtime 이 전체 INSERT 를
+    // 구독자마다 RLS 인가 검사하던 비용을 줄인다(무필터 구독 제거).
+    const handleInsert = (payload: { new: unknown }) => {
+      const msg = payload.new as any
+      // 내가 보낸 메시지는 팝업 생략
+      if (msg.sender_id === userId) return
+
+      // 휴가 취소 승인 → 모달 팝업 (토스트 대신)
+      if (typeof msg.content === 'string' && msg.content.startsWith('[휴가 취소 승인]')) {
+        setVacApproved({
+          id: msg.id,
+          message: msg.content.replace(/^\[휴가 취소 승인\]\s*/, '').trim(),
+        })
+        return
+      }
+
+      // 그 외(거부 포함) → 토스트
+      const notification: Notification = {
+        id:          msg.id,
+        sender_name: msg.sender_name,
+        content:     msg.content,
+        is_team:     !!msg.team_id,
+      }
+
+      setItems(prev => [...prev.slice(-4), notification])
+      timers.current[msg.id] = setTimeout(() => dismiss(msg.id), AUTO_DISMISS_MS)
+    }
+
+    let channel = supabase
       .channel('cg-messages-notify')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'cg_messages' },
-        (payload) => {
-          const msg = payload.new as any
-          // 내가 보낸 메시지는 팝업 생략
-          if (msg.sender_id === userId) return
+      .on('postgres_changes', {
+        event: 'INSERT', schema: 'public', table: 'cg_messages',
+        filter: `recipient_id=eq.${userId}`,
+      }, handleInsert)
 
-          const isForMe   = msg.recipient_id === userId
-          const isForTeam = teamId && msg.team_id === teamId
-          if (!isForMe && !isForTeam) return
+    // 팀 메시지(recipient 없이 team_id 로 발송)도 구독 — 팀이 있을 때만
+    if (teamId) {
+      channel = channel.on('postgres_changes', {
+        event: 'INSERT', schema: 'public', table: 'cg_messages',
+        filter: `team_id=eq.${teamId}`,
+      }, handleInsert)
+    }
 
-          // 휴가 취소 승인 → 모달 팝업 (토스트 대신)
-          if (typeof msg.content === 'string' && msg.content.startsWith('[휴가 취소 승인]')) {
-            setVacApproved({
-              id: msg.id,
-              message: msg.content.replace(/^\[휴가 취소 승인\]\s*/, '').trim(),
-            })
-            return
-          }
+    channel.subscribe()
 
-          // 그 외(거부 포함) → 토스트
-          const notification: Notification = {
-            id:          msg.id,
-            sender_name: msg.sender_name,
-            content:     msg.content,
-            is_team:     !!msg.team_id,
-          }
-
-          setItems(prev => [...prev.slice(-4), notification])
-          timers.current[msg.id] = setTimeout(() => dismiss(msg.id), AUTO_DISMISS_MS)
-        }
-      )
-      .subscribe()
-
+    const timersAtMount = timers.current
     return () => {
       supabase.removeChannel(channel)
-      Object.values(timers.current).forEach(clearTimeout)
+      Object.values(timersAtMount).forEach(clearTimeout)
     }
   }, [userId, teamId, dismiss])
 

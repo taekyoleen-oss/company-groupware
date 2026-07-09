@@ -542,14 +542,19 @@ function AdminPageInner() {
   // 출근 기록 / PC 디바이스 신청·승인 → 실시간 반영
   useEffect(() => {
     const supabase = createClient()
+    // 출근 기록은 아침 출퇴근 시간대에 초당 여러 건이 몰릴 수 있어, 변경마다 fetch 하지 않고
+    // 짧게 debounce 하여 한 번만 갱신한다. 또한 출근 변경 시에는 attendance 만 갱신하고
+    // 예전처럼 fetchAll()(API 8개)을 호출하지 않는다 — 출근 1건이 전체 재조회를 유발하던 문제 제거.
+    let attTimer: ReturnType<typeof setTimeout> | null = null
+    const refreshAttendanceSoon = () => {
+      if (attTimer) clearTimeout(attTimer)
+      attTimer = setTimeout(() => fetchAttendance(attendanceDate), 800)
+    }
     const channel = supabase
       .channel('admin-page-refresh')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'cg_vacation_cancel_requests' }, () => fetchAll())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'cg_vacation_requests' }, () => fetchAll())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'cg_attendance' }, () => {
-        fetchAttendance(attendanceDate)
-        fetchAll()
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cg_attendance' }, refreshAttendanceSoon)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'cg_office_devices' }, () => fetchDevices())
       .subscribe()
     // 다른 컴포넌트(예: AdminSidebar)에서 휴가 취소를 승인하고 확인을 누른 경우에도
@@ -557,6 +562,7 @@ function AdminPageInner() {
     const handler = () => { setActiveTab('vacation'); fetchAll() }
     window.addEventListener('vacation-cancel-approved', handler)
     return () => {
+      if (attTimer) clearTimeout(attTimer)
       supabase.removeChannel(channel)
       window.removeEventListener('vacation-cancel-approved', handler)
     }

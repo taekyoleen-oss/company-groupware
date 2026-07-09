@@ -51,7 +51,9 @@ export function Sidebar() {
   useEffect(() => {
     const now = new Date()
     // 설계서: 다가오는 3개 공개 일정 (company+team, private 제외)
-    fetch(`/api/events?start=${now.toISOString()}`)
+    // 무제한 미래 조회 대신 향후 6개월로 범위를 한정해 Disk IO 를 줄인다.
+    const until = new Date(now.getTime() + 183 * 24 * 60 * 60 * 1000)
+    fetch(`/api/events?start=${now.toISOString()}&end=${until.toISOString()}`)
       .then(r => r.json())
       .then((data: EventWithDetails[]) => {
         const publicEvents = (data as EventWithDetails[]).filter(

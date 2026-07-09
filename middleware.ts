@@ -109,7 +109,9 @@ export const config = {
       페이지 네비게이션만 검사합니다.
       - /api/* : 여기서 로그인으로 리다이렉트하면 응답이 HTML이 되어 fetch/RSC 파싱 오류(TypeError … is not a function) 유발
       - /_next/* : 번들·Flight 등 내부 요청은 통과 (일부만 제외하면 나머지 요청이 미들웨어에 걸림)
+      - 정적 자산(.svg/.png/robots.txt 등) : public 루트 파일 요청마다 auth+cg_profiles 조회가
+        나가던 것을 차단 (Disk IO 절감). 확장자로 끝나는 요청은 통과시킨다.
     */
-    '/((?!api/|_next/|favicon.ico).*)',
+    '/((?!api/|_next/|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|txt|xml|webmanifest|json|css|js|map)$).*)',
   ],
 }
