@@ -302,7 +302,7 @@ export default function ProfilePage() {
     const todayStr = getLocalDateStr()
     Promise.all([
       fetch('/api/admin/settings').then(r => r.json()),
-      fetch(`/api/attendance?date=${todayStr}`, { cache: 'no-store' }).then(r => r.json()),
+      fetch(`/api/attendance?date=${todayStr}`, { cache: 'no-store' }).then(r => r.ok ? r.json() : null),
     ]).then(([settingsData, attendanceData]: [
       CompanySettings, { checked_in_at: string; checked_out_at?: string | null; method?: string } | null
     ]) => {
@@ -360,24 +360,31 @@ export default function ProfilePage() {
     let reject_reason: string | null = null
     if (action === 'reject') {
       const r = window.prompt('거부 사유를 입력해 주세요. (선택)')
-      reject_reason = r ?? null
+      // 취소(Esc/취소 버튼) 시 null → 거부를 진행하지 않고 중단
+      if (r === null) { setEmpRequestProcessing(null); return }
+      reject_reason = r
     }
-    const res = await fetch(`/api/vacation/requests/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, reject_reason }),
-    })
-    setEmpRequestProcessing(null)
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}))
-      showToast((data as any).error ?? '처리에 실패했습니다.', 'error')
-      return
-    }
-    if (action === 'approve') {
-      setApproveComplete({ kind: 'request' })
-    } else {
-      showToast('휴가 신청을 거부했습니다.', 'success')
-      fetchApproverData()
+    try {
+      const res = await fetch(`/api/vacation/requests/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, reject_reason }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        showToast((data as any).error ?? '처리에 실패했습니다.', 'error')
+        return
+      }
+      if (action === 'approve') {
+        setApproveComplete({ kind: 'request' })
+      } else {
+        showToast('휴가 신청을 거부했습니다.', 'success')
+        fetchApproverData()
+      }
+    } catch {
+      showToast('네트워크 오류로 처리하지 못했습니다. 다시 시도해 주세요.', 'error')
+    } finally {
+      setEmpRequestProcessing(null)
     }
   }
 
@@ -444,52 +451,62 @@ export default function ProfilePage() {
   const handleCheckOut = async () => {
     setCheckingOut(true)
     const todayStr = getLocalDateStr()
-    const res = await fetch('/api/attendance/checkout', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date: todayStr }),
-    })
-    const data = await res.json()
-    setCheckingOut(false)
-    if (res.ok) {
-      setViewedAttendance(prev => prev ? { ...prev, checked_out_at: data.checked_out_at ?? new Date().toISOString() } : prev)
-      showToast('퇴근이 확인되었습니다. 수고하셨습니다.', 'success')
-      refetchViewedAttendance(getLocalDateStr())
-    } else {
-      if (data.current_ip) setCurrentIp(data.current_ip)
-      if (res.status === 403) setIpStatus('denied')
-      showToast(data.error ?? '퇴근 확인에 실패했습니다.', 'error')
+    try {
+      const res = await fetch('/api/attendance/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: todayStr }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (res.ok) {
+        setViewedAttendance(prev => prev ? { ...prev, checked_out_at: data.checked_out_at ?? new Date().toISOString() } : prev)
+        showToast('퇴근이 확인되었습니다. 수고하셨습니다.', 'success')
+        refetchViewedAttendance(getLocalDateStr())
+      } else {
+        if (data.current_ip) setCurrentIp(data.current_ip)
+        if (res.status === 403) setIpStatus('denied')
+        showToast(data.error ?? '퇴근 확인에 실패했습니다.', 'error')
+      }
+    } catch {
+      showToast('네트워크 오류로 퇴근 확인에 실패했습니다. 다시 시도해 주세요.', 'error')
+    } finally {
+      setCheckingOut(false)
     }
   }
 
   const handleCheckIn = async () => {
     setCheckingIn(true)
     const todayStr = getLocalDateStr()
-    const res = await fetch('/api/attendance', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date: todayStr }),
-    })
-    const data = await res.json()
-    if (res.ok) {
-      // POST 응답을 즉시 반영
-      setViewedAttendance({ checked_in_at: data.checked_in_at, checked_out_at: data.checked_out_at ?? null, method: data.method })
-      showToast('출근이 확인되었습니다.', 'success')
-      // 서버에서 한 번 더 확인해 상태 영속성 보장
-      refetchViewedAttendance(getLocalDateStr())
-    } else if (res.status === 409) {
-      setViewedAttendance({ checked_in_at: data.checked_in_at, checked_out_at: data.checked_out_at ?? null, method: data.method })
-      showToast('이미 출근 처리되었습니다.', 'success')
-      refetchViewedAttendance(getLocalDateStr())
-    } else {
-      if (data.current_ip) setCurrentIp(data.current_ip)
-      if (res.status === 403) setIpStatus('denied')
-      const msg = data.current_ip
-        ? `${data.error ?? '출근 확인에 실패했습니다.'} (현재 IP: ${data.current_ip})`
-        : (data.error ?? '출근 확인에 실패했습니다.')
-      showToast(msg, 'error')
+    try {
+      const res = await fetch('/api/attendance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: todayStr }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (res.ok) {
+        // POST 응답을 즉시 반영
+        setViewedAttendance({ checked_in_at: data.checked_in_at, checked_out_at: data.checked_out_at ?? null, method: data.method })
+        showToast('출근이 확인되었습니다.', 'success')
+        // 서버에서 한 번 더 확인해 상태 영속성 보장
+        refetchViewedAttendance(getLocalDateStr())
+      } else if (res.status === 409) {
+        setViewedAttendance({ checked_in_at: data.checked_in_at, checked_out_at: data.checked_out_at ?? null, method: data.method })
+        showToast('이미 출근 처리되었습니다.', 'success')
+        refetchViewedAttendance(getLocalDateStr())
+      } else {
+        if (data.current_ip) setCurrentIp(data.current_ip)
+        if (res.status === 403) setIpStatus('denied')
+        const msg = data.current_ip
+          ? `${data.error ?? '출근 확인에 실패했습니다.'} (현재 IP: ${data.current_ip})`
+          : (data.error ?? '출근 확인에 실패했습니다.')
+        showToast(msg, 'error')
+      }
+    } catch {
+      showToast('네트워크 오류로 출근 확인에 실패했습니다. 다시 시도해 주세요.', 'error')
+    } finally {
+      setCheckingIn(false)
     }
-    setCheckingIn(false)
   }
 
   const handleSave = async (e: React.FormEvent) => {

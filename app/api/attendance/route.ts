@@ -26,7 +26,8 @@ export async function GET(request: NextRequest) {
 
   if (error) {
     console.error('[attendance GET] select error:', error.message, { date, user_id: user.id })
-    return NextResponse.json(null)
+    // 200+null 로 위장하면 프론트가 '출근 기록 없음'으로 오인해 재출근을 시도한다 → 에러를 명확히 반환
+    return NextResponse.json({ error: '출근 기록을 불러오지 못했습니다.' }, { status: 500 })
   }
   return NextResponse.json(data ?? null)
 }

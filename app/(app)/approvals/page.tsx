@@ -133,38 +133,50 @@ export default function ApprovalsPage() {
     let reject_reason: string | null = null
     if (action === 'reject') {
       const r = window.prompt('거부 사유를 입력해 주세요. (선택)')
-      reject_reason = r ?? null
+      // 취소(Esc/취소 버튼) 시 null → 거부를 진행하지 않고 중단
+      if (r === null) { setProcessing(null); return }
+      reject_reason = r
     }
-    const res = await fetch(`/api/vacation/requests/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, reject_reason }),
-    })
-    setProcessing(null)
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}))
-      showToast((data as any).error ?? '처리에 실패했습니다.', 'error')
-      return
+    try {
+      const res = await fetch(`/api/vacation/requests/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, reject_reason }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        showToast((data as any).error ?? '처리에 실패했습니다.', 'error')
+        return
+      }
+      if (action === 'approve') setApproveDone('vac')
+      else { showToast('휴가 신청이 거부되었습니다.', 'success'); fetchAll() }
+    } catch {
+      showToast('네트워크 오류로 처리하지 못했습니다. 다시 시도해 주세요.', 'error')
+    } finally {
+      setProcessing(null)
     }
-    if (action === 'approve') setApproveDone('vac')
-    else { showToast('휴가 신청이 거부되었습니다.', 'success'); fetchAll() }
   }
 
   const handleCancelAction = async (id: string, action: 'approve' | 'reject') => {
     setProcessing(id)
-    const res = await fetch(`/api/vacation-cancel-requests/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action }),
-    })
-    setProcessing(null)
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}))
-      showToast((data as any).error ?? '처리에 실패했습니다.', 'error')
-      return
+    try {
+      const res = await fetch(`/api/vacation-cancel-requests/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        showToast((data as any).error ?? '처리에 실패했습니다.', 'error')
+        return
+      }
+      if (action === 'approve') setApproveDone('cancel')
+      else { showToast('취소 신청이 거부되었습니다.', 'success'); fetchAll() }
+    } catch {
+      showToast('네트워크 오류로 처리하지 못했습니다. 다시 시도해 주세요.', 'error')
+    } finally {
+      setProcessing(null)
     }
-    if (action === 'approve') setApproveDone('cancel')
-    else { showToast('취소 신청이 거부되었습니다.', 'success'); fetchAll() }
   }
 
   const saveTotalDays = async (userId: string) => {

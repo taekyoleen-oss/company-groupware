@@ -80,6 +80,11 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
   const [vacationType, setVacationType]     = useState<VacationType>('full')
   const [form, setForm] = useState({ title: '', description: '', start_at: '', end_at: '' })
 
+  // 모달을 열 때마다 진행 상태를 초기화 (직전 저장/삭제의 loading 잔상 방지)
+  useEffect(() => {
+    if (isOpen) { setLoading(false); setDeleting(false); setCancelLoading(false) }
+  }, [isOpen])
+
   // SWR — /api/profiles 가 여러 컴포넌트에서 호출되어도 30s 내 1회만 네트워크
   const { data: profileSwr } = useProfile()
   useEffect(() => {
@@ -203,49 +208,55 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
         : new Date(form.end_at).toISOString(),
       is_all_day: isAllDay,
     }
-    if (eventId) {
-      // 기존 이벤트 수정: cg_events 직접 PATCH (관리자/본인)
-      const res = await fetch(`/api/events/${eventId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...payload,
-          is_vacation: true,
-          visibility: 'company',
-          color: '#F97316',
-          category_id: null,
-        }),
-      })
-      setLoading(false)
-      if (res.ok) {
-        showToast('휴가가 수정되었습니다.', 'success')
-        setTimeout(() => { onSuccess(); onClose() }, 500)
-      } else {
-        const data = await res.json()
-        showToast(data.error ?? '오류가 발생했습니다.', 'error')
+    try {
+      if (eventId) {
+        // 기존 이벤트 수정: cg_events 직접 PATCH (관리자/본인)
+        const res = await fetch(`/api/events/${eventId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...payload,
+            is_vacation: true,
+            visibility: 'company',
+            color: '#F97316',
+            category_id: null,
+          }),
+        })
+        if (res.ok) {
+          showToast('휴가가 수정되었습니다.', 'success')
+          // 성공 시 loading 유지(버튼 비활성)한 채 닫아 중복 제출 방지
+          setTimeout(() => { onSuccess(); onClose() }, 500)
+          return
+        }
+        const data = await res.json().catch(() => ({}))
+        showToast((data as any).error ?? '오류가 발생했습니다.', 'error')
+        setLoading(false)
+        return
       }
-      return
-    }
 
-    // 신규 신청 → /api/vacation/request (자동승인/결재대기를 서버가 분기)
-    const res = await fetch('/api/vacation/request', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    })
-    setLoading(false)
-    if (res.ok) {
-      const data = await res.json().catch(() => ({}))
-      if (data.mode === 'pending') {
-        const targetName = approverName ?? (approverId ? '결재자' : '관리자')
-        showToast(`결재 요청이 ${targetName}에게 전달되었습니다.`, 'success')
-      } else {
-        showToast('휴가가 등록되었습니다.', 'success')
+      // 신규 신청 → /api/vacation/request (자동승인/결재대기를 서버가 분기)
+      const res = await fetch('/api/vacation/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}))
+        if (data.mode === 'pending') {
+          const targetName = approverName ?? (approverId ? '결재자' : '관리자')
+          showToast(`결재 요청이 ${targetName}에게 전달되었습니다.`, 'success')
+        } else {
+          showToast('휴가가 등록되었습니다.', 'success')
+        }
+        setTimeout(() => { onSuccess(); onClose() }, 500)
+        return
       }
-      setTimeout(() => { onSuccess(); onClose() }, 500)
-    } else {
       const data = await res.json().catch(() => ({}))
-      showToast(data.error ?? '오류가 발생했습니다.', 'error')
+      showToast((data as any).error ?? '오류가 발생했습니다.', 'error')
+      setLoading(false)
+    } catch {
+      showToast('네트워크 오류로 저장하지 못했습니다. 다시 시도해 주세요.', 'error')
+      setLoading(false)
     }
   }
 
@@ -265,34 +276,44 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
   const handleDelete = async () => {
     if (!eventId) return
     setDeleting(true)
-    const res = await fetch(`/api/events/${eventId}`, { method: 'DELETE' })
-    setDeleting(false)
-    setDeleteConfirmOpen(false)
-    if (res.ok) {
-      showToast('휴가가 삭제되었습니다.', 'success')
-      setTimeout(() => { onSuccess(); onClose() }, 500)
-    } else {
-      showToast('삭제에 실패했습니다.', 'error')
+    try {
+      const res = await fetch(`/api/events/${eventId}`, { method: 'DELETE' })
+      setDeleteConfirmOpen(false)
+      if (res.ok) {
+        showToast('휴가가 삭제되었습니다.', 'success')
+        setTimeout(() => { onSuccess(); onClose() }, 500)
+      } else {
+        showToast('삭제에 실패했습니다.', 'error')
+      }
+    } catch {
+      showToast('네트워크 오류로 삭제하지 못했습니다. 다시 시도해 주세요.', 'error')
+    } finally {
+      setDeleting(false)
     }
   }
 
   const handleCancelRequest = async () => {
     if (!eventId) return
     setCancelLoading(true)
-    const res = await fetch('/api/vacation-cancel-requests', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ event_id: eventId, reason: cancelReason }),
-    })
-    setCancelLoading(false)
-    if (res.ok) {
-      showToast('취소 신청이 접수되었습니다. 관리자의 승인 후 취소됩니다.', 'success')
-      setCancelRequestOpen(false)
-      setCancelReason('')
-      setTimeout(() => { onSuccess(); onClose() }, 800)
-    } else {
-      const data = await res.json()
-      showToast(data.error ?? '취소 신청에 실패했습니다.', 'error')
+    try {
+      const res = await fetch('/api/vacation-cancel-requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event_id: eventId, reason: cancelReason }),
+      })
+      if (res.ok) {
+        showToast('취소 신청이 접수되었습니다. 관리자의 승인 후 취소됩니다.', 'success')
+        setCancelRequestOpen(false)
+        setCancelReason('')
+        setTimeout(() => { onSuccess(); onClose() }, 800)
+      } else {
+        const data = await res.json().catch(() => ({}))
+        showToast((data as any).error ?? '취소 신청에 실패했습니다.', 'error')
+      }
+    } catch {
+      showToast('네트워크 오류로 취소 신청에 실패했습니다. 다시 시도해 주세요.', 'error')
+    } finally {
+      setCancelLoading(false)
     }
   }
 

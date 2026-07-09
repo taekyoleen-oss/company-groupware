@@ -72,15 +72,21 @@ export default function TodoPage() {
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newTitle.trim()) return
-    await fetch('/api/todos', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: newTitle, due_date: newDueDate || null }),
-    })
-    setNewTitle('')
-    setNewDueDate('')
-    setShowDateInput(false)
-    fetchTodos()
+    try {
+      const res = await fetch('/api/todos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: newTitle, due_date: newDueDate || null }),
+      })
+      // 실패 시 입력 내용을 지우지 않아 재시도 가능
+      if (!res.ok) { alert('할 일 추가에 실패했습니다. 다시 시도해 주세요.'); return }
+      setNewTitle('')
+      setNewDueDate('')
+      setShowDateInput(false)
+      fetchTodos()
+    } catch {
+      alert('네트워크 오류로 추가하지 못했습니다. 다시 시도해 주세요.')
+    }
   }
 
   const handleToggle = async (todo: Todo) => {
@@ -93,23 +99,37 @@ export default function TodoPage() {
   }
 
   const handleDelete = async (id: string) => {
-    await fetch(`/api/todos/${id}`, { method: 'DELETE' })
-    fetchTodos()
+    if (!window.confirm('이 할 일을 삭제하시겠습니까?')) return
+    try {
+      const res = await fetch(`/api/todos/${id}`, { method: 'DELETE' })
+      if (!res.ok) { alert('삭제에 실패했습니다. 다시 시도해 주세요.'); return }
+      fetchTodos()
+    } catch {
+      alert('네트워크 오류로 삭제하지 못했습니다. 다시 시도해 주세요.')
+    }
   }
 
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event
     if (!over || active.id === over.id) return
+    const prev = todos // 실패 시 되돌릴 스냅샷
     const oldIndex = todos.findIndex(t => t.id === active.id)
     const newIndex = todos.findIndex(t => t.id === over.id)
     const reordered = arrayMove(todos, oldIndex, newIndex)
-    setTodos(reordered)
+    setTodos(reordered) // 낙관적 업데이트
     const items = reordered.map((t, i) => ({ id: t.id, sort_order: i }))
-    await fetch('/api/todos/reorder', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items }),
-    })
+    try {
+      const res = await fetch('/api/todos/reorder', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items }),
+      })
+      // 저장 실패 시 원래 순서로 롤백 (새로고침 전까지 서버와 불일치 방지)
+      if (!res.ok) { setTodos(prev); alert('순서 변경에 실패했습니다.') }
+    } catch {
+      setTodos(prev)
+      alert('네트워크 오류로 순서 변경에 실패했습니다.')
+    }
   }
 
   const pending = todos.filter(t => !t.is_done)

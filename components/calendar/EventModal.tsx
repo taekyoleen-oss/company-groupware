@@ -87,6 +87,9 @@ export function EventModal({ isOpen, onClose, initialDate, eventId, onSuccess, o
     }
   }, [initialDate, isOpen])
 
+  // 모달을 열 때마다 저장 버튼을 활성 상태로 초기화 (직전 저장의 loading 잔상 방지)
+  useEffect(() => { if (isOpen) setLoading(false) }, [isOpen])
+
   useEffect(() => {
     if (eventId && isOpen) {
       fetch(`/api/events/${eventId}`).then(r => r.json()).then(data => {
@@ -131,14 +134,20 @@ export function EventModal({ isOpen, onClose, initialDate, eventId, onSuccess, o
     }
     const url = eventId ? `/api/events/${eventId}` : '/api/events'
     const method = eventId ? 'PATCH' : 'POST'
-    const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-    setLoading(false)
-    if (res.ok) {
-      showToast(eventId ? '일정이 수정되었습니다.' : '일정이 등록되었습니다.', 'success')
-      setTimeout(() => { onSuccess(); onClose() }, 500)
-    } else {
-      const data = await res.json()
-      showToast(data.error ?? '오류가 발생했습니다.', 'error')
+    try {
+      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      if (res.ok) {
+        showToast(eventId ? '일정이 수정되었습니다.' : '일정이 등록되었습니다.', 'success')
+        // 성공 시 loading 을 유지(버튼 비활성)한 채 닫아 500ms 창의 중복 제출을 막는다.
+        setTimeout(() => { onSuccess(); onClose() }, 500)
+        return
+      }
+      const data = await res.json().catch(() => ({}))
+      showToast((data as any).error ?? '오류가 발생했습니다.', 'error')
+      setLoading(false)
+    } catch {
+      showToast('네트워크 오류로 저장하지 못했습니다. 다시 시도해 주세요.', 'error')
+      setLoading(false)
     }
   }
 
