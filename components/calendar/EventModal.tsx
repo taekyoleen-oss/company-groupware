@@ -7,12 +7,19 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
 import { useToast } from '@/components/ui/toast'
-import { User, Clock, MapPin, Tag, Eye, Bell } from 'lucide-react'
+import { User, Clock, MapPin, Tag, Eye, Bell, Sun } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { useProfile, useCategories } from '@/lib/hooks/use-shared-data'
 import type { EventCategory } from '@/types/app'
 
 const VISIBILITY_LABEL = { company: '전사 공개', team: '팀 공개', private: '나만 보기' }
+
+export interface VacationPrefill {
+  title: string
+  description: string
+  startDate: string
+  endDate: string
+}
 
 interface EventModalProps {
   isOpen: boolean
@@ -20,9 +27,11 @@ interface EventModalProps {
   initialDate?: Date | null
   eventId?: string | null
   onSuccess: () => void
+  /** 상단 "휴가로 전환" 버튼 클릭 시 입력값을 부모로 전달 (신규 작성 시에만 사용) */
+  onConvertToVacation?: (data: VacationPrefill) => void
 }
 
-export function EventModal({ isOpen, onClose, initialDate, eventId, onSuccess }: EventModalProps) {
+export function EventModal({ isOpen, onClose, initialDate, eventId, onSuccess, onConvertToVacation }: EventModalProps) {
   const { showToast, ToastComponent } = useToast()
   const [categories, setCategories] = useState<EventCategory[]>([])
   const [loading, setLoading]     = useState(false)
@@ -142,6 +151,16 @@ export function EventModal({ isOpen, onClose, initialDate, eventId, onSuccess }:
     await executeSave()
   }
 
+  const handleConvertToVacation = () => {
+    // 입력 중인 날짜·제목·설명을 그대로 휴가 신청 폼으로 이관
+    onConvertToVacation?.({
+      title: form.title,
+      description: form.description,
+      startDate: form.start_at.slice(0, 10),
+      endDate: form.end_at.slice(0, 10),
+    })
+  }
+
   const handleDelete = async () => {
     if (!eventId) return
     setDeleting(true)
@@ -243,6 +262,17 @@ export function EventModal({ isOpen, onClose, initialDate, eventId, onSuccess }:
               </p>
             )}
           </DialogHeader>
+
+          {!eventId && onConvertToVacation && (
+            <button
+              type="button"
+              onClick={handleConvertToVacation}
+              className="mb-1 flex items-center justify-center gap-1.5 w-full rounded-lg border border-orange-300 dark:border-orange-800 bg-orange-50 dark:bg-orange-950/30 py-2 text-sm font-medium text-orange-700 dark:text-orange-300 hover:bg-orange-100 dark:hover:bg-orange-950/50 transition-colors"
+            >
+              <Sun className="h-4 w-4" />
+              휴가로 전환
+            </button>
+          )}
 
           {eventId && !canEdit ? (
             <ReadOnlyView />

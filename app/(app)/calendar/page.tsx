@@ -12,7 +12,7 @@ import { Plus, X, Users, User, Sun } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { EventModal } from '@/components/calendar/EventModal'
-import { VacationModal } from '@/components/calendar/VacationModal'
+import { VacationModal, type VacationPrefill } from '@/components/calendar/VacationModal'
 import { DayEventsPopup } from '@/components/calendar/DayEventsPopup'
 import { resolveEventColor } from '@/lib/utils/eventColor'
 import {
@@ -48,6 +48,7 @@ function CalendarContent() {
   const [isVacationModalOpen, setIsVacationModalOpen] = useState(false)
   const [vacationModalDate, setVacationModalDate]     = useState<Date | null>(null)
   const [vacationEventId, setVacationEventId]         = useState<string | null>(null)
+  const [vacationPrefill, setVacationPrefill]         = useState<VacationPrefill | null>(null)
 
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [isAdminUser,   setIsAdminUser]   = useState(false)
@@ -124,6 +125,19 @@ function CalendarContent() {
     setIsVacationModalOpen(false)
     setVacationModalDate(null)
     setVacationEventId(null)
+    setVacationPrefill(null)
+  }, [])
+
+  // 일반 일정 모달 → 휴가 신청 모달로 전환 (입력값 이관)
+  // 두 모달 모두 anyOpen=true 이므로 히스토리 스택을 건드리지 않고 상태만 교체한다
+  const handleConvertToVacation = useCallback((data: VacationPrefill) => {
+    setIsModalOpen(false)
+    setModalDate(null)
+    setEditEventId(null)
+    setVacationPrefill(data)
+    setVacationModalDate(data.startDate ? new Date(data.startDate + 'T00:00') : new Date())
+    setVacationEventId(null)
+    setIsVacationModalOpen(true)
   }, [])
 
   // SWR — /api/profiles, /api/admin/teams 가 여러 컴포넌트에서 호출되어도 30s dedupe
@@ -393,6 +407,7 @@ function CalendarContent() {
             onClick={() => {
               setVacationModalDate(new Date())
               setVacationEventId(null)
+              setVacationPrefill(null)
               setIsVacationModalOpen(true)
             }}
           >
@@ -498,6 +513,7 @@ function CalendarContent() {
         initialDate={modalDate}
         eventId={editEventId}
         onSuccess={fetchEvents}
+        onConvertToVacation={handleConvertToVacation}
       />
 
       <VacationModal
@@ -505,6 +521,7 @@ function CalendarContent() {
         onClose={closeVacationModal}
         initialDate={vacationModalDate}
         eventId={vacationEventId}
+        prefill={vacationPrefill}
         onSuccess={() => { fetchEvents(); fetchPendingCancels() }}
       />
     </div>

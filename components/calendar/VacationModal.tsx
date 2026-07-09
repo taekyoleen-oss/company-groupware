@@ -30,12 +30,21 @@ interface VacationSummary {
   remaining_days: number
 }
 
+export interface VacationPrefill {
+  title?: string
+  description?: string
+  startDate?: string
+  endDate?: string
+}
+
 export interface VacationModalProps {
   isOpen: boolean
   onClose: () => void
   initialDate?: Date | null
   eventId?: string | null
   onSuccess: () => void
+  /** 일반 일정에서 "휴가로 전환" 시 넘어온 초기값 (신규 신청 시에만 사용) */
+  prefill?: VacationPrefill | null
 }
 
 function calcDays(startStr: string, endStr: string): number {
@@ -47,7 +56,7 @@ function buildTitle(type: VacationType, name: string): string {
   return name ? `${label}(${name})` : label
 }
 
-export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess }: VacationModalProps) {
+export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess, prefill }: VacationModalProps) {
   const { showToast, ToastComponent } = useToast()
 
   const [loading, setLoading]                     = useState(false)
@@ -91,22 +100,25 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
     if (!isOpen || eventId) return
     const date = initialDate ?? new Date()
     const dateStr = format(date, 'yyyy-MM-dd')
+    const startStr = prefill?.startDate ?? dateStr
+    const endStr = prefill?.endDate ?? startStr
     setEventData(null)
     setCreatedBy(null)
     setAuthorName(null)
     setVacationType('full')
     setForm({
-      title: buildTitle('full', currentUserName),
-      description: '',
-      start_at: dateStr + 'T00:00',
-      end_at: dateStr + 'T00:00',
+      title: prefill?.title || buildTitle('full', currentUserName),
+      description: prefill?.description ?? '',
+      start_at: startStr + 'T00:00',
+      end_at: endStr + 'T00:00',
     })
     fetch('/api/vacation').then(r => r.json()).then(setVacationSummary).catch(() => {})
   }, [isOpen, eventId, initialDate]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Update title when currentUserName loads (new vacation only)
   useEffect(() => {
-    if (!eventId && isOpen && currentUserName) {
+    // 전환으로 넘어온 사용자 지정 제목은 덮어쓰지 않는다
+    if (!eventId && isOpen && currentUserName && !prefill?.title) {
       setForm(f => ({ ...f, title: buildTitle(vacationType, currentUserName) }))
     }
   }, [currentUserName]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -143,7 +155,8 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
                              { start: 'T14:00', end: 'T18:00' }
     setForm(f => ({
       ...f,
-      title: buildTitle(type, currentUserName),
+      // 전환으로 넘어온 사용자 지정 제목은 유지, 그 외에는 유형에 맞춰 자동 생성
+      title: prefill?.title ? f.title : buildTitle(type, currentUserName),
       start_at: dateStr + times.start,
       end_at: dateStr + times.end,
     }))
