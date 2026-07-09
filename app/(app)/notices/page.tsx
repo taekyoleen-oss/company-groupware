@@ -81,31 +81,48 @@ function prefixTone(tag: string | null): { bar: string; chip: string; chipText: 
 export default function NoticesPage() {
   const [tab, setTab] = useState<'company' | 'team'>('company')
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [notices, setNotices] = useState<NoticeWithDetails[]>([])
   const [hasMore, setHasMore] = useState(false)
   const [cursor, setCursor] = useState<string | undefined>()
   const [loading, setLoading] = useState(false)
   const loaderRef = useRef<HTMLDivElement>(null)
+  const abortRef = useRef<AbortController | null>(null)
+
+  // 입력마다 즉시 검색하지 않고 300ms debounce → 타이핑 중 과도한 요청 방지
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300)
+    return () => clearTimeout(t)
+  }, [search])
 
   const fetchNotices = useCallback(async (reset = false) => {
     setLoading(true)
+    // 이전 요청 취소 → 빠른 타이핑 시 늦게 도착한 응답이 최신 결과를 덮어쓰는 레이스 방지
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
     const c = reset ? undefined : cursor
-    const params = new URLSearchParams({ tab, search })
+    const params = new URLSearchParams({ tab, search: debouncedSearch })
     if (c) params.set('cursor', c)
-    const res = await fetch(`/api/notices?${params}`)
-    if (!res.ok) { setLoading(false); return }
-    const data = await res.json()
-    setNotices(prev => reset ? data.items : [...prev, ...data.items])
-    setHasMore(data.hasMore)
-    if (data.items.length > 0) setCursor(data.items[data.items.length - 1].created_at)
-    setLoading(false)
-  }, [tab, search, cursor])
+    try {
+      const res = await fetch(`/api/notices?${params}`, { signal: controller.signal })
+      if (!res.ok) { setLoading(false); return }
+      const data = await res.json()
+      setNotices(prev => reset ? data.items : [...prev, ...data.items])
+      setHasMore(data.hasMore)
+      if (data.items.length > 0) setCursor(data.items[data.items.length - 1].created_at)
+      setLoading(false)
+    } catch (e) {
+      // 취소된 요청은 무시, 그 외 오류만 로딩 해제
+      if ((e as any)?.name !== 'AbortError') setLoading(false)
+    }
+  }, [tab, debouncedSearch, cursor])
 
   useEffect(() => {
     setNotices([])
     setCursor(undefined)
     fetchNotices(true)
-  }, [tab, search])
+  }, [tab, debouncedSearch])
 
   useEffect(() => {
     const observer = new IntersectionObserver(entries => {

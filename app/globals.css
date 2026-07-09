@@ -59,6 +59,26 @@ body {
   font-weight: 600 !important;
   color: var(--text-primary) !important;
 }
+/* 모바일(≤640px): 툴바 3구역을 세로로 쌓아 제목·버튼 겹침/줄바꿈 방지 (375px 대응) */
+@media (max-width: 640px) {
+  .fc .fc-toolbar.fc-header-toolbar {
+    flex-direction: column;
+    gap: 0.5rem;
+    align-items: stretch;
+    margin-bottom: 0.75rem !important;
+  }
+  .fc .fc-toolbar-chunk {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+  }
+  .fc .fc-toolbar-title { font-size: 1rem !important; }
+  .fc .fc-button {
+    font-size: 0.7rem !important;
+    padding: 0.25rem 0.5rem !important;
+  }
+}
 .fc-event {
   border-radius: 4px !important;
   padding: 1px 4px !important;

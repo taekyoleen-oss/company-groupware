@@ -82,14 +82,14 @@ export function ForwardModal({
           </DialogHeader>
 
           {/* 원본 메시지 미리보기 */}
-          <div className="rounded-lg bg-[#F9FAFB] border border-[#E5E7EB] px-3 py-2.5">
-            <p className="text-[10px] text-[#9CA3AF] mb-1">원본 메시지 — {originalSender}</p>
-            <p className="text-xs text-[#374151] line-clamp-3 break-words">{originalContent}</p>
+          <div className="rounded-lg bg-[#F9FAFB] dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-[#334155] px-3 py-2.5">
+            <p className="text-[10px] text-[#9CA3AF] dark:text-[#64748B] mb-1">원본 메시지 — {originalSender}</p>
+            <p className="text-xs text-[#374151] dark:text-[#CBD5E1] line-clamp-3 break-words">{originalContent}</p>
           </div>
 
           {/* 수신자 선택 */}
           <div>
-            <label className="block text-xs font-medium text-[#374151] mb-1.5">
+            <label className="block text-xs font-medium text-[#374151] dark:text-[#CBD5E1] mb-1.5">
               {mode === 'reply' ? '답장 대상' : '전달 대상'} *
             </label>
             <RecipientSelect
@@ -101,14 +101,14 @@ export function ForwardModal({
 
           {/* 추가 메시지 */}
           <div>
-            <label className="block text-xs font-medium text-[#374151] mb-1.5">
+            <label className="block text-xs font-medium text-[#374151] dark:text-[#CBD5E1] mb-1.5">
               {mode === 'reply' ? '답장 내용' : '추가 메시지'} (선택)
             </label>
             <textarea
               value={note}
               onChange={e => setNote(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleSend() }}
-              className="w-full rounded-lg border border-[#E5E7EB] px-3 py-2 text-sm resize-none h-20 focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
+              className="w-full rounded-lg border border-[#E5E7EB] dark:border-[#334155] dark:bg-[#0F172A] dark:text-[#E2E8F0] dark:placeholder:text-[#64748B] px-3 py-2 text-sm resize-none h-20 focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
               placeholder={mode === 'reply' ? '답장 메시지를 입력하세요...' : '전달 시 추가할 메시지를 입력하세요...'}
             />
           </div>

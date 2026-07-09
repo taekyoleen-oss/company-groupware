@@ -37,12 +37,12 @@ export function DayEventsPopup({
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle className="text-base font-semibold text-[#111827]">
+          <DialogTitle className="text-base font-semibold text-[#111827] dark:text-[#F1F5F9]">
             {dateLabel} 일정
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-2">
+        <div className="space-y-2 max-h-[60vh] overflow-y-auto">
           {events.map(event => {
             const color = resolveEventColor({
               color: event.color,
@@ -53,26 +53,26 @@ export function DayEventsPopup({
               <button
                 key={event.id}
                 onClick={() => onEventClick(event.id)}
-                className="w-full flex items-start gap-3 rounded-lg border border-[#E5E7EB] px-3 py-2.5 text-left hover:bg-[#F9FAFB] transition-colors"
+                className="w-full flex items-start gap-3 rounded-lg border border-[#E5E7EB] dark:border-[#334155] px-3 py-2.5 text-left hover:bg-[#F9FAFB] dark:hover:bg-[#334155] transition-colors"
               >
                 <span
                   className="mt-0.5 h-3 w-3 shrink-0 rounded-full"
                   style={{ backgroundColor: color }}
                 />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-[#111827]">{event.title}</p>
-                  <p className="mt-0.5 flex items-center gap-1 text-xs text-[#6B7280]">
+                  <p className="truncate text-sm font-medium text-[#111827] dark:text-[#F1F5F9]">{event.title}</p>
+                  <p className="mt-0.5 flex items-center gap-1 text-xs text-[#6B7280] dark:text-[#94A3B8]">
                     <Clock className="h-3 w-3 shrink-0" />
                     {formatEventTime(event)}
                   </p>
                   {event.location && (
-                    <p className="mt-0.5 flex items-center gap-1 text-xs text-[#6B7280]">
+                    <p className="mt-0.5 flex items-center gap-1 text-xs text-[#6B7280] dark:text-[#94A3B8]">
                       <MapPin className="h-3 w-3 shrink-0" />
                       <span className="truncate">{event.location}</span>
                     </p>
                   )}
                   {event.author && (
-                    <p className="mt-0.5 flex items-center gap-1 text-xs text-[#9CA3AF]">
+                    <p className="mt-0.5 flex items-center gap-1 text-xs text-[#9CA3AF] dark:text-[#64748B]">
                       <User className="h-3 w-3 shrink-0" />
                       <span className="truncate">{(event.author as any).full_name}</span>
                     </p>

@@ -13,7 +13,10 @@ import type { Todo } from '@/types/app'
 function SortableTodoItem({ todo, onToggle, onDelete }: { todo: Todo; onToggle: () => void; onDelete: () => void }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: todo.id })
 
-  const isOverdue = todo.due_date && !todo.is_done && new Date(todo.due_date) < new Date()
+  // 마감일 '당일'은 지연이 아니다. 날짜 문자열끼리 비교(로컬 오늘) → KST 09:00부터 지연으로 표시되던 버그 수정.
+  // (new Date('YYYY-MM-DD') 는 UTC 자정 파싱이라 now 와 비교 시 당일 오전에 이미 과거가 됨)
+  const todayStr = new Date().toLocaleDateString('sv-SE') // 로컬 기준 YYYY-MM-DD
+  const isOverdue = todo.due_date && !todo.is_done && todo.due_date < todayStr
 
   return (
     <div
@@ -24,7 +27,7 @@ function SortableTodoItem({ todo, onToggle, onDelete }: { todo: Todo; onToggle: 
         isDragging && 'opacity-50 shadow-lg'
       )}
     >
-      <span {...attributes} {...listeners} className="cursor-grab text-[#6B7280] opacity-0 group-hover:opacity-100">
+      <span {...attributes} {...listeners} className="cursor-grab text-[#6B7280] opacity-100 md:opacity-0 md:group-hover:opacity-100">
         <GripVertical className="h-4 w-4" />
       </span>
       <button
@@ -48,7 +51,7 @@ function SortableTodoItem({ todo, onToggle, onDelete }: { todo: Todo; onToggle: 
           {todo.due_date}
         </span>
       )}
-      <button onClick={onDelete} className="opacity-0 group-hover:opacity-100 text-[#EF4444]">
+      <button onClick={onDelete} className="opacity-100 md:opacity-0 md:group-hover:opacity-100 text-[#EF4444]">
         <Trash2 className="h-4 w-4" />
       </button>
     </div>

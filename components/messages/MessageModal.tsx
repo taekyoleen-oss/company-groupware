@@ -63,8 +63,8 @@ export function MessageModal({
             </DialogTitle>
           </DialogHeader>
 
-          <p className="text-sm text-[#6B7280]">
-            <span className="font-medium text-[#111827]">{target}</span> 메시지를 보냅니다.
+          <p className="text-sm text-[#6B7280] dark:text-[#94A3B8]">
+            <span className="font-medium text-[#111827] dark:text-[#F1F5F9]">{target}</span> 메시지를 보냅니다.
           </p>
 
           <textarea
@@ -73,7 +73,7 @@ export function MessageModal({
             onKeyDown={e => {
               if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) handleSend()
             }}
-            className="w-full rounded-lg border border-[#E5E7EB] px-3 py-2 text-sm resize-none h-28 focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
+            className="w-full rounded-lg border border-[#E5E7EB] dark:border-[#334155] dark:bg-[#0F172A] dark:text-[#E2E8F0] dark:placeholder:text-[#64748B] px-3 py-2 text-sm resize-none h-28 focus:outline-none focus:ring-2 focus:ring-[#2563EB]"
             placeholder="메시지를 입력하세요... (Ctrl+Enter 전송)"
             autoFocus
           />

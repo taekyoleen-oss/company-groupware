@@ -37,17 +37,19 @@ export const KOREAN_PUBLIC_HOLIDAY_DATES = new Set<string>([
 
 /** 시작일~종료일 사이 영업일(평일+비공휴일) 수를 계산합니다. */
 export function countWorkdays(startDateStr: string, endDateStr: string): number {
+  // 'YYYY-MM-DD' 는 UTC 자정으로 파싱되므로 요일·날짜 계산도 UTC 기준으로 일관되게 처리한다.
+  // (이전에는 getDay()[로컬] 와 toISOString()[UTC] 를 혼용해 음수 오프셋 서버에서 요일이 하루 어긋났다.)
   const start = new Date(startDateStr)
   const end = new Date(endDateStr)
   let count = 0
   const cur = new Date(start)
   while (cur <= end) {
-    const day = cur.getDay()
+    const day = cur.getUTCDay()
     const dateStr = cur.toISOString().slice(0, 10)
     if (day !== 0 && day !== 6 && !KOREAN_PUBLIC_HOLIDAY_DATES.has(dateStr)) {
       count++
     }
-    cur.setDate(cur.getDate() + 1)
+    cur.setUTCDate(cur.getUTCDate() + 1)
   }
   return count
 }

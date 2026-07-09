@@ -73,24 +73,24 @@ function MessageDetailDialog({
         </DialogHeader>
 
         {/* Meta */}
-        <div className="rounded-lg bg-[#F9FAFB] border border-[#E5E7EB] px-4 py-3 space-y-1.5 text-xs">
+        <div className="rounded-lg bg-[#F9FAFB] dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-[#334155] px-4 py-3 space-y-1.5 text-xs">
           <div className="flex justify-between">
-            <span className="text-[#6B7280]">{isSent ? '받는 사람' : '보낸 사람'}</span>
-            <span className="font-semibold text-[#111827] flex items-center gap-1">
+            <span className="text-[#6B7280] dark:text-[#94A3B8]">{isSent ? '받는 사람' : '보낸 사람'}</span>
+            <span className="font-semibold text-[#111827] dark:text-[#F1F5F9] flex items-center gap-1">
               {targetLabel}
               {!isSent && msg.team_id && (
-                <span className="text-[10px] text-[#6B7280] font-normal bg-[#F3F4F6] px-1.5 py-0.5 rounded">팀</span>
+                <span className="text-[10px] text-[#6B7280] dark:text-[#94A3B8] font-normal bg-[#F3F4F6] dark:bg-[#334155] px-1.5 py-0.5 rounded">팀</span>
               )}
             </span>
           </div>
           <div className="flex justify-between">
-            <span className="text-[#6B7280]">시간</span>
-            <span className="text-[#374151]">{formatFull(msg.created_at)}</span>
+            <span className="text-[#6B7280] dark:text-[#94A3B8]">시간</span>
+            <span className="text-[#374151] dark:text-[#CBD5E1]">{formatFull(msg.created_at)}</span>
           </div>
           {isSent && (
             <div className="flex justify-between">
-              <span className="text-[#6B7280]">읽음 여부</span>
-              <span className={msg.is_read ? 'text-[#10B981] font-medium' : 'text-[#9CA3AF]'}>
+              <span className="text-[#6B7280] dark:text-[#94A3B8]">읽음 여부</span>
+              <span className={msg.is_read ? 'text-[#10B981] font-medium' : 'text-[#9CA3AF] dark:text-[#64748B]'}>
                 {msg.is_read ? '✓ 읽음' : '미확인'}
               </span>
             </div>
@@ -98,8 +98,8 @@ function MessageDetailDialog({
         </div>
 
         {/* Content */}
-        <div className="rounded-lg border border-[#E5E7EB] px-4 py-3">
-          <p className="text-sm text-[#111827] whitespace-pre-wrap break-words leading-relaxed">
+        <div className="rounded-lg border border-[#E5E7EB] dark:border-[#334155] px-4 py-3">
+          <p className="text-sm text-[#111827] dark:text-[#F1F5F9] whitespace-pre-wrap break-words leading-relaxed">
             {msg.content}
           </p>
         </div>
