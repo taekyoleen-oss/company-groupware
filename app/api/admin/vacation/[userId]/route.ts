@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { isSuperAdmin } from '@/lib/auth/roles'
 
 // PATCH: 휴가 관련 직원 속성 변경
@@ -64,7 +64,10 @@ export async function PATCH(
       }
       newApprover = approver_id
     }
-    const { error } = await supabase
+    // approver_id 는 authenticated 컬럼 UPDATE 권한이 회수되어 있어(step28) service_role 로 수행.
+    // 권한 확인은 위 isAdmin 게이트로 이미 완료.
+    const admin = createAdminClient()
+    const { error } = await admin
       .from('cg_profiles')
       .update({ approver_id: newApprover })
       .eq('id', userId)

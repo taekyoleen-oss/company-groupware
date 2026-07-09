@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { isSuperAdmin } from '@/lib/auth/roles'
 
 // PATCH: 승인/거절/라벨 변경
@@ -43,7 +43,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     return NextResponse.json({ error: '변경할 항목이 없습니다.' }, { status: 400 })
   }
 
-  const { data, error } = await supabase
+  // status/decided_* 는 authenticated 컬럼 권한이 회수되어 있어(step28) service_role 로 수행.
+  // 권한 확인은 위 isSuperAdmin 게이트로 이미 완료.
+  const admin = createAdminClient()
+  const { data, error } = await admin
     .from('cg_office_devices')
     .update(update)
     .eq('id', id)

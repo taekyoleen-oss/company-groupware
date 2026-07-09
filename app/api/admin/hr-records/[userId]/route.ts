@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { isSuperAdmin } from '@/lib/auth/roles'
 
 // 인사기록 단건 GET/PUT/DELETE — 앱관리자만
+// resident_id/notes 는 authenticated 에게 컬럼 권한이 회수되어 있으므로(step28),
+// 앱관리자 권한 확인 후 service_role 클라이언트로 평문/메모까지 조회·수정한다.
+// (이전에는 "본인" 도 조회를 허용해 일반 회원이 자기 userId 로 평문 주민번호를 받을 수 있었다 — 제거됨.)
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ userId: string }> }
@@ -18,12 +21,13 @@ export async function GET(
     .eq('id', user.id)
     .single()
 
-  // 앱관리자 또는 본인만 조회 가능
-  if (!isSuperAdmin(me) && user.id !== userId) {
+  // 앱관리자만 조회 가능 (본인 인사기록은 /api/hr-records 에서 마스킹된 형태로만 제공)
+  if (!isSuperAdmin(me)) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  const { data, error } = await supabase
+  const admin = createAdminClient()
+  const { data, error } = await admin
     .from('cg_hr_records')
     .select('*')
     .eq('user_id', userId)
@@ -84,7 +88,8 @@ export async function PUT(
     }
   }
 
-  const { data, error } = await supabase
+  const admin = createAdminClient()
+  const { data, error } = await admin
     .from('cg_hr_records')
     .upsert(payload as never, { onConflict: 'user_id' })
     .select('*')

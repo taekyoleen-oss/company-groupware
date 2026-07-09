@@ -1,18 +1,24 @@
 import type { NextRequest } from 'next/server'
 
-// 신뢰할 수 있는 프록시 헤더 우선순위로 클라이언트 IP 추출
+// 클라이언트 IP 추출 — 신뢰할 수 있는 프록시가 세팅한 값만 사용한다.
+//
+// 보안 주의: cf-connecting-ip 나 x-forwarded-for 의 "가장 왼쪽" 값은 클라이언트가
+// 임의로 붙일 수 있어 위조 가능하다(재택에서 사무실 IP 를 흉내내 출근 체크 우회).
+// 이 앱은 Vercel 배포이며 Cloudflare 가 앞단에 없으므로:
+//   1) Vercel 이 실제 접속 IP 로 세팅하는 x-real-ip 를 최우선 신뢰한다(클라이언트가 덮어쓸 수 없음).
+//   2) 폴백으로 x-forwarded-for 의 "가장 오른쪽"(신뢰 프록시가 덧붙인 실제 IP) 값을 사용한다.
+// Cloudflare 등 다른 프록시를 실제로 앞단에 두는 배포로 바뀌면 이 우선순위를 재검토할 것.
 export function getClientIp(request: NextRequest): string | null {
   const headers = request.headers
-  const cf = headers.get('cf-connecting-ip')
-  if (cf) return normalizeIp(cf.trim())
 
   const real = headers.get('x-real-ip')
   if (real) return normalizeIp(real.trim())
 
   const forwarded = headers.get('x-forwarded-for')
   if (forwarded) {
-    const first = forwarded.split(',')[0].trim()
-    if (first) return normalizeIp(first)
+    const parts = forwarded.split(',').map(s => s.trim()).filter(Boolean)
+    const last = parts[parts.length - 1]
+    if (last) return normalizeIp(last)
   }
 
   return null

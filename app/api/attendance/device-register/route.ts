@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { getClientIp, ipMatchesCidr } from '@/lib/utils/cidr'
 
 // POST: 직원이 본인 PC 등록을 요청. 사무실 IP에서만 가능.
@@ -65,7 +65,10 @@ export async function POST(request: NextRequest) {
       update.decided_at = null
       update.decided_by = null
     }
-    const { data, error } = await supabase
+    // status/requested_at 등은 authenticated 컬럼 권한이 회수되어 있어(step28) service_role 로 기록.
+    // 이 라우트는 위에서 '활성 회원 + 사무실 IP' 를 이미 검증했고, status 값은 서버가 통제('pending' 만 설정)한다.
+    const admin = createAdminClient()
+    const { data, error } = await admin
       .from('cg_office_devices')
       .update(update)
       .eq('id', existing.id)
@@ -75,7 +78,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(data)
   }
 
-  const { data, error } = await supabase
+  const admin = createAdminClient()
+  const { data, error } = await admin
     .from('cg_office_devices')
     .insert({
       user_id: user.id,
