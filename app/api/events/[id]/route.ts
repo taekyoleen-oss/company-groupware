@@ -29,8 +29,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (!isOwner && !isAdmin) return NextResponse.json({ error: '수정 권한이 없습니다.' }, { status: 403 })
 
   // 휴가 이벤트는 수정 불가 (Admin 포함 — 취소 신청으로만 처리)
+  // (이전엔 body._allow_vacation_patch 로 우회 가능한 죽은 플래그가 있었으나, 정당한 발신처가 없고
+  //  spread 시 존재하지 않는 컬럼 UPDATE 로 오히려 500 을 유발해 제거함)
   const body = await request.json()
-  if (event.is_vacation && !body._allow_vacation_patch) {
+  if (event.is_vacation) {
     return NextResponse.json({ error: '확정된 휴가는 수정할 수 없습니다. 취소 신청을 이용해 주세요.' }, { status: 403 })
   }
 
