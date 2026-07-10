@@ -89,12 +89,21 @@ NOTIFY pgrst, 'reload schema';
   ```
 - 재생성 후 `npx tsc --noEmit` 확인 → `as any` 를 점진적으로 제거 가능.
 
-### ☐ 마이그레이션 베이스라인 정식화
-- 실 DB 는 `output/step1~29` 를 수동 실행해 만들어졌고, `supabase/migrations/` 는 사실상 비어 있어 **저장소만으로 스키마 재현이 불가**합니다.
-- 재해 복구·재구축을 위해 단일 베이스라인 생성 권장:
+### ◐ 마이그레이션 베이스라인 정식화 (부분 완료 — 정본 덤프는 도구 필요)
+- **재현성은 이미 확보됨(검증):** 실 DB 는 `output/step1~30` 을 순서대로 실행해 만들어졌고, 이 파일들이 모두
+  저장소에 커밋돼 있습니다. 라이브 스키마와 교차검증 결과 **17개 `cg_` 테이블 전부 + RPC 2개가 커버**되어,
+  저장소만으로 스키마 재현이 가능합니다. (재해 복구 관점의 목표는 사실상 달성)
+- `supabase/config.toml` 을 추가해 CLI 프로젝트로 인식되게 준비해 뒀습니다.
+- **남은 것 = CLI 포맷의 단일 정본 베이스라인**(`supabase/migrations/…_remote_schema.sql`). 이건 `supabase db pull`/
+  `db dump` 로만 만드는데, **두 명령 모두 Docker 로 pg_dump 를 구동**합니다(최신 CLI 2.109 도 동일). 현재 PC 에
+  Docker·네이티브 pg_dump 가 없어 보류. 인증은 `--db-url` 없이도 저장된 액세스 토큰으로 통과하므로 **DB 비밀번호는 불필요**.
+- 정본 베이스라인을 원하면 둘 중 하나 설치 후 실행:
   ```bash
-  supabase db pull        # 현재 DB 스키마를 마이그레이션으로 덤프
-  git add supabase/migrations && git commit -m "chore(db): 스키마 베이스라인 정식화"
+  # (A) Docker Desktop 설치 후 — 토큰 인증, 비밀번호 불필요
+  supabase db pull
+  # (B) PostgreSQL client(pg_dump) 설치 후 — 더 가벼움 (비밀번호는 PGPASSWORD 로 안전 처리)
+  #     supabase db dump --linked -f supabase/migrations/<timestamp>_remote_schema.sql
+  git add supabase/config.toml supabase/migrations && git commit -m "chore(db): 스키마 베이스라인 정식화"
   ```
 
 ### ☐ 휴가 결재 정합성 (다음 일괄 처리 예정)
