@@ -614,9 +614,154 @@ export interface Database {
           }
         ]
       }
+      cg_messages: {
+        Row: {
+          id: string
+          sender_id: string
+          sender_name: string
+          recipient_id: string | null
+          recipient_name: string | null
+          team_id: string | null
+          team_name: string | null
+          content: string
+          is_read: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          sender_id: string
+          sender_name: string
+          recipient_id?: string | null
+          recipient_name?: string | null
+          team_id?: string | null
+          team_name?: string | null
+          content: string
+          is_read?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          sender_id?: string
+          sender_name?: string
+          recipient_id?: string | null
+          recipient_name?: string | null
+          team_id?: string | null
+          team_name?: string | null
+          content?: string
+          is_read?: boolean
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'cg_messages_team_id_fkey'
+            columns: ['team_id']
+            isOneToOne: false
+            referencedRelation: 'cg_teams'
+            referencedColumns: ['id']
+          }
+        ]
+      }
+      cg_message_hides: {
+        Row: {
+          message_id: string
+          user_id: string
+          hidden_at: string
+        }
+        Insert: {
+          message_id: string
+          user_id: string
+          hidden_at?: string
+        }
+        Update: {
+          message_id?: string
+          user_id?: string
+          hidden_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'cg_message_hides_message_id_fkey'
+            columns: ['message_id']
+            isOneToOne: false
+            referencedRelation: 'cg_messages'
+            referencedColumns: ['id']
+          }
+        ]
+      }
+      cg_hr_records: {
+        Row: {
+          user_id: string
+          hire_date: string | null
+          hire_position: string | null
+          phone: string | null
+          emergency_contact: string | null
+          address: string | null
+          resident_id: string | null
+          notes: string | null
+          education: Json
+          career: Json
+          certificates: Json
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          user_id: string
+          hire_date?: string | null
+          hire_position?: string | null
+          phone?: string | null
+          emergency_contact?: string | null
+          address?: string | null
+          resident_id?: string | null
+          notes?: string | null
+          education?: Json
+          career?: Json
+          certificates?: Json
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          user_id?: string
+          hire_date?: string | null
+          hire_position?: string | null
+          phone?: string | null
+          emergency_contact?: string | null
+          address?: string | null
+          resident_id?: string | null
+          notes?: string | null
+          education?: Json
+          career?: Json
+          certificates?: Json
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: 'cg_hr_records_user_id_fkey'
+            columns: ['user_id']
+            isOneToOne: true
+            referencedRelation: 'cg_profiles'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'cg_hr_records_updated_by_fkey'
+            columns: ['updated_by']
+            isOneToOne: false
+            referencedRelation: 'cg_profiles'
+            referencedColumns: ['id']
+          }
+        ]
+      }
     }
     Views: Record<string, never>
-    Functions: Record<string, never>
+    Functions: {
+      approve_vacation_request: {
+        Args: { p_request_id: string; p_reviewer_id: string }
+        Returns: string
+      }
+      approve_vacation_cancel: {
+        Args: { p_cancel_id: string; p_reviewer_id: string }
+        Returns: undefined
+      }
+    }
     Enums: Record<string, never>
     CompositeTypes: Record<string, never>
   }
