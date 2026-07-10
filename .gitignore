@@ -44,3 +44,8 @@ login-credentials.local.md
 *.tsbuildinfo
 next-env.d.ts
 .gstack/
+
+# 세션·CLI 임시 파일
+.claude/scheduled_tasks.lock
+.playwright-mcp/
+supabase/.temp/
