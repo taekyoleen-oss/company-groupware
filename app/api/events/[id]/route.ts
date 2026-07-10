@@ -53,12 +53,18 @@ export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id:
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { data: profile } = await supabase.from('cg_profiles').select('role, is_super_admin').eq('id', user.id).single()
-  const { data: event } = await supabase.from('cg_events').select('created_by').eq('id', id).single()
+  const { data: event } = await supabase.from('cg_events').select('created_by, is_vacation').eq('id', id).single()
   if (!event) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   const isOwner = event.created_by === user.id
   const isAdmin = isSuperAdmin(profile)
   if (!isOwner && !isAdmin) return NextResponse.json({ error: '삭제 권한이 없습니다.' }, { status: 403 })
+
+  // 확정된 휴가 이벤트는 직접 삭제 불가 — 취소 결재 흐름으로만 제거해 결재 우회를 막는다.
+  // (PATCH 와 동일 정책. 예외적 정리는 앱관리자가 SQL Editor 로 수행.)
+  if (event.is_vacation) {
+    return NextResponse.json({ error: '확정된 휴가는 삭제할 수 없습니다. 취소 신청을 이용해 주세요.' }, { status: 403 })
+  }
 
   const { error } = await supabase.from('cg_events').delete().eq('id', id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })

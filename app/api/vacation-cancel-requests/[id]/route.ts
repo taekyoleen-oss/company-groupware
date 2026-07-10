@@ -87,36 +87,24 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const reviewedAt = new Date().toISOString()
 
     if (action === 'approve') {
-      const { error: updateError } = await (supabase as any)
-        .from('cg_vacation_cancel_requests')
-        .update({
-          status:      'approved',
-          reviewed_by: user.id,
-          reviewed_at: reviewedAt,
-          ...eventSnapshot,
-        })
-        .eq('id', id)
+      // 스냅샷 기록 + 휴가 이벤트 삭제를 단일 트랜잭션 RPC 로 원자 처리한다.
+      //   - 행 잠금으로 동시 승인을 직렬화, 부분 실패(스냅샷만 되고 이벤트가 남는 상태) 방지.
+      //   - RPC 는 service_role 만 실행 가능 (권한은 위 canApprove 로 이미 검증).
+      const admin = await createAdminClient()
+      const { error: rpcErr } = await (admin as any).rpc('approve_vacation_cancel', {
+        p_cancel_id: id,
+        p_reviewer_id: user.id,
+      })
 
-      if (updateError) {
-        return NextResponse.json(
-          { error: `승인 처리 실패: ${updateError.message}` },
-          { status: 500 }
-        )
-      }
-
-      if (cancelReq.event_id) {
-        const admin = await createAdminClient()
-        const { error: deleteError } = await admin
-          .from('cg_events')
-          .delete()
-          .eq('id', cancelReq.event_id)
-
-        if (deleteError) {
-          return NextResponse.json(
-            { error: `휴가 일정 삭제 실패: ${deleteError.message}` },
-            { status: 500 }
-          )
+      if (rpcErr) {
+        const msg = rpcErr.message ?? ''
+        if (msg.includes('ALREADY_PROCESSED')) {
+          return NextResponse.json({ error: '이미 처리된 요청입니다.' }, { status: 400 })
         }
+        if (msg.includes('REQUEST_NOT_FOUND')) {
+          return NextResponse.json({ error: '요청을 찾을 수 없습니다.' }, { status: 404 })
+        }
+        return NextResponse.json({ error: `승인 처리 실패: ${msg}` }, { status: 500 })
       }
     } else {
       const { error: updateError } = await (supabase as any)

@@ -2,6 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { isSuperAdmin } from '@/lib/auth/roles'
 
+// KST(+9) 기준 날짜/시각 문자열
+function kstDateStr(iso: string): string {
+  return new Date(new Date(iso).getTime() + 9 * 3600000).toISOString().slice(0, 10)
+}
+function kstTimeStr(iso: string): string {
+  return new Date(new Date(iso).getTime() + 9 * 3600000).toISOString().slice(11, 16)
+}
+
 // POST: 휴가 신청
 //   - 앱관리자(super_admin) 본인 신청: 즉시 cg_events 생성 (자기 결재)
 //   - 그 외 → cg_vacation_requests pending 으로 저장 + 결재자(또는 앱관리자)에게 메시지 발송
@@ -27,6 +35,50 @@ export async function POST(request: NextRequest) {
 
   if (!title || !start_at || !end_at) {
     return NextResponse.json({ error: '필수 항목이 누락되었습니다.' }, { status: 400 })
+  }
+
+  // ── 신청 검증 (계산식/잔여일수 판정과 무관한 형식·중복 검증) ──────────
+  const allDay = is_all_day ?? true
+  const sDate = kstDateStr(start_at)
+  const eDate = kstDateStr(end_at)
+
+  // 1) 역순 날짜
+  if (eDate < sDate) {
+    return NextResponse.json({ error: '종료일이 시작일보다 빠를 수 없습니다.' }, { status: 400 })
+  }
+  // 2) 반차 기간 — 반차(반일)는 하루만 신청 가능
+  if (!allDay && sDate !== eDate) {
+    return NextResponse.json({ error: '반차는 하루만 신청할 수 있습니다.' }, { status: 400 })
+  }
+
+  // 3) 중복 — 본인의 확정 휴가(이벤트) 또는 대기 중 신청과 기간이 겹치면 차단.
+  //    종일끼리·종일↔반차는 겹치면 충돌. 같은 날 반차끼리는 서로 다른 시간대(오전/오후)면 허용.
+  const [{ data: evOverlap }, { data: reqOverlap }] = await Promise.all([
+    supabase
+      .from('cg_events')
+      .select('start_at, is_all_day')
+      .eq('created_by', user.id)
+      .eq('is_vacation', true)
+      .lte('start_at', end_at)
+      .gte('end_at', start_at),
+    supabase
+      .from('cg_vacation_requests')
+      .select('start_at, is_all_day')
+      .eq('requested_by', user.id)
+      .eq('status', 'pending')
+      .lte('start_at', end_at)
+      .gte('end_at', start_at),
+  ])
+
+  const existing = [...(evOverlap ?? []), ...(reqOverlap ?? [])]
+  const hasConflict = existing.some((x: any) => {
+    const xAllDay = x.is_all_day ?? true
+    if (allDay || xAllDay) return true // 어느 한쪽이 종일이면 기간 겹침 = 충돌
+    // 둘 다 반차 & 같은 날 → 같은 시간대면 충돌, 다르면(오전/오후) 허용
+    return kstDateStr(x.start_at) === sDate && kstTimeStr(x.start_at) === kstTimeStr(start_at)
+  })
+  if (hasConflict) {
+    return NextResponse.json({ error: '이미 해당 기간에 등록되었거나 결재 대기 중인 휴가가 있습니다.' }, { status: 400 })
   }
 
   const { data: me } = await supabase

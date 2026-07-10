@@ -105,6 +105,49 @@ NOTIFY pgrst, 'reload schema';
 
 ---
 
+## 5) 추가 배포 — 휴가 결재 정합성 (step30) ⚠ **SQL 먼저**
+
+> 이 항목은 step28/29 이후의 후속 배포입니다. **순서가 반대**입니다.
+
+### ⚠ 순서 주의 — step28 과 달리 **SQL → 코드** 순서
+step28 은 "코드 먼저 올려도 무방"했지만, **step30 은 코드가 새 RPC(`approve_vacation_request`,
+`approve_vacation_cancel`)를 호출**하므로, **SQL 을 먼저 실행하지 않고 코드만 배포하면 휴가 승인/취소 승인이 실패**합니다.
+반드시 **① step30 SQL 실행 → ② 코드 배포(푸시/Vercel)** 순서로 진행하세요.
+
+### ☐ step30 — 휴가 결재 정합성 (필수, 코드와 짝)
+- 파일: `output/step30_vacation_approval_integrity.sql`
+- 하는 일:
+  - `approve_vacation_request` / `approve_vacation_cancel` **RPC** 생성 — 이벤트 생성/삭제 + 상태 갱신을
+    행 잠금(FOR UPDATE) 단일 트랜잭션으로 처리 → **동시 승인 이중 차감·부분 실패 차단**.
+  - RPC 실행 권한을 **service_role 로 제한** (브라우저 직접 호출 차단). 라우트가 결재 권한 검증 후 호출.
+  - `cg_events` 의 **휴가 이벤트 DELETE 를 RLS 에서 차단** → 확정 휴가는 취소 결재 흐름으로만 제거(결재 우회 방지).
+- 짝이 되는 코드:
+  - `app/api/vacation/requests/[id]/route.ts` (승인 → `approve_vacation_request` 호출)
+  - `app/api/vacation-cancel-requests/[id]/route.ts` (취소 승인 → `approve_vacation_cancel` 호출)
+  - `app/api/events/[id]/route.ts` (DELETE 에 `is_vacation` 가드 추가 — PATCH 와 동일 정책)
+  - `app/api/vacation/request/route.ts` (신청 검증: 역순 날짜·반차 하루·기간 중복)
+
+### 적용 후 검증 체크리스트 (step30)
+- ☐ 결재자 계정으로 **휴가 승인** → 캘린더에 1건만 등록(중복 없음). 같은 신청 재승인 시 "이미 처리된 신청입니다."
+- ☐ **휴가 취소 승인** → 이벤트 삭제 + 취소 이력에 스냅샷 기록.
+- ☐ 일반 회원이 확정 휴가 이벤트를 **직접 삭제 시도** → "확정된 휴가는 삭제할 수 없습니다. 취소 신청을 이용해 주세요." (API 403 + RLS 이중 차단)
+- ☐ **역순 날짜**(종료<시작) 휴가 신청 → 400. **반차를 이틀 이상** → 400. **기간이 겹치는** 휴가 재신청 → 400.
+- ☐ (직접 REST) 일반 회원 토큰으로 `rpc('approve_vacation_request')` 호출 → 권한 오류(실행 불가).
+
+### 롤백 (step30)
+`output/step30_vacation_approval_integrity.sql` 하단 주석의 롤백 블록 참고 — 함수 DROP + `events_delete` 정책 원복.
+단, 롤백 시 결재 우회/이중 차감 구멍이 되살아나므로 **코드 롤백과 함께** 수행하세요.
+
+### 📌 남은 별도 작업 — 휴가일수 계산식 통일 (미결, 사용자 확인 대기)
+이번 step30 에는 **계산식 통일을 의도적으로 제외**했습니다. 현재 불일치는 다음과 같습니다.
+- **사용자 화면** `app/api/vacation/route.ts` → `countWorkdays()` = **영업일**(주말·공휴일 **제외**). 공지 정책("평일 기준")과 일치.
+- **관리자 화면** `app/api/admin/vacation/route.ts` → `(종료-시작)+1` = **달력일**(주말·공휴일 **포함**). 정책과 불일치.
+- 영향: 주말/공휴일이 낀 휴가에서 **관리자 화면의 사용일수가 더 크게** 표시됨(같은 직원인데 화면마다 사용/잔여가 다름).
+- 권장: 관리자 화면 `calcDays` 를 `countWorkdays` 로 교체해 사용자 화면·공지 정책과 통일. (반차 0.5 는 동일)
+- **신청 시 잔여일수 하드 차단은 넣지 않음**: 공지 Q&A("잔여 부족해도 신청 가능, 결재자가 판단")와 배치되고, 위 계산식 결정에 종속되기 때문. 계산식 확정 후 함께 처리 권장.
+
+---
+
 ## 부록 — 이번 배포에 포함된 커밋
 
 | 커밋 | 구분 | 요약 |

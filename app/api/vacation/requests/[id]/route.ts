@@ -61,42 +61,24 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const reviewedAt = new Date().toISOString()
 
     if (action === 'approve') {
-      // 1) cg_events 생성 — 결재자가 신청자 명의로 휴가 일정을 만들기 위해 admin client 사용 (RLS 우회)
+      // 이벤트 생성 + 신청 상태 갱신을 단일 트랜잭션 RPC 로 원자 처리한다.
+      //   - 행 잠금(FOR UPDATE)으로 동시 승인을 직렬화 → 이벤트 중복 생성/이중 차감 차단.
+      //   - RPC 는 service_role 만 실행 가능하므로 admin client 로 호출 (권한은 위 canHandle 로 이미 검증).
       const admin = await createAdminClient()
-      const { data: event, error: eventErr } = await admin
-        .from('cg_events')
-        .insert({
-          title: r.title,
-          description: r.description,
-          start_at: r.start_at,
-          end_at: r.end_at,
-          is_all_day: r.is_all_day,
-          is_vacation: true,
-          visibility: 'company',
-          color: '#F97316',
-          category_id: null,
-          created_by: r.requested_by,
-          team_id: null,
-        })
-        .select()
-        .single()
+      const { error: rpcErr } = await (admin as any).rpc('approve_vacation_request', {
+        p_request_id: id,
+        p_reviewer_id: user.id,
+      })
 
-      if (eventErr) {
-        return NextResponse.json({ error: `이벤트 생성 실패: ${eventErr.message}` }, { status: 500 })
-      }
-
-      const { error: updErr } = await (supabase as any)
-        .from('cg_vacation_requests')
-        .update({
-          status: 'approved',
-          event_id: (event as any).id,
-          reviewed_by: user.id,
-          reviewed_at: reviewedAt,
-        })
-        .eq('id', id)
-
-      if (updErr) {
-        return NextResponse.json({ error: `승인 처리 실패: ${updErr.message}` }, { status: 500 })
+      if (rpcErr) {
+        const msg = rpcErr.message ?? ''
+        if (msg.includes('ALREADY_PROCESSED')) {
+          return NextResponse.json({ error: '이미 처리된 신청입니다.' }, { status: 400 })
+        }
+        if (msg.includes('REQUEST_NOT_FOUND')) {
+          return NextResponse.json({ error: '신청을 찾을 수 없습니다.' }, { status: 404 })
+        }
+        return NextResponse.json({ error: `승인 처리 실패: ${msg}` }, { status: 500 })
       }
     } else {
       const { error: updErr } = await (supabase as any)
