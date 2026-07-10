@@ -1,16 +1,17 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { isSuperAdmin } from '@/lib/auth/roles'
+import { countWorkdays } from '@/lib/utils/holidayDates'
 
 function toKSTDate(isoStr: string): string {
   return new Date(new Date(isoStr).getTime() + 9 * 3600000).toISOString().slice(0, 10)
 }
 
+// 사용자 화면(app/api/vacation)·결재자 화면과 동일하게 영업일(주말·공휴일 제외) 기준으로 계산한다.
+// (이전에는 달력일(단순 날짜차+1)로 계산해 주말/공휴일이 낀 휴가에서 사용일수가 과다 표시됐다.)
 function calcDays(startAt: string, endAt: string, isAllDay: boolean): number {
   if (!isAllDay) return 0.5
-  const s = new Date(toKSTDate(startAt))
-  const e = new Date(toKSTDate(endAt))
-  return Math.round((e.getTime() - s.getTime()) / 86400000) + 1
+  return countWorkdays(toKSTDate(startAt), toKSTDate(endAt))
 }
 
 export async function GET() {
