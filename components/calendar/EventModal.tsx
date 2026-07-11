@@ -268,12 +268,25 @@ export function EventModal({ isOpen, onClose, initialDate, eventId, onSuccess, o
       <Dialog open={isOpen} onOpenChange={onClose}>
         <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>
-              {eventId
-                ? (canEdit ? '일정 수정' : (eventData?.title ?? '일정 상세'))
-                : '새 일정'
-              }
-            </DialogTitle>
+            <div className="flex items-center justify-between gap-2 pr-5">
+              <DialogTitle>
+                {eventId
+                  ? (canEdit ? '일정 수정' : (eventData?.title ?? '일정 상세'))
+                  : '새 일정'
+                }
+              </DialogTitle>
+              {/* 휴가로 전환 — 제목 우측, 폭 1/3 수준의 소형 버튼 */}
+              {!eventId && onConvertToVacation && (
+                <button
+                  type="button"
+                  onClick={handleConvertToVacation}
+                  className="w-1/3 shrink-0 flex items-center justify-center gap-1 rounded-lg border border-orange-300 dark:border-orange-800 bg-orange-50 dark:bg-orange-950/30 py-1.5 text-xs font-medium text-orange-700 dark:text-orange-300 hover:bg-orange-100 dark:hover:bg-orange-950/50 transition-colors"
+                >
+                  <Sun className="h-3.5 w-3.5" />
+                  휴가로 전환
+                </button>
+              )}
+            </div>
             {eventId && authorName && (
               <p className="flex items-center gap-1.5 text-xs text-[#6B7280] mt-1">
                 <User className="h-3.5 w-3.5" />
@@ -282,17 +295,6 @@ export function EventModal({ isOpen, onClose, initialDate, eventId, onSuccess, o
               </p>
             )}
           </DialogHeader>
-
-          {!eventId && onConvertToVacation && (
-            <button
-              type="button"
-              onClick={handleConvertToVacation}
-              className="mb-1 flex items-center justify-center gap-1.5 w-full rounded-lg border border-orange-300 dark:border-orange-800 bg-orange-50 dark:bg-orange-950/30 py-2 text-sm font-medium text-orange-700 dark:text-orange-300 hover:bg-orange-100 dark:hover:bg-orange-950/50 transition-colors"
-            >
-              <Sun className="h-4 w-4" />
-              휴가로 전환
-            </button>
-          )}
 
           {eventId && !canEdit ? (
             <ReadOnlyView />
