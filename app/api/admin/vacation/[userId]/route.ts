@@ -1,6 +1,115 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { isSuperAdmin } from '@/lib/auth/roles'
+import { countWorkdays } from '@/lib/utils/holidayDates'
+
+function toKSTDate(isoStr: string): string {
+  return new Date(new Date(isoStr).getTime() + 9 * 3600000).toISOString().slice(0, 10)
+}
+function toKSTHour(isoStr: string): number {
+  return new Date(new Date(isoStr).getTime() + 9 * 3600000).getUTCHours()
+}
+// 사용일수 계산 — 관리자 화면(/api/admin/vacation)과 동일 규칙
+function calcDays(startAt: string, endAt: string, isAllDay: boolean): number {
+  if (!isAllDay) return 0.5
+  return countWorkdays(toKSTDate(startAt), toKSTDate(endAt))
+}
+function vacType(isAllDay: boolean, startAt: string): 'full' | 'morning' | 'afternoon' {
+  if (isAllDay) return 'full'
+  return toKSTHour(startAt) < 12 ? 'morning' : 'afternoon'
+}
+
+// GET: 특정 직원의 당해 연도 휴가 세부 내역 (확정 휴가 + 결재 대기)
+//   권한: 앱관리자 또는 해당 직원의 지정 결재자
+export async function GET(
+  _: NextRequest,
+  { params }: { params: Promise<{ userId: string }> }
+) {
+  const { userId } = await params
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { data: me } = await supabase
+    .from('cg_profiles')
+    .select('id, role, is_super_admin')
+    .eq('id', user.id)
+    .single()
+  if (!me) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+
+  const { data: target } = await supabase
+    .from('cg_profiles')
+    .select('id, full_name, approver_id')
+    .eq('id', userId)
+    .single()
+  if (!target) return NextResponse.json({ error: '대상 회원을 찾을 수 없습니다.' }, { status: 404 })
+
+  if (!isSuperAdmin(me) && target.approver_id !== me.id) {
+    return NextResponse.json({ error: '조회 권한이 없습니다.' }, { status: 403 })
+  }
+
+  const y = new Date().getFullYear()
+  const rangeStart = `${y - 1}-12-22T00:00:00.000Z`
+  const rangeEnd = `${y}-12-31T23:59:59.999Z`
+
+  const [eventsRes, pendingRes, profilesRes] = await Promise.all([
+    supabase
+      .from('cg_events')
+      .select('id, title, description, start_at, end_at, is_all_day')
+      .eq('created_by', userId)
+      .eq('is_vacation', true)
+      .gte('start_at', rangeStart)
+      .lte('start_at', rangeEnd)
+      .order('start_at', { ascending: true }),
+    supabase
+      .from('cg_vacation_requests')
+      .select('id, title, description, start_at, end_at, is_all_day, created_at, posted_by')
+      .eq('requested_by', userId)
+      .eq('status', 'pending')
+      .gte('start_at', rangeStart)
+      .lte('start_at', rangeEnd)
+      .order('start_at', { ascending: true }),
+    supabase.from('cg_profiles').select('id, full_name'),
+  ])
+
+  const nameOf: Record<string, string> = {}
+  for (const p of profilesRes.data ?? []) nameOf[p.id] = p.full_name
+
+  const used = (eventsRes.data ?? [])
+    .filter(e => toKSTDate(e.start_at).slice(0, 4) === String(y))
+    .map(e => ({
+      id: e.id,
+      title: e.title,
+      description: e.description,
+      start_at: e.start_at,
+      end_at: e.end_at,
+      is_all_day: e.is_all_day ?? true,
+      type: vacType(e.is_all_day ?? true, e.start_at),
+      days: calcDays(e.start_at, e.end_at, e.is_all_day ?? true),
+    }))
+
+  const pending = ((pendingRes.data ?? []) as any[])
+    .filter(r => toKSTDate(r.start_at).slice(0, 4) === String(y))
+    .map(r => ({
+      id: r.id,
+      title: r.title,
+      description: r.description,
+      start_at: r.start_at,
+      end_at: r.end_at,
+      is_all_day: r.is_all_day ?? true,
+      type: vacType(r.is_all_day ?? true, r.start_at),
+      days: calcDays(r.start_at, r.end_at, r.is_all_day ?? true),
+      requested_at: r.created_at,
+      posted_by_name: r.posted_by ? (nameOf[r.posted_by] ?? null) : null,
+    }))
+
+  return NextResponse.json({
+    user: { id: target.id, full_name: target.full_name },
+    year: y,
+    used,
+    pending,
+  })
+}
 
 // PATCH: 휴가 관련 직원 속성 변경
 //   - total_days: 앱관리자(대상의 approver=null) 또는 본인이 결재자인 결재자

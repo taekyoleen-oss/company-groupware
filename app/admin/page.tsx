@@ -256,6 +256,14 @@ function AdminPageInner() {
   const [vacEdits, setVacEdits] = useState<Record<string, number>>({})
   const [vacApproverEdits, setVacApproverEdits] = useState<Record<string, string>>({})
   const [vacSaving, setVacSaving] = useState<string | null>(null)
+  // 휴가 세부 내용 팝업
+  const [vacDetailUser, setVacDetailUser] = useState<VacationUser | null>(null)
+  const [vacDetail, setVacDetail] = useState<{
+    year: number
+    used: { id: string; title: string; description: string | null; start_at: string; end_at: string; is_all_day: boolean; type: 'full' | 'morning' | 'afternoon'; days: number }[]
+    pending: { id: string; title: string; description: string | null; start_at: string; end_at: string; is_all_day: boolean; type: 'full' | 'morning' | 'afternoon'; days: number; requested_at: string; posted_by_name: string | null }[]
+  } | null>(null)
+  const [vacDetailLoading, setVacDetailLoading] = useState(false)
   const [cancelRequests, setCancelRequests] = useState<CancelRequest[]>([])
   const [cancelProcessing, setCancelProcessing] = useState<string | null>(null)
   const [vacationRequests, setVacationRequests] = useState<VacationRequest[]>([])
@@ -722,6 +730,22 @@ function AdminPageInner() {
       setHistoryOpen(true)
       showToast('취소 신청이 거부되었습니다. 처리 이력에서 확인하실 수 있습니다.', 'success')
       fetchAll()
+    }
+  }
+
+  // 휴가 세부 내용 팝업 열기 — 확정 휴가·결재 대기 목록 조회
+  const openVacDetail = async (u: VacationUser) => {
+    setVacDetailUser(u)
+    setVacDetail(null)
+    setVacDetailLoading(true)
+    try {
+      const res = await fetch(`/api/admin/vacation/${u.id}`)
+      if (res.ok) setVacDetail(await res.json())
+      else showToast('세부 내역을 불러오지 못했습니다.', 'error')
+    } catch {
+      showToast('네트워크 오류로 세부 내역을 불러오지 못했습니다.', 'error')
+    } finally {
+      setVacDetailLoading(false)
     }
   }
 
@@ -1695,7 +1719,10 @@ function AdminPageInner() {
                       </span>
                     )}
 
-                    <div className="ml-auto">
+                    <div className="ml-auto flex items-center gap-1.5">
+                      <Button size="sm" variant="outline" className="whitespace-nowrap" onClick={() => openVacDetail(u)}>
+                        세부 내용
+                      </Button>
                       <Button size="sm" disabled={!isDirty || vacSaving === u.id} onClick={() => saveVacation(u.id)}>
                         <Save className="h-4 w-4 mr-1" />
                         {vacSaving === u.id ? '저장 중...' : '저장'}
@@ -2191,6 +2218,116 @@ function AdminPageInner() {
           </Dialog>
         )
       })()}
+
+      {/* 휴가 세부 내용 팝업 */}
+      <Dialog open={!!vacDetailUser} onOpenChange={open => { if (!open) { setVacDetailUser(null); setVacDetail(null) } }}>
+        <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sun className="h-4 w-4 text-orange-500" />
+              휴가 세부 내용 — {vacDetailUser?.full_name}
+              <span className="text-xs font-normal text-[#6B7280] dark:text-[#94A3B8]">
+                {vacDetail?.year ?? new Date().getFullYear()}년
+              </span>
+            </DialogTitle>
+          </DialogHeader>
+
+          {vacDetailUser && (
+            <div className="rounded-lg bg-[#F9FAFB] dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-[#334155] px-3 py-2 text-xs text-[#6B7280] dark:text-[#94A3B8] flex flex-wrap gap-x-3 gap-y-1">
+              <span>총 <strong className="text-[#111827] dark:text-[#F1F5F9]">{vacDetailUser.total_days}일</strong></span>
+              <span>사용 <strong className="text-[#111827] dark:text-[#F1F5F9]">{vacDetailUser.used_days}일</strong></span>
+              <span>대기 <strong className="text-amber-600 dark:text-amber-400">{vacDetailUser.pending_days}일</strong></span>
+              <span>잔여 <strong className={vacDetailUser.remaining_days <= 0 ? 'text-red-500' : 'text-green-600'}>{vacDetailUser.remaining_days}일</strong></span>
+            </div>
+          )}
+
+          {vacDetailLoading ? (
+            <p className="py-6 text-center text-sm text-[#6B7280] dark:text-[#94A3B8]">불러오는 중...</p>
+          ) : vacDetail ? (
+            <div className="space-y-4">
+              {/* 사용 내역 (확정 휴가) */}
+              <div>
+                <h3 className="text-xs font-semibold text-[#6B7280] dark:text-[#94A3B8] mb-1.5">
+                  사용 내역 · {vacDetail.used.length}건 ({vacDetail.used.reduce((s, x) => s + x.days, 0)}일)
+                </h3>
+                {vacDetail.used.length === 0 ? (
+                  <p className="text-xs text-[#9CA3AF] dark:text-[#6B7280] py-2">사용한 휴가가 없습니다.</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {vacDetail.used.map(v => {
+                      const meta = v.type === 'full'
+                        ? { label: '종일휴가', cls: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' }
+                        : v.type === 'morning'
+                        ? { label: '오전휴가', cls: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' }
+                        : { label: '오후휴가', cls: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300' }
+                      const dateLabel = v.is_all_day
+                        ? (() => {
+                            const s = format(parseISO(v.start_at), 'M월 d일 (EEE)', { locale: ko })
+                            const e2 = format(parseISO(v.end_at), 'M월 d일 (EEE)', { locale: ko })
+                            return s === e2 ? s : `${s} ~ ${e2}`
+                          })()
+                        : `${format(parseISO(v.start_at), 'M월 d일 (EEE) HH:mm', { locale: ko })} ~ ${format(parseISO(v.end_at), 'HH:mm')}`
+                      return (
+                        <div key={v.id} className="rounded-lg border border-[#E5E7EB] dark:border-[#334155] bg-white dark:bg-[#1E293B] px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${meta.cls}`}>{meta.label}</span>
+                            <span className="text-xs font-medium text-[#111827] dark:text-[#F1F5F9] truncate">{dateLabel}</span>
+                            <span className="ml-auto text-xs text-[#6B7280] dark:text-[#94A3B8] shrink-0">{v.days}일</span>
+                          </div>
+                          {v.description && (
+                            <p className="text-[11px] text-[#6B7280] dark:text-[#94A3B8] mt-1 whitespace-pre-wrap">{v.description}</p>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* 결재 대기 */}
+              {vacDetail.pending.length > 0 && (
+                <div>
+                  <h3 className="text-xs font-semibold text-amber-600 dark:text-amber-400 mb-1.5">
+                    결재 대기 · {vacDetail.pending.length}건 ({vacDetail.pending.reduce((s, x) => s + x.days, 0)}일)
+                  </h3>
+                  <div className="space-y-1.5">
+                    {vacDetail.pending.map(v => {
+                      const meta = v.type === 'full'
+                        ? { label: '종일휴가', cls: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' }
+                        : v.type === 'morning'
+                        ? { label: '오전휴가', cls: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' }
+                        : { label: '오후휴가', cls: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300' }
+                      const dateLabel = v.is_all_day
+                        ? (() => {
+                            const s = format(parseISO(v.start_at), 'M월 d일 (EEE)', { locale: ko })
+                            const e2 = format(parseISO(v.end_at), 'M월 d일 (EEE)', { locale: ko })
+                            return s === e2 ? s : `${s} ~ ${e2}`
+                          })()
+                        : `${format(parseISO(v.start_at), 'M월 d일 (EEE) HH:mm', { locale: ko })} ~ ${format(parseISO(v.end_at), 'HH:mm')}`
+                      return (
+                        <div key={v.id} className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/20 px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${meta.cls}`}>{meta.label}</span>
+                            <span className="text-xs font-medium text-[#111827] dark:text-[#F1F5F9] truncate">{dateLabel}</span>
+                            <span className="ml-auto text-xs text-[#6B7280] dark:text-[#94A3B8] shrink-0">{v.days}일</span>
+                          </div>
+                          <p className="text-[10px] text-[#9CA3AF] dark:text-[#6B7280] mt-0.5">
+                            신청일 {format(parseISO(v.requested_at), 'yyyy.MM.dd', { locale: ko })}
+                            {v.posted_by_name && ` · 대리 신청: ${v.posted_by_name}`}
+                          </p>
+                          {v.description && (
+                            <p className="text-[11px] text-[#6B7280] dark:text-[#94A3B8] mt-1 whitespace-pre-wrap">{v.description}</p>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
 
       {/* 휴가 처리 이력 다운로드 다이얼로그 */}
       <Dialog open={downloadOpen} onOpenChange={open => { if (!open) setDownloadOpen(false) }}>
