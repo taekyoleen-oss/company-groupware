@@ -47,6 +47,7 @@ export async function PATCH(request: NextRequest) {
     attendance_method,
     office_ips,
     require_device_approval,
+    vacation_proxy_user_id,
   } = body
 
   const { data: existing } = await supabase
@@ -62,6 +63,7 @@ export async function PATCH(request: NextRequest) {
     attendance_method,
     office_ips,
     require_device_approval,
+    vacation_proxy_user_id: vacation_proxy_user_id ?? null,
     updated_at: new Date().toISOString(),
   }
 

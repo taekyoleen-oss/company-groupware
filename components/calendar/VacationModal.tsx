@@ -14,9 +14,9 @@ import { useProfile } from '@/lib/hooks/use-shared-data'
 type VacationType = 'full' | 'morning' | 'afternoon'
 
 const VAC_TYPE_LABEL: Record<VacationType, string> = {
-  full: '종일',
-  morning: '오전 반차',
-  afternoon: '오후 반차',
+  full: '종일휴가',
+  morning: '오전휴가',
+  afternoon: '오후휴가',
 }
 const VAC_TYPE_TIME: Record<VacationType, string> = {
   full: '',
@@ -52,7 +52,7 @@ function calcDays(startStr: string, endStr: string): number {
 }
 
 function buildTitle(type: VacationType, name: string): string {
-  const label = type === 'full' ? '휴가' : type === 'morning' ? '오전반차' : '오후반차'
+  const label = type === 'full' ? '종일휴가' : type === 'morning' ? '오전휴가' : '오후휴가'
   return name ? `${label}(${name})` : label
 }
 
@@ -79,6 +79,11 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
   const [vacationSummary, setVacationSummary] = useState<VacationSummary | null>(null)
   const [vacationType, setVacationType]     = useState<VacationType>('full')
   const [form, setForm] = useState({ title: '', description: '', start_at: '', end_at: '' })
+
+  // 휴가 대리 게시 (앱관리자가 지정한 전사 1명)
+  const [proxyUserId, setProxyUserId]   = useState<string | null>(null)
+  const [proxyTargets, setProxyTargets] = useState<{ id: string; full_name: string; role: string }[]>([])
+  const [targetUserId, setTargetUserId] = useState<string>('') // '' = 본인 신청
 
   // 모달을 열 때마다 진행 상태를 초기화 (직전 저장/삭제의 loading 잔상 방지)
   useEffect(() => {
@@ -111,6 +116,7 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
     setCreatedBy(null)
     setAuthorName(null)
     setVacationType('full')
+    setTargetUserId('')
     setForm({
       title: prefill?.title || buildTitle('full', currentUserName),
       description: prefill?.description ?? '',
@@ -118,12 +124,43 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
       end_at: endStr + 'T00:00',
     })
     fetch('/api/vacation').then(r => r.json()).then(setVacationSummary).catch(() => {})
+    // 대리 게시자 지정 여부 확인 (설정 GET 은 로그인 사용자 모두 조회 가능)
+    fetch('/api/admin/settings')
+      .then(r => r.json())
+      .then(d => setProxyUserId(d?.vacation_proxy_user_id ?? null))
+      .catch(() => setProxyUserId(null))
   }, [isOpen, eventId, initialDate]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const isProxy = !!currentUserId && proxyUserId === currentUserId
+
+  // 대리 게시자에게만 대상자 목록 로드 (활성 사용자, 본인 제외, 앱관리자 제외)
+  useEffect(() => {
+    if (!isOpen || eventId || !isProxy) return
+    fetch('/api/profiles/list')
+      .then(r => r.json())
+      .then(d => setProxyTargets(((d?.profiles ?? []) as any[]).filter(p => p.role !== 'admin')))
+      .catch(() => setProxyTargets([]))
+  }, [isOpen, eventId, isProxy])
+
+  // 현재 신청 명의자 이름 (대상자 선택 시 대상자, 아니면 본인)
+  const activeName = targetUserId
+    ? (proxyTargets.find(t => t.id === targetUserId)?.full_name ?? '')
+    : currentUserName
+
+  const handleTargetChange = (value: string) => {
+    setTargetUserId(value)
+    const name = value
+      ? (proxyTargets.find(t => t.id === value)?.full_name ?? '')
+      : currentUserName
+    if (!prefill?.title) {
+      setForm(f => ({ ...f, title: buildTitle(vacationType, name) }))
+    }
+  }
 
   // Update title when currentUserName loads (new vacation only)
   useEffect(() => {
-    // 전환으로 넘어온 사용자 지정 제목은 덮어쓰지 않는다
-    if (!eventId && isOpen && currentUserName && !prefill?.title) {
+    // 전환으로 넘어온 사용자 지정 제목은 덮어쓰지 않는다. 대상자 선택 중이면 대상자 이름 유지.
+    if (!eventId && isOpen && currentUserName && !prefill?.title && !targetUserId) {
       setForm(f => ({ ...f, title: buildTitle(vacationType, currentUserName) }))
     }
   }, [currentUserName]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -161,7 +198,7 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
     setForm(f => ({
       ...f,
       // 전환으로 넘어온 사용자 지정 제목은 유지, 그 외에는 유형에 맞춰 자동 생성
-      title: prefill?.title ? f.title : buildTitle(type, currentUserName),
+      title: prefill?.title ? f.title : buildTitle(type, activeName),
       start_at: dateStr + times.start,
       end_at: dateStr + times.end,
     }))
@@ -195,18 +232,20 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
 
   // 본인이 결재자 역할(관리자 또는 앱관리자) + 외부 결재자 미지정 → 휴가 신청 자동 승인.
   // (취소는 자동 처리되지 않고 항상 앱관리자가 결재)
-  const isSelfApproved = isApproverRole && approverId == null
+  // 대리 신청(대상자 선택)은 항상 대상자의 결재 규칙으로 진행되므로 자동 승인 없음.
+  const isSelfApproved = !targetUserId && isApproverRole && approverId == null
 
   const executeSave = async () => {
     setLoading(true)
     const payload = {
-      title: form.title || buildTitle(vacationType, currentUserName),
+      title: form.title || buildTitle(vacationType, activeName),
       description: form.description,
       start_at: new Date(form.start_at).toISOString(),
       end_at: isAllDay
         ? new Date(form.end_at.slice(0, 10) + 'T23:59').toISOString()
         : new Date(form.end_at).toISOString(),
       is_all_day: isAllDay,
+      ...(targetUserId ? { target_user_id: targetUserId } : {}),
     }
     try {
       if (eventId) {
@@ -242,7 +281,9 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
       })
       if (res.ok) {
         const data = await res.json().catch(() => ({}))
-        if (data.mode === 'pending') {
+        if (targetUserId) {
+          showToast(`${activeName} 님의 휴가 대리 신청이 접수되었습니다. 결재 승인 후 확정됩니다.`, 'success')
+        } else if (data.mode === 'pending') {
           const targetName = approverName ?? (approverId ? '결재자' : '관리자')
           showToast(`결재 요청이 ${targetName}에게 전달되었습니다.`, 'success')
         } else {
@@ -262,7 +303,8 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (vacationSummary && remainingAfterChange < 0) {
+    // 잔여일수 클라이언트 검증은 본인 신청에만 적용 (대리 신청은 대상자 잔여를 결재자가 판단)
+    if (!targetUserId && vacationSummary && remainingAfterChange < 0) {
       showToast(`휴가 일수가 부족합니다. 사용 가능: ${vacationSummary.remaining_days + origVacDays}일, 요청: ${pendingVacDays}일`, 'error')
       return
     }
@@ -320,13 +362,13 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
   const ReadOnlyView = () => {
     if (!eventData) return <div className="py-6 text-center text-sm text-[#6B7280]">불러오는 중...</div>
     const vacTypeLabel = eventData.is_all_day
-      ? '종일'
-      : (parseInt(format(parseISO(eventData.start_at), 'HH')) < 12 ? '오전반차' : '오후반차')
+      ? '종일휴가'
+      : (parseInt(format(parseISO(eventData.start_at), 'HH')) < 12 ? '오전휴가' : '오후휴가')
     return (
       <div className="space-y-3 pt-1">
         <div className="flex items-center gap-2">
           <Badge className="bg-orange-100 text-orange-700 border border-orange-200 text-xs">
-            휴가 ({vacTypeLabel})
+            {vacTypeLabel}
           </Badge>
         </div>
         <div className="flex items-start gap-2 text-sm text-[#6B7280]">
@@ -396,6 +438,14 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
                 <p className="text-sm text-amber-800 dark:text-amber-200 leading-relaxed">
                   본인이 결재자이므로 <strong>즉시 등록</strong>됩니다.
                   등록한 휴가를 취소하는 경우 <strong>앱관리자가 승인</strong>해야 삭제할 수 있습니다.
+                </p>
+              </div>
+            ) : targetUserId ? (
+              <div className="rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 p-3">
+                <p className="text-sm text-blue-800 dark:text-blue-200 leading-relaxed">
+                  <strong>{activeName}</strong> 님 명의로 대리 신청합니다.
+                  {activeName ? ` ${activeName} 님의` : ' 대상자의'} 결재자(미지정 시 관리자)의 <strong>승인 후</strong> 휴가가 등록되며,
+                  휴가 일수도 {activeName || '대상자'} 님 기준으로 차감됩니다.
                 </p>
               </div>
             ) : (
@@ -472,8 +522,25 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
             <ReadOnlyView />
           ) : (
             <form onSubmit={handleSubmit} className="space-y-3">
-              {/* 잔여 휴가 */}
-              {vacationSummary && (
+              {/* 대상자 선택 — 대리 게시자에게만 노출 */}
+              {isProxy && proxyTargets.length > 0 && (
+                <div>
+                  <label className="block text-xs font-medium mb-1 text-[#6B7280]">신청 대상자</label>
+                  <select
+                    value={targetUserId}
+                    onChange={e => handleTargetChange(e.target.value)}
+                    className="w-full h-9 rounded-lg border border-[#E5E7EB] dark:border-[#334155] bg-white dark:bg-[#0F172A] px-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+                  >
+                    <option value="">본인 ({currentUserName})</option>
+                    {proxyTargets.map(t => (
+                      <option key={t.id} value={t.id}>{t.full_name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* 잔여 휴가 — 본인 신청일 때만 (대리 신청 시 본인 잔여는 무관) */}
+              {!targetUserId && vacationSummary && (
                 <div className="rounded-lg bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800 px-3 py-2 flex items-center justify-between">
                   <span className="flex items-center gap-1.5 text-sm text-orange-700 dark:text-orange-300">
                     <Sun className="h-4 w-4" />
@@ -496,13 +563,21 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
               }`}>
                 <p className="flex items-center gap-1.5">
                   <User className="h-3.5 w-3.5" />
-                  결재자:{' '}
-                  <span className="font-medium">
-                    {isSelfApproved
-                      ? '본인 (즉시 등록)'
-                      : (approverName ?? (approverId ? '지정 결재자' : '관리자'))}
-                    {!isSelfApproved && ' — 승인 필요'}
-                  </span>
+                  {targetUserId ? (
+                    <span className="font-medium">
+                      대리 신청 — {activeName} 님의 결재자(미지정 시 관리자) 승인 후 확정됩니다
+                    </span>
+                  ) : (
+                    <>
+                      결재자:{' '}
+                      <span className="font-medium">
+                        {isSelfApproved
+                          ? '본인 (즉시 등록)'
+                          : (approverName ?? (approverId ? '지정 결재자' : '관리자'))}
+                        {!isSelfApproved && ' — 승인 필요'}
+                      </span>
+                    </>
+                  )}
                 </p>
               </div>
 
@@ -574,8 +649,8 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
                 <div className="rounded-lg bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800 px-3 py-2 text-sm">
                   <span className="text-orange-700 dark:text-orange-300">
                     선택한 기간: <strong>{pendingVacDays}일</strong>
-                    {vacationType !== 'full' && <span className="ml-1 text-xs text-[#6B7280]">(반차)</span>}
-                    {vacationSummary && (
+                    {vacationType !== 'full' && <span className="ml-1 text-xs text-[#6B7280]">(반일)</span>}
+                    {!targetUserId && vacationSummary && (
                       <span className="ml-2 text-[#6B7280]">
                         (저장 후 잔여:{' '}
                         <span className={remainingAfterChange < 0 ? 'text-red-500 font-semibold' : ''}>

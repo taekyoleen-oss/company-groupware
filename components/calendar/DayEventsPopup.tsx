@@ -20,6 +20,8 @@ function formatEventTime(event: EventWithDetails): string {
   if (event.is_all_day) return '하루 종일'
   const start = parseISO(event.start_at)
   const end = parseISO(event.end_at)
+  // 반일휴가는 시간이 제목(오전/오후휴가)에 내포되어 있어 시간 대신 구분만 표시
+  if (event.is_vacation) return parseInt(format(start, 'HH')) < 12 ? '오전' : '오후'
   return `${format(start, 'HH:mm')} ~ ${format(end, 'HH:mm')}`
 }
 

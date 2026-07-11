@@ -364,6 +364,7 @@ export interface Database {
           reject_reason: string | null
           reviewed_by: string | null
           reviewed_at: string | null
+          posted_by: string | null
           created_at: string
         }
         Insert: {
@@ -380,6 +381,7 @@ export interface Database {
           reject_reason?: string | null
           reviewed_by?: string | null
           reviewed_at?: string | null
+          posted_by?: string | null
           created_at?: string
         }
         Update: {
@@ -396,6 +398,7 @@ export interface Database {
           reject_reason?: string | null
           reviewed_by?: string | null
           reviewed_at?: string | null
+          posted_by?: string | null
           created_at?: string
         }
         Relationships: [
@@ -467,6 +470,7 @@ export interface Database {
           attendance_method: 'gps' | 'ip'
           office_ips: string | null
           require_device_approval: boolean
+          vacation_proxy_user_id: string | null
           updated_at: string
         }
         Insert: {
@@ -478,6 +482,7 @@ export interface Database {
           attendance_method?: 'gps' | 'ip'
           office_ips?: string | null
           require_device_approval?: boolean
+          vacation_proxy_user_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -489,6 +494,7 @@ export interface Database {
           attendance_method?: 'gps' | 'ip'
           office_ips?: string | null
           require_device_approval?: boolean
+          vacation_proxy_user_id?: string | null
           updated_at?: string
         }
         Relationships: []

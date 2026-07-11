@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { isSuperAdmin } from '@/lib/auth/roles'
 
 // KST(+9) 기준 날짜/시각 문자열
@@ -8,6 +8,21 @@ function kstDateStr(iso: string): string {
 }
 function kstTimeStr(iso: string): string {
   return new Date(new Date(iso).getTime() + 9 * 3600000).toISOString().slice(11, 16)
+}
+
+// 기존 확정 휴가/대기 신청과의 충돌 판정.
+// 종일끼리·종일↔반차는 겹치면 충돌. 같은 날 반차끼리는 서로 다른 시간대(오전/오후)면 허용.
+function hasVacationConflict(
+  existing: { start_at: string; is_all_day: boolean | null }[],
+  allDay: boolean,
+  sDate: string,
+  startAt: string,
+): boolean {
+  return existing.some(x => {
+    const xAllDay = x.is_all_day ?? true
+    if (allDay || xAllDay) return true
+    return kstDateStr(x.start_at) === sDate && kstTimeStr(x.start_at) === kstTimeStr(startAt)
+  })
 }
 
 // POST: 휴가 신청
@@ -25,12 +40,13 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await request.json().catch(() => ({}))
-  const { title, description, start_at, end_at, is_all_day } = body as {
+  const { title, description, start_at, end_at, is_all_day, target_user_id } = body as {
     title?: string
     description?: string | null
     start_at?: string
     end_at?: string
     is_all_day?: boolean
+    target_user_id?: string | null
   }
 
   if (!title || !start_at || !end_at) {
@@ -49,6 +65,124 @@ export async function POST(request: NextRequest) {
   // 2) 반차 기간 — 반차(반일)는 하루만 신청 가능
   if (!allDay && sDate !== eDate) {
     return NextResponse.json({ error: '반차는 하루만 신청할 수 있습니다.' }, { status: 400 })
+  }
+
+  // ── 대리 신청 (앱관리자가 지정한 전사 1명의 대리 게시자만 가능) ──────
+  //    A안: 자동 승인 없이 항상 대상자의 결재 규칙대로 진행
+  //    (지정 결재자 → 없으면 앱관리자 결재). RLS(vac_req_self_insert)가
+  //    본인 신청만 허용하므로, 권한 검증 후 service-role로 INSERT 한다.
+  if (target_user_id && target_user_id !== user.id) {
+    const admin = createAdminClient()
+
+    const { data: cs } = await admin
+      .from('cg_company_settings')
+      .select('vacation_proxy_user_id')
+      .single()
+    if (!cs || cs.vacation_proxy_user_id !== user.id) {
+      return NextResponse.json({ error: '휴가 대리 게시 권한이 없습니다.' }, { status: 403 })
+    }
+
+    const [{ data: proxy }, { data: target }] = await Promise.all([
+      admin.from('cg_profiles').select('full_name').eq('id', user.id).single(),
+      admin
+        .from('cg_profiles')
+        .select('id, full_name, status, role, is_super_admin, approver_id')
+        .eq('id', target_user_id)
+        .single(),
+    ])
+    if (!target || target.status !== 'active') {
+      return NextResponse.json({ error: '대상자를 찾을 수 없거나 활성 상태가 아닙니다.' }, { status: 400 })
+    }
+    if (isSuperAdmin(target)) {
+      return NextResponse.json({ error: '앱관리자는 대리 신청 대상이 될 수 없습니다.' }, { status: 400 })
+    }
+
+    // 중복 검증 — 대상자 기준
+    const [{ data: tEvOverlap }, { data: tReqOverlap }] = await Promise.all([
+      admin
+        .from('cg_events')
+        .select('start_at, is_all_day')
+        .eq('created_by', target.id)
+        .eq('is_vacation', true)
+        .lte('start_at', end_at)
+        .gte('end_at', start_at),
+      admin
+        .from('cg_vacation_requests')
+        .select('start_at, is_all_day')
+        .eq('requested_by', target.id)
+        .eq('status', 'pending')
+        .lte('start_at', end_at)
+        .gte('end_at', start_at),
+    ])
+    if (hasVacationConflict([...(tEvOverlap ?? []), ...(tReqOverlap ?? [])], allDay, sDate, start_at)) {
+      return NextResponse.json({ error: '대상자에게 이미 해당 기간에 등록되었거나 결재 대기 중인 휴가가 있습니다.' }, { status: 400 })
+    }
+
+    const targetApproverId = (target as any).approver_id as string | null
+    const { data: proxyReq, error: proxyErr } = await admin
+      .from('cg_vacation_requests')
+      .insert({
+        requested_by: target.id,
+        approver_id: targetApproverId,
+        title,
+        description: description ?? null,
+        start_at,
+        end_at,
+        is_all_day: allDay,
+        status: 'pending',
+        posted_by: user.id,
+      })
+      .select()
+      .single()
+    if (proxyErr) return NextResponse.json({ error: proxyErr.message }, { status: 500 })
+
+    // 알림 — 결재자(또는 앱관리자 전원) + 대상자 본인
+    const proxyName = proxy?.full_name ?? '알 수 없음'
+    const proxyDateLabel = new Date(start_at).toLocaleDateString('ko-KR', {
+      month: 'numeric', day: 'numeric',
+    })
+    const approverMsg = `[휴가 결재 요청] ${target.full_name} 님의 ${proxyDateLabel} 휴가를 ${proxyName} 님이 대리 신청했습니다.`
+
+    if (targetApproverId) {
+      const { data: approver } = await admin
+        .from('cg_profiles')
+        .select('full_name')
+        .eq('id', targetApproverId)
+        .single()
+      await (admin as any).from('cg_messages').insert({
+        sender_id:      user.id,
+        sender_name:    proxyName,
+        recipient_id:   targetApproverId,
+        recipient_name: (approver as any)?.full_name ?? null,
+        content:        approverMsg,
+      })
+    } else {
+      const { data: admins } = await admin
+        .from('cg_profiles')
+        .select('id, full_name')
+        .eq('is_super_admin', true)
+        .eq('status', 'active')
+      if (admins && admins.length > 0) {
+        const rows = admins.map(a => ({
+          sender_id:      user.id,
+          sender_name:    proxyName,
+          recipient_id:   a.id,
+          recipient_name: a.full_name,
+          content:        approverMsg,
+        }))
+        await (admin as any).from('cg_messages').insert(rows)
+      }
+    }
+
+    await (admin as any).from('cg_messages').insert({
+      sender_id:      user.id,
+      sender_name:    proxyName,
+      recipient_id:   target.id,
+      recipient_name: target.full_name,
+      content:        `[휴가 대리 신청] ${proxyName} 님이 회원님의 ${proxyDateLabel} 휴가를 신청했습니다. 결재 승인 후 확정됩니다.`,
+    })
+
+    return NextResponse.json({ mode: 'pending', request: proxyReq }, { status: 201 })
   }
 
   // 3) 중복 — 본인의 확정 휴가(이벤트) 또는 대기 중 신청과 기간이 겹치면 차단.
@@ -70,14 +204,7 @@ export async function POST(request: NextRequest) {
       .gte('end_at', start_at),
   ])
 
-  const existing = [...(evOverlap ?? []), ...(reqOverlap ?? [])]
-  const hasConflict = existing.some((x: any) => {
-    const xAllDay = x.is_all_day ?? true
-    if (allDay || xAllDay) return true // 어느 한쪽이 종일이면 기간 겹침 = 충돌
-    // 둘 다 반차 & 같은 날 → 같은 시간대면 충돌, 다르면(오전/오후) 허용
-    return kstDateStr(x.start_at) === sDate && kstTimeStr(x.start_at) === kstTimeStr(start_at)
-  })
-  if (hasConflict) {
+  if (hasVacationConflict([...(evOverlap ?? []), ...(reqOverlap ?? [])], allDay, sDate, start_at)) {
     return NextResponse.json({ error: '이미 해당 기간에 등록되었거나 결재 대기 중인 휴가가 있습니다.' }, { status: 400 })
   }
 

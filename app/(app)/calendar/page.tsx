@@ -52,6 +52,7 @@ function CalendarContent() {
 
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [isAdminUser,   setIsAdminUser]   = useState(false)
+  const [proxyUserId,   setProxyUserId]   = useState<string | null>(null)
   const [pendingCancelIds, setPendingCancelIds] = useState<Set<string>>(new Set())
 
   const [currentView, setCurrentView] = useState('dayGridMonth')
@@ -235,8 +236,17 @@ function CalendarContent() {
     return () => { supabase.removeChannel(channel) }
   }, [currentUserId, fetchEvents, fetchPendingCancels])
 
+  // 휴가 대리 게시자(앱관리자 지정 1명)는 잘못 게시된 일정 정정을 위해 타인 일정도 수정 가능
+  useEffect(() => {
+    fetch('/api/admin/settings')
+      .then(r => r.json())
+      .then(d => setProxyUserId(d?.vacation_proxy_user_id ?? null))
+      .catch(() => setProxyUserId(null))
+  }, [])
+
   const canEditEvent = (e: EventWithDetails) =>
-    isAdminUser || e.created_by === currentUserId
+    isAdminUser || e.created_by === currentUserId ||
+    (!!currentUserId && proxyUserId === currentUserId)
 
   const getTeamAbbr = (teamId: string | null): string => {
     if (!teamId) return '팀'
@@ -265,12 +275,13 @@ function CalendarContent() {
     ...events.map(e => {
       const isVac = e.is_vacation
       const isHalf = isVac && !e.is_all_day
+      const isMorning = isHalf && new Date(e.start_at).getHours() < 12
       const prefix = isVac
         ? ''
         : e.visibility === 'company' ? '[전사] ' : e.visibility === 'team' ? `[${getTeamAbbr(e.team_id)}] ` : ''
       const isCancelPending = isVac && pendingCancelIds.has(e.id)
       const title = isVac
-        ? `☀️ ${e.title}${isHalf ? ' (반차)' : ''}${isCancelPending ? ' 취소중' : ''}`
+        ? `☀️ ${e.title}${isCancelPending ? ' 취소중' : ''}`
         : prefix + e.title
 
       let endDate = e.end_at
@@ -281,17 +292,25 @@ function CalendarContent() {
 
       const baseColor = resolveEventColor({ color: e.color, category: e.category as any, author: e.author as any })
 
+      // 휴가 배경색 — 오전휴가: 옅은 파랑 / 오후휴가: 옅은 노랑 / 종일휴가: 옅은 빨강(반차보다 한 단계 짙게)
+      const vacBg     = isHalf ? (isMorning ? '#DBEAFE' : '#FEF9C3') : '#FECACA'
+      const vacBorder = isHalf ? (isMorning ? '#3B82F6' : '#EAB308') : '#EF4444'
+      const vacText   = isHalf ? (isMorning ? '#1E40AF' : '#854D0E') : '#991B1B'
+
       return {
         id:              e.id,
         title,
         start:           e.start_at,
         end:             endDate,
         allDay:          e.is_all_day,
-        backgroundColor: isVac ? '#FEF3C7' : baseColor,
-        borderColor:     isVac ? '#F59E0B' : baseColor,
-        textColor:       isVac ? '#92400E' : '#ffffff',
+        backgroundColor: isVac ? vacBg : baseColor,
+        borderColor:     isVac ? vacBorder : baseColor,
+        textColor:       isVac ? vacText : '#ffffff',
         editable:        !e.is_vacation && canEditEvent(e),
         classNames:      isVac ? ['fc-vacation-event'] : [],
+        // 반일휴가: 월 뷰에서 점 표시 대신 배경색 블록으로 렌더링
+        ...(isHalf ? { display: 'block' } : {}),
+        extendedProps:   { vacHalf: isHalf },
       }
     }),
   ]
@@ -506,6 +525,17 @@ function CalendarContent() {
           dayMaxEvents={3}
           buttonText={{ today: '오늘', month: '월', week: '주', day: '일' }}
           eventTimeFormat={{ hour: '2-digit', minute: '2-digit', hour12: false }}
+          eventContent={(arg: any) => {
+            // 반일휴가(오전/오후휴가)는 시간이 제목에 내포되어 있어 시간 표기를 생략
+            if (arg.event.extendedProps?.vacHalf) {
+              return (
+                <div className="fc-event-title" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 2px' }}>
+                  {arg.event.title}
+                </div>
+              )
+            }
+            return true
+          }}
           dayCellClassNames={(arg) => {
             // 공휴일은 요일(특히 토요일) 색상을 덮어쓰고 빨간색으로 표시.
             // .fc-day.cg-holiday CSS 규칙(globals.css)이 !important로 날짜 숫자를 빨간색 처리.

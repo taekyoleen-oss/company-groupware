@@ -41,6 +41,7 @@ export function EventModal({ isOpen, onClose, initialDate, eventId, onSuccess, o
   const [authorName, setAuthorName]     = useState<string | null>(null)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [isAdmin, setIsAdmin]           = useState(false)
+  const [proxyUserId, setProxyUserId]   = useState<string | null>(null)
   const [eventData, setEventData]       = useState<any>(null)
   const [notify, setNotify]             = useState(false)
   const [form, setForm] = useState({
@@ -90,6 +91,15 @@ export function EventModal({ isOpen, onClose, initialDate, eventId, onSuccess, o
   // 모달을 열 때마다 저장 버튼을 활성 상태로 초기화 (직전 저장의 loading 잔상 방지)
   useEffect(() => { if (isOpen) setLoading(false) }, [isOpen])
 
+  // 휴가 대리 게시자(앱관리자 지정 1명)는 잘못 게시된 일정 정정을 위해 타인 일정도 수정 가능
+  useEffect(() => {
+    if (!isOpen) return
+    fetch('/api/admin/settings')
+      .then(r => r.json())
+      .then(d => setProxyUserId(d?.vacation_proxy_user_id ?? null))
+      .catch(() => setProxyUserId(null))
+  }, [isOpen])
+
   useEffect(() => {
     if (eventId && isOpen) {
       fetch(`/api/events/${eventId}`).then(r => r.json()).then(data => {
@@ -116,8 +126,9 @@ export function EventModal({ isOpen, onClose, initialDate, eventId, onSuccess, o
     }
   }, [eventId, isOpen])
 
-  const canEdit = !eventId || isAdmin || createdBy === currentUserId
-  const canDirectDelete = !!eventId && (isAdmin || createdBy === currentUserId)
+  const isProxyEditor = !!currentUserId && proxyUserId === currentUserId
+  const canEdit = !eventId || isAdmin || createdBy === currentUserId || isProxyEditor
+  const canDirectDelete = !!eventId && (isAdmin || createdBy === currentUserId || isProxyEditor)
 
   const executeSave = async () => {
     setLoading(true)

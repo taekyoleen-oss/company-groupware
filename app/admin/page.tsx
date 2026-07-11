@@ -138,6 +138,7 @@ interface CompanySettings {
   attendance_method: 'gps' | 'ip'
   office_ips: string
   require_device_approval: boolean
+  vacation_proxy_user_id: string | null
 }
 
 interface OfficeDevice {
@@ -305,7 +306,7 @@ function AdminPageInner() {
   const [attCustomTo, setAttCustomTo] = useState<string>(toLocalDateStr())
 
   // 회사 설정
-  const [settings, setSettings] = useState<CompanySettings>({ address: '', latitude: null, longitude: null, radius_meters: 200, attendance_method: 'ip', office_ips: '', require_device_approval: false })
+  const [settings, setSettings] = useState<CompanySettings>({ address: '', latitude: null, longitude: null, radius_meters: 200, attendance_method: 'ip', office_ips: '', require_device_approval: false, vacation_proxy_user_id: null })
   const [settingsDirty, setSettingsDirty] = useState(false)
   const [settingsSaving, setSettingsSaving] = useState(false)
 
@@ -1954,6 +1955,33 @@ function AdminPageInner() {
                   })}
                 </div>
               </div>
+
+            {/* 휴가 대리 게시자 — 전사 1명 지정 */}
+            <div className="bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded-xl p-5 space-y-3">
+              <div className="flex items-center gap-2 mb-1">
+                <Sun className="h-4 w-4 text-[#F97316]" />
+                <h2 className="text-sm font-semibold text-[#111827] dark:text-[#F1F5F9]">휴가 대리 게시자</h2>
+              </div>
+              <p className="text-xs text-[#6B7280] dark:text-[#94A3B8]">
+                다른 직원의 휴가를 대신 신청할 수 있는 회원을 <strong>1명</strong> 지정합니다.
+                대리 신청 건도 대상자의 결재 규칙(지정 결재자 → 없으면 앱관리자)에 따라 승인 후 확정됩니다.
+              </p>
+              <select
+                value={settings.vacation_proxy_user_id ?? ''}
+                onChange={e => {
+                  setSettings(prev => ({ ...prev, vacation_proxy_user_id: e.target.value || null }))
+                  setSettingsDirty(true)
+                }}
+                className="w-full h-9 rounded-md border border-[#E5E7EB] dark:border-[#334155] bg-white dark:bg-[#0F172A] px-3 text-sm text-[#111827] dark:text-[#F1F5F9]"
+              >
+                <option value="">지정 안 함 (기능 비활성)</option>
+                {users
+                  .filter(u => u.status === 'active' && !(u as any).is_super_admin)
+                  .map(u => (
+                    <option key={u.id} value={u.id}>{u.full_name}</option>
+                  ))}
+              </select>
+            </div>
 
             <Button type="submit" className="w-full max-w-md" disabled={!settingsDirty || settingsSaving}>
               <Save className="h-4 w-4 mr-2" />
