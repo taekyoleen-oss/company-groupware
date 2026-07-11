@@ -2274,9 +2274,6 @@ function AdminPageInner() {
                             <span className="text-xs font-medium text-[#111827] dark:text-[#F1F5F9] truncate">{dateLabel}</span>
                             <span className="ml-auto text-xs text-[#6B7280] dark:text-[#94A3B8] shrink-0">{v.days}일</span>
                           </div>
-                          {v.description && (
-                            <p className="text-[11px] text-[#6B7280] dark:text-[#94A3B8] mt-1 whitespace-pre-wrap">{v.description}</p>
-                          )}
                         </div>
                       )
                     })}
@@ -2315,9 +2312,6 @@ function AdminPageInner() {
                             신청일 {format(parseISO(v.requested_at), 'yyyy.MM.dd', { locale: ko })}
                             {v.posted_by_name && ` · 대리 신청: ${v.posted_by_name}`}
                           </p>
-                          {v.description && (
-                            <p className="text-[11px] text-[#6B7280] dark:text-[#94A3B8] mt-1 whitespace-pre-wrap">{v.description}</p>
-                          )}
                         </div>
                       )
                     })}
