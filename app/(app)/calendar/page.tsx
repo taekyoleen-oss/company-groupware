@@ -281,7 +281,7 @@ function CalendarContent() {
         : e.visibility === 'company' ? '[전사] ' : e.visibility === 'team' ? `[${getTeamAbbr(e.team_id)}] ` : ''
       const isCancelPending = isVac && pendingCancelIds.has(e.id)
       const title = isVac
-        ? `☀️ ${e.title}${isCancelPending ? ' 취소중' : ''}`
+        ? `${e.title}${isCancelPending ? ' 취소중' : ''}`
         : prefix + e.title
 
       let endDate = e.end_at
@@ -310,7 +310,7 @@ function CalendarContent() {
         classNames:      isVac ? ['fc-vacation-event'] : [],
         // 반일휴가: 월 뷰에서 점 표시 대신 배경색 블록으로 렌더링
         ...(isHalf ? { display: 'block' } : {}),
-        extendedProps:   { vacHalf: isHalf },
+        extendedProps:   { vacKind: isVac ? (isHalf ? (isMorning ? 'morning' : 'afternoon') : 'full') : null },
       }
     }),
   ]
@@ -526,15 +526,26 @@ function CalendarContent() {
           buttonText={{ today: '오늘', month: '월', week: '주', day: '일' }}
           eventTimeFormat={{ hour: '2-digit', minute: '2-digit', hour12: false }}
           eventContent={(arg: any) => {
-            // 반일휴가(오전/오후휴가)는 시간이 제목에 내포되어 있어 시간 표기를 생략
-            if (arg.event.extendedProps?.vacHalf) {
-              return (
-                <div className="fc-event-title" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 2px' }}>
-                  {arg.event.title}
-                </div>
-              )
-            }
-            return true
+            // 휴가는 채움 원반 아이콘으로 표시 — 종일: 전체 채움 / 오전: 왼쪽 반 / 오후: 오른쪽 반.
+            // 반일휴가는 시간이 제목(오전/오후휴가)에 내포되어 있어 시간 표기를 생략한다.
+            const kind = arg.event.extendedProps?.vacKind as 'full' | 'morning' | 'afternoon' | null
+            if (!kind) return true
+            const iconColor = kind === 'full' ? '#EF4444' : kind === 'morning' ? '#3B82F6' : '#EAB308'
+            return (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, overflow: 'hidden', padding: '0 2px' }}>
+                <svg width="11" height="11" viewBox="0 0 20 20" style={{ flexShrink: 0 }} aria-hidden="true">
+                  {kind === 'full' ? (
+                    <circle cx="10" cy="10" r="9" fill={iconColor} />
+                  ) : (
+                    <>
+                      <circle cx="10" cy="10" r="8" fill="none" stroke={iconColor} strokeWidth="2.5" />
+                      <path d={kind === 'morning' ? 'M10 2 A8 8 0 0 0 10 18 Z' : 'M10 2 A8 8 0 0 1 10 18 Z'} fill={iconColor} />
+                    </>
+                  )}
+                </svg>
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{arg.event.title}</span>
+              </div>
+            )
           }}
           dayCellClassNames={(arg) => {
             // 공휴일은 요일(특히 토요일) 색상을 덮어쓰고 빨간색으로 표시.
