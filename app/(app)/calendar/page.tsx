@@ -292,9 +292,9 @@ function CalendarContent() {
 
       const baseColor = resolveEventColor({ color: e.color, category: e.category as any, author: e.author as any })
 
-      // 휴가 배경색 — 오전휴가: 옅은 파랑 / 오후휴가: 옅은 노랑 / 종일휴가: 옅은 빨강(반차보다 한 단계 짙게)
-      const vacBg     = isHalf ? (isMorning ? '#DBEAFE' : '#FEF9C3') : '#FECACA'
-      const vacBorder = isHalf ? (isMorning ? '#3B82F6' : '#EAB308') : '#EF4444'
+      // 휴가 배경색 — 오전휴가: 파스텔 파랑 / 오후휴가: 파스텔 노랑 / 종일휴가: 옅은 빨강(반차보다 짙게)
+      const vacBg     = isHalf ? (isMorning ? '#EFF6FF' : '#FEFCE8') : '#FECACA'
+      const vacBorder = isHalf ? (isMorning ? '#BFDBFE' : '#FEF08A') : '#EF4444'
       const vacText   = isHalf ? (isMorning ? '#1E40AF' : '#854D0E') : '#991B1B'
 
       return {
