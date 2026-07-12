@@ -93,9 +93,6 @@ export async function POST(request: NextRequest) {
     if (!target || target.status !== 'active') {
       return NextResponse.json({ error: '대상자를 찾을 수 없거나 활성 상태가 아닙니다.' }, { status: 400 })
     }
-    if (isSuperAdmin(target)) {
-      return NextResponse.json({ error: '앱관리자는 대리 신청 대상이 될 수 없습니다.' }, { status: 400 })
-    }
 
     // 중복 검증 — 대상자 기준
     const [{ data: tEvOverlap }, { data: tReqOverlap }] = await Promise.all([
@@ -119,6 +116,48 @@ export async function POST(request: NextRequest) {
     }
 
     const targetApproverId = (target as any).approver_id as string | null
+    const proxyName = proxy?.full_name ?? '알 수 없음'
+    const proxyDateLabel = new Date(start_at).toLocaleDateString('ko-KR', {
+      month: 'numeric', day: 'numeric',
+    })
+
+    // 대상자가 자기결재 대상(결재자 역할 + 외부 결재자 미지정)이면 즉시 확정 등록한다.
+    // (대상자의 결재 규칙을 그대로 따른다 — 본인 신청이었어도 즉시 등록될 사람이므로.)
+    const targetIsApproverRole = (target as any).role === 'manager' || isSuperAdmin(target)
+    const targetSelfApproved = targetIsApproverRole && targetApproverId == null
+
+    if (targetSelfApproved) {
+      const { data: event, error: eventErr } = await admin
+        .from('cg_events')
+        .insert({
+          title,
+          description: description ?? null,
+          start_at,
+          end_at,
+          is_all_day: allDay,
+          is_vacation: true,
+          visibility: 'company',
+          color: '#F97316',
+          category_id: null,
+          created_by: target.id,
+          team_id: null,
+        })
+        .select()
+        .single()
+      if (eventErr) return NextResponse.json({ error: eventErr.message }, { status: 500 })
+
+      // 대상자에게 대리 등록 알림 (결재 불필요)
+      await (admin as any).from('cg_messages').insert({
+        sender_id:      user.id,
+        sender_name:    proxyName,
+        recipient_id:   target.id,
+        recipient_name: target.full_name,
+        content:        `[휴가 대리 등록] ${proxyName} 님이 회원님의 ${proxyDateLabel} 휴가를 등록했습니다.`,
+      })
+
+      return NextResponse.json({ mode: 'auto', event }, { status: 201 })
+    }
+
     const { data: proxyReq, error: proxyErr } = await admin
       .from('cg_vacation_requests')
       .insert({
@@ -137,10 +176,6 @@ export async function POST(request: NextRequest) {
     if (proxyErr) return NextResponse.json({ error: proxyErr.message }, { status: 500 })
 
     // 알림 — 결재자(또는 앱관리자 전원) + 대상자 본인
-    const proxyName = proxy?.full_name ?? '알 수 없음'
-    const proxyDateLabel = new Date(start_at).toLocaleDateString('ko-KR', {
-      month: 'numeric', day: 'numeric',
-    })
     const approverMsg = `[휴가 결재 요청] ${target.full_name} 님의 ${proxyDateLabel} 휴가를 ${proxyName} 님이 대리 신청했습니다.`
 
     if (targetApproverId) {

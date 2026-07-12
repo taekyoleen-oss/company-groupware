@@ -10,7 +10,7 @@ export async function GET() {
   const [{ data: profiles }, { data: teams }] = await Promise.all([
     supabase
       .from('cg_profiles')
-      .select('id, full_name, color, role, team_id')
+      .select('id, full_name, color, role, team_id, is_super_admin, approver_id')
       .eq('status', 'active')
       .neq('id', user.id)   // 자기 자신 제외
       .neq('is_hidden', true)   // 개발자 전용 숨김 계정 제외

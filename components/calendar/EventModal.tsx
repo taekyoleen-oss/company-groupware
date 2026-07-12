@@ -10,6 +10,7 @@ import { useToast } from '@/components/ui/toast'
 import { User, Clock, MapPin, Tag, Eye, Bell, Sun } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { useProfile, useCategories } from '@/lib/hooks/use-shared-data'
+import { isSuperAdmin } from '@/lib/auth/roles'
 import type { EventCategory } from '@/types/app'
 
 const VISIBILITY_LABEL = { company: '전사 공개', team: '팀 공개', private: '나만 보기' }
@@ -21,14 +22,28 @@ export interface VacationPrefill {
   endDate: string
 }
 
+/**
+ * "휴가로 전환" 클릭 시 부모로 전달하는 payload.
+ * - 신규 작성 전환: fromEventId/targetUserId 없음 (기존 동작).
+ * - 기존 일정 전환: fromEventId 로 원본 일정을 식별. 대리 게시자가 타인 일정을 전환하면
+ *   targetUserId/targetName 에 원본 작성자를 실어 대리 신청으로 처리한다.
+ */
+export interface ConvertToVacationPayload extends VacationPrefill {
+  fromEventId?: string
+  targetUserId?: string
+  targetName?: string
+  /** 대상자(원본 작성자)가 자기결재 대상인지 — 전환 버튼 라벨(저장/결재요청) 판정용 */
+  targetSelfApproved?: boolean
+}
+
 interface EventModalProps {
   isOpen: boolean
   onClose: () => void
   initialDate?: Date | null
   eventId?: string | null
   onSuccess: () => void
-  /** 상단 "휴가로 전환" 버튼 클릭 시 입력값을 부모로 전달 (신규 작성 시에만 사용) */
-  onConvertToVacation?: (data: VacationPrefill) => void
+  /** 상단 "휴가로 전환" 버튼 클릭 시 입력값을 부모로 전달 (신규 작성 + 기존 일정 전환) */
+  onConvertToVacation?: (data: ConvertToVacationPayload) => void
 }
 
 export function EventModal({ isOpen, onClose, initialDate, eventId, onSuccess, onConvertToVacation }: EventModalProps) {
@@ -129,6 +144,9 @@ export function EventModal({ isOpen, onClose, initialDate, eventId, onSuccess, o
   const isProxyEditor = !!currentUserId && proxyUserId === currentUserId
   const canEdit = !eventId || isAdmin || createdBy === currentUserId || isProxyEditor
   const canDirectDelete = !!eventId && (isAdmin || createdBy === currentUserId || isProxyEditor)
+  // 휴가로 전환 가능 조건: 신규 작성이거나, 기존 일정을 (작성자 본인 || 대리 게시자)가 볼 때.
+  // (앱관리자라도 타인 일정 전환은 대리 신청 규칙상 불가 → 여기서 제외)
+  const canConvertToVacation = !eventId || createdBy === currentUserId || isProxyEditor
 
   const executeSave = async () => {
     setLoading(true)
@@ -172,12 +190,23 @@ export function EventModal({ isOpen, onClose, initialDate, eventId, onSuccess, o
   }
 
   const handleConvertToVacation = () => {
-    // 입력 중인 날짜·제목·설명을 그대로 휴가 신청 폼으로 이관
+    // 대리 게시자가 타인 일정을 전환하는 경우 → 원본 작성자 명의로 대리 신청
+    const isConvertingOthers = !!eventId && !!createdBy && createdBy !== currentUserId
+    // 원본 작성자가 자기결재 대상인지(결재자 역할 + 외부 결재자 미지정) → 저장/결재요청 라벨 판정
+    const author = eventData?.author
+    const targetSelfApproved = !!author
+      && (author.role === 'manager' || isSuperAdmin(author))
+      && author.approver_id == null
+    // 입력 중인 날짜·제목·설명 + 전환 컨텍스트를 부모로 이관
     onConvertToVacation?.({
       title: form.title,
       description: form.description,
       startDate: form.start_at.slice(0, 10),
       endDate: form.end_at.slice(0, 10),
+      fromEventId: eventId ?? undefined,
+      targetUserId: isConvertingOthers ? (createdBy ?? undefined) : undefined,
+      targetName: isConvertingOthers ? (authorName ?? undefined) : undefined,
+      targetSelfApproved: isConvertingOthers ? targetSelfApproved : undefined,
     })
   }
 
@@ -275,8 +304,8 @@ export function EventModal({ isOpen, onClose, initialDate, eventId, onSuccess, o
                   : '새 일정'
                 }
               </DialogTitle>
-              {/* 휴가로 전환 — 제목 우측, 폭 1/3 수준의 소형 버튼 */}
-              {!eventId && onConvertToVacation && (
+              {/* 휴가로 전환 — 제목 우측, 폭 1/3 수준의 소형 버튼 (신규 + 기존 일정) */}
+              {canConvertToVacation && onConvertToVacation && (
                 <button
                   type="button"
                   onClick={handleConvertToVacation}

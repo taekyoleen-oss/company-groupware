@@ -37,6 +37,19 @@ export interface VacationPrefill {
   endDate?: string
 }
 
+/**
+ * 기존 일반 일정을 휴가로 전환할 때 넘어오는 컨텍스트.
+ * - fromEventId: 전환 성공 후 삭제할 원본 일정 id.
+ * - targetUserId/targetName: 대리 게시자가 타인 일정을 전환할 때 대상자(원본 작성자). 본인 전환이면 없음.
+ */
+export interface VacationConvertContext {
+  fromEventId: string
+  targetUserId?: string
+  targetName?: string
+  /** 대상자(원본 작성자)가 자기결재 대상인지 — 저장/결재요청 버튼·문구 판정용 */
+  targetSelfApproved?: boolean
+}
+
 export interface VacationModalProps {
   isOpen: boolean
   onClose: () => void
@@ -45,6 +58,8 @@ export interface VacationModalProps {
   onSuccess: () => void
   /** 일반 일정에서 "휴가로 전환" 시 넘어온 초기값 (신규 신청 시에만 사용) */
   prefill?: VacationPrefill | null
+  /** 기존 일정 → 휴가 전환 컨텍스트 (신규 신청 모드에서만 사용) */
+  convertContext?: VacationConvertContext | null
 }
 
 function calcDays(startStr: string, endStr: string): number {
@@ -56,7 +71,7 @@ function buildTitle(type: VacationType, name: string): string {
   return name ? `${label}(${name})` : label
 }
 
-export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess, prefill }: VacationModalProps) {
+export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess, prefill, convertContext }: VacationModalProps) {
   const { showToast, ToastComponent } = useToast()
 
   const [loading, setLoading]                     = useState(false)
@@ -82,7 +97,7 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
 
   // 휴가 대리 게시 (앱관리자가 지정한 전사 1명)
   const [proxyUserId, setProxyUserId]   = useState<string | null>(null)
-  const [proxyTargets, setProxyTargets] = useState<{ id: string; full_name: string; role: string }[]>([])
+  const [proxyTargets, setProxyTargets] = useState<{ id: string; full_name: string; role: string; is_super_admin: boolean | null; approver_id: string | null }[]>([])
   const [targetUserId, setTargetUserId] = useState<string>('') // '' = 본인 신청
 
   // 모달을 열 때마다 진행 상태를 초기화 (직전 저장/삭제의 loading 잔상 방지)
@@ -116,9 +131,10 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
     setCreatedBy(null)
     setAuthorName(null)
     setVacationType('full')
-    setTargetUserId('')
+    // 전환(대리)이면 원본 작성자를 대상자로 고정, 아니면 본인 신청
+    setTargetUserId(convertContext?.targetUserId ?? '')
     setForm({
-      title: prefill?.title || buildTitle('full', currentUserName),
+      title: prefill?.title || buildTitle('full', convertContext?.targetName || currentUserName),
       description: prefill?.description ?? '',
       start_at: startStr + 'T00:00',
       end_at: endStr + 'T00:00',
@@ -143,8 +159,9 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
   }, [isOpen, eventId, isProxy])
 
   // 현재 신청 명의자 이름 (대상자 선택 시 대상자, 아니면 본인)
+  // 전환 모드에서는 드롭다운 목록을 로드하지 않으므로 convertContext.targetName 으로 보완한다.
   const activeName = targetUserId
-    ? (proxyTargets.find(t => t.id === targetUserId)?.full_name ?? '')
+    ? (proxyTargets.find(t => t.id === targetUserId)?.full_name ?? convertContext?.targetName ?? '')
     : currentUserName
 
   const handleTargetChange = (value: string) => {
@@ -232,8 +249,25 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
 
   // 본인이 결재자 역할(관리자 또는 앱관리자) + 외부 결재자 미지정 → 휴가 신청 자동 승인.
   // (취소는 자동 처리되지 않고 항상 앱관리자가 결재)
-  // 대리 신청(대상자 선택)은 항상 대상자의 결재 규칙으로 진행되므로 자동 승인 없음.
   const isSelfApproved = !targetUserId && isApproverRole && approverId == null
+
+  // 대리 처리 시 대상자(신청자)가 자기결재 대상인지 — "해당 신청자 기준"으로 진행 판정.
+  //  - 전환: convertContext.targetSelfApproved (원본 작성자 기준, EventModal 계산)
+  //  - 드롭다운 대리 신청: 선택한 대상자의 role/is_super_admin/approver_id 로 계산
+  const selectedTarget = targetUserId ? proxyTargets.find(t => t.id === targetUserId) : undefined
+  const targetIsSelfApprover = !!selectedTarget
+    && (selectedTarget.role === 'manager'
+        || selectedTarget.is_super_admin === true
+        || (selectedTarget.is_super_admin == null && selectedTarget.role === 'admin'))
+    && selectedTarget.approver_id == null
+  const targetSelfApproved = convertContext
+    ? convertContext.targetSelfApproved === true
+    : targetIsSelfApprover
+
+  // 저장 즉시 확정되는지 여부(버튼/문구 판정).
+  //  - 본인 신청: 본인이 자기결재 대상이면 즉시 등록.
+  //  - 대리(전환/드롭다운): 대상자가 자기결재 대상이면 즉시 저장, 아니면 대상자 결재 대기.
+  const willSaveImmediately = targetUserId ? targetSelfApproved : isSelfApproved
 
   const executeSave = async () => {
     setLoading(true)
@@ -281,13 +315,39 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
       })
       if (res.ok) {
         const data = await res.json().catch(() => ({}))
+        // 전환 모드: 휴가 접수 성공 후 원본 일반 일정 삭제
+        if (convertContext?.fromEventId) {
+          const delRes = await fetch(`/api/events/${convertContext.fromEventId}`, { method: 'DELETE' })
+          if (!delRes.ok) {
+            // 휴가는 이미 접수됨 — 원본 삭제만 실패했으므로 수동 정리를 안내
+            showToast('휴가로 전환됐지만 원본 일정 삭제에 실패했습니다. 원본 일정을 직접 삭제해 주세요.', 'error')
+            setTimeout(() => { onSuccess(); onClose() }, 1000)
+            return
+          }
+        }
+        const convertPrefix = convertContext ? '일정을 휴가로 전환했습니다. ' : ''
         if (targetUserId) {
-          showToast(`${activeName} 님의 휴가 대리 신청이 접수되었습니다. 결재 승인 후 확정됩니다.`, 'success')
+          // 대리(전환) — 서버가 대상자 결재 규칙으로 자동확정/결재대기를 분기(data.mode)
+          if (data.mode === 'auto') {
+            showToast(
+              convertContext
+                ? `${activeName} 님의 일정을 휴가로 전환해 저장했습니다.`
+                : `${activeName} 님의 휴가를 등록했습니다.`,
+              'success',
+            )
+          } else {
+            showToast(
+              convertContext
+                ? `${activeName} 님의 일정을 휴가로 전환했습니다. 결재 승인 후 확정됩니다.`
+                : `${activeName} 님의 휴가 대리 신청이 접수되었습니다. 결재 승인 후 확정됩니다.`,
+              'success',
+            )
+          }
         } else if (data.mode === 'pending') {
           const targetName = approverName ?? (approverId ? '결재자' : '관리자')
-          showToast(`결재 요청이 ${targetName}에게 전달되었습니다.`, 'success')
+          showToast(`${convertPrefix}결재 요청이 ${targetName}에게 전달되었습니다.`, 'success')
         } else {
-          showToast('휴가가 등록되었습니다.', 'success')
+          showToast(convertContext ? '일정을 휴가로 전환해 저장했습니다.' : '휴가가 등록되었습니다.', 'success')
         }
         setTimeout(() => { onSuccess(); onClose() }, 500)
         return
@@ -429,15 +489,22 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <AlertTriangle className="h-4 w-4 text-amber-500" />
-              {isSelfApproved ? '휴가 등록 확인' : '휴가 신청 확인'}
+              {willSaveImmediately ? '휴가 등록 확인' : '휴가 신청 확인'}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
-            {isSelfApproved ? (
+            {willSaveImmediately && !targetUserId ? (
               <div className="rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-3">
                 <p className="text-sm text-amber-800 dark:text-amber-200 leading-relaxed">
                   본인이 결재자이므로 <strong>즉시 등록</strong>됩니다.
                   등록한 휴가를 취소하는 경우 <strong>앱관리자가 승인</strong>해야 삭제할 수 있습니다.
+                </p>
+              </div>
+            ) : willSaveImmediately && targetUserId ? (
+              <div className="rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 p-3">
+                <p className="text-sm text-amber-800 dark:text-amber-200 leading-relaxed">
+                  <strong>{activeName || '대상자'}</strong> 님은 본인 결재 대상이라 <strong>즉시 저장</strong>됩니다.
+                  휴가 일수도 {activeName || '대상자'} 님 기준으로 차감됩니다.
                 </p>
               </div>
             ) : targetUserId ? (
@@ -457,7 +524,7 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
               </div>
             )}
             <p className="text-sm text-[#6B7280]">
-              {isSelfApproved ? '위 내용을 확인하셨습니까? 휴가를 등록하시겠습니까?' : '위 내용을 확인하셨습니까? 결재 요청을 보내시겠습니까?'}
+              {willSaveImmediately ? '위 내용을 확인하셨습니까? 저장하시겠습니까?' : '위 내용을 확인하셨습니까? 결재 요청을 보내시겠습니까?'}
             </p>
             <div className="flex gap-2">
               <Button type="button" variant="outline" className="flex-1" onClick={() => setVacSaveConfirmOpen(false)}>취소</Button>
@@ -467,7 +534,7 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
                 onClick={() => { setVacSaveConfirmOpen(false); executeSave() }}
                 disabled={loading}
               >
-                {loading ? '처리 중...' : (isSelfApproved ? '확인 후 등록' : '결재 요청 보내기')}
+                {loading ? '처리 중...' : (willSaveImmediately ? '저장' : '결재 요청 보내기')}
               </Button>
             </div>
           </div>
@@ -522,8 +589,24 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
             <ReadOnlyView />
           ) : (
             <form onSubmit={handleSubmit} className="space-y-3">
-              {/* 대상자 선택 — 대리 게시자에게만 노출 */}
-              {isProxy && proxyTargets.length > 0 && (
+              {/* 전환 안내 — 기존 일정을 휴가로 전환하는 경우 */}
+              {convertContext && (
+                <div className="rounded-lg bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800 px-3 py-2">
+                  <p className="flex items-center gap-1.5 text-xs text-orange-700 dark:text-orange-300">
+                    <Sun className="h-3.5 w-3.5 shrink-0" />
+                    <span>
+                      기존 <strong>일정</strong>을 휴가로 전환합니다
+                      {convertContext.targetUserId && (
+                        <> — 대상자 <strong>{convertContext.targetName ?? activeName}</strong></>
+                      )}
+                      . 전환하면 원본 일정은 삭제됩니다.
+                    </span>
+                  </p>
+                </div>
+              )}
+
+              {/* 대상자 선택 — 대리 게시자에게만 노출 (전환 모드에서는 대상자 고정이라 숨김) */}
+              {!convertContext && isProxy && proxyTargets.length > 0 && (
                 <div>
                   <label className="block text-xs font-medium mb-1 text-[#6B7280]">신청 대상자</label>
                   <select
@@ -557,7 +640,7 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
 
               {/* 결재자 안내 */}
               <div className={`rounded-lg px-3 py-2 border text-xs ${
-                isSelfApproved
+                willSaveImmediately
                   ? 'bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800 text-green-700 dark:text-green-300'
                   : 'bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300'
               }`}>
@@ -565,7 +648,9 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
                   <User className="h-3.5 w-3.5" />
                   {targetUserId ? (
                     <span className="font-medium">
-                      대리 신청 — {activeName} 님의 결재자(미지정 시 관리자) 승인 후 확정됩니다
+                      {willSaveImmediately
+                        ? `${activeName || '대상자'} 님은 본인 결재 대상이라 즉시 저장됩니다`
+                        : `대리 신청 — ${activeName} 님의 결재자(미지정 시 관리자) 승인 후 확정됩니다`}
                     </span>
                   ) : (
                     <>
@@ -688,7 +773,7 @@ export function VacationModal({ isOpen, onClose, initialDate, eventId, onSuccess
               <div className="flex gap-2 pt-1">
                 <Button type="button" variant="outline" className="flex-1" onClick={onClose}>취소</Button>
                 <Button type="submit" className="flex-1 bg-orange-500 hover:bg-orange-600 text-white" disabled={loading}>
-                  {loading ? '처리 중...' : (isSelfApproved ? '등록' : '결재 요청')}
+                  {loading ? '처리 중...' : (willSaveImmediately ? '저장' : '결재 요청')}
                 </Button>
               </div>
             </form>

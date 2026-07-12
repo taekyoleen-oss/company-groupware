@@ -11,8 +11,8 @@ import { startOfDay, endOfDay, parseISO } from 'date-fns'
 import { Plus, X, Users, User, Sun } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
-import { EventModal } from '@/components/calendar/EventModal'
-import { VacationModal, type VacationPrefill } from '@/components/calendar/VacationModal'
+import { EventModal, type ConvertToVacationPayload } from '@/components/calendar/EventModal'
+import { VacationModal, type VacationPrefill, type VacationConvertContext } from '@/components/calendar/VacationModal'
 import { DayEventsPopup } from '@/components/calendar/DayEventsPopup'
 import { resolveEventColor } from '@/lib/utils/eventColor'
 import {
@@ -49,6 +49,7 @@ function CalendarContent() {
   const [vacationModalDate, setVacationModalDate]     = useState<Date | null>(null)
   const [vacationEventId, setVacationEventId]         = useState<string | null>(null)
   const [vacationPrefill, setVacationPrefill]         = useState<VacationPrefill | null>(null)
+  const [vacationConvertContext, setVacationConvertContext] = useState<VacationConvertContext | null>(null)
 
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [isAdminUser,   setIsAdminUser]   = useState(false)
@@ -127,15 +128,32 @@ function CalendarContent() {
     setVacationModalDate(null)
     setVacationEventId(null)
     setVacationPrefill(null)
+    setVacationConvertContext(null)
   }, [])
 
   // 일반 일정 모달 → 휴가 신청 모달로 전환 (입력값 이관)
-  // 두 모달 모두 anyOpen=true 이므로 히스토리 스택을 건드리지 않고 상태만 교체한다
-  const handleConvertToVacation = useCallback((data: VacationPrefill) => {
+  // 두 모달 모두 anyOpen=true 이므로 히스토리 스택을 건드리지 않고 상태만 교체한다.
+  // 기존 일정 전환이면 fromEventId/대상자 정보를 전환 컨텍스트로 함께 전달한다.
+  const handleConvertToVacation = useCallback((data: ConvertToVacationPayload) => {
     setIsModalOpen(false)
     setModalDate(null)
     setEditEventId(null)
-    setVacationPrefill(data)
+    setVacationPrefill({
+      title: data.title,
+      description: data.description,
+      startDate: data.startDate,
+      endDate: data.endDate,
+    })
+    setVacationConvertContext(
+      data.fromEventId
+        ? {
+            fromEventId: data.fromEventId,
+            targetUserId: data.targetUserId,
+            targetName: data.targetName,
+            targetSelfApproved: data.targetSelfApproved,
+          }
+        : null,
+    )
     setVacationModalDate(data.startDate ? new Date(data.startDate + 'T00:00') : new Date())
     setVacationEventId(null)
     setIsVacationModalOpen(true)
@@ -330,6 +348,8 @@ function CalendarContent() {
     if (ev?.is_vacation) {
       setVacationEventId(eventId)
       setVacationModalDate(null)
+      setVacationPrefill(null)
+      setVacationConvertContext(null)
       setIsVacationModalOpen(true)
     } else {
       setEditEventId(eventId)
@@ -434,6 +454,7 @@ function CalendarContent() {
               setVacationModalDate(new Date())
               setVacationEventId(null)
               setVacationPrefill(null)
+              setVacationConvertContext(null)
               setIsVacationModalOpen(true)
             }}
           >
@@ -581,6 +602,7 @@ function CalendarContent() {
         initialDate={vacationModalDate}
         eventId={vacationEventId}
         prefill={vacationPrefill}
+        convertContext={vacationConvertContext}
         onSuccess={() => { fetchEvents(); fetchPendingCancels() }}
       />
     </div>

@@ -16,7 +16,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ id: st
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('cg_events')
-    .select(`*, category:cg_event_categories(id,name,color), author:cg_profiles!created_by(id,full_name,color), team:cg_teams(id,name)`)
+    .select(`*, category:cg_event_categories(id,name,color), author:cg_profiles!created_by(id,full_name,color,role,is_super_admin,approver_id), team:cg_teams(id,name)`)
     .eq('id', id)
     .single()
   if (error) return NextResponse.json({ error: error.message }, { status: 404 })
