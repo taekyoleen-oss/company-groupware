@@ -85,11 +85,16 @@ NOTIFY pgrst, 'reload schema';
 - 현재 `cg_messages`, `cg_message_hides`, `cg_hr_records` 3개 테이블이 타입에 없어 12개 라우트가 `as any` 로 우회 중.
 - **step28/29 를 DB 에 먼저 적용한 뒤** 아래 실행:
   ```bash
-  supabase gen types typescript --project-id cwxpftdbwugusjtbikwn > types/database.ts
+  supabase gen types typescript --project-id uugzcvxfcrhaxkhwmbdi > types/database.ts
   ```
 - 재생성 후 `npx tsc --noEmit` 확인 → `as any` 를 점진적으로 제거 가능.
 
-### ◐ 마이그레이션 베이스라인 정식화 (부분 완료 — 정본 덤프는 도구 필요)
+> **[2026-07-13 갱신]** DB가 새 Supabase 프로젝트(`uugzcvxfcrhaxkhwmbdi`, 서울)로 이관되었습니다.
+> 라이브 스키마 기준 단일 정본 베이스라인이 `supabase/migrations/20260713000000_baseline.sql`로
+> 생성되었고(step30·vacation_proxy 포함 + auth 트리거/realtime/권한 부록), 아래 항목은 **완료**되었습니다.
+> 네이티브 pg_dump 17도 설치되어 이후 `supabase db dump --dry-run` 스크립트 방식으로 갱신 가능합니다.
+
+### ✅ 마이그레이션 베이스라인 정식화 (2026-07-13 완료)
 - **재현성은 이미 확보됨(검증):** 실 DB 는 `output/step1~30` 을 순서대로 실행해 만들어졌고, 이 파일들이 모두
   저장소에 커밋돼 있습니다. 라이브 스키마와 교차검증 결과 **17개 `cg_` 테이블 전부 + RPC 2개가 커버**되어,
   저장소만으로 스키마 재현이 가능합니다. (재해 복구 관점의 목표는 사실상 달성)
